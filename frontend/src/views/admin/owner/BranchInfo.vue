@@ -64,7 +64,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       { key: 'cancellationPolicy', title: 'Cancellation Policy', enabledKey: 'serviceCancellationPolicyEnabled' },
       { key: 'reschedulePolicy', title: 'Rescheduling Policy', enabledKey: 'serviceReschedulingPolicyEnabled' },
       { key: 'noShowPolicy', title: 'No-Show Policy', enabledKey: 'serviceNoShowPolicyEnabled' },
-      { key: 'walkInPolicy', title: 'Walk-In Policy', enabledKey: 'walkInPolicyEnabled' },
     ]
     const enabledPolicies = computed(() => policyDefinitions
       .filter((policy) => clinicPolicies.value[policy.enabledKey] === true || clinicPolicies.value[`${policy.key}Enabled`] === true)
@@ -639,7 +638,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <section class="branch-contract-link-note" aria-label="Linked client contract">
             <div>
               <h3>Client Contract</h3>
-              <p v-if="contractConfigured">This branch uses your clinic's saved Client Contract for both online and walk-in bookings, including the saved design and additional terms. The applicable policies selected below are included in each agreement. The Walk-In Policy is an additional policy for walk-in bookings.</p>
+              <p v-if="contractConfigured">This branch uses your clinic's saved Client Contract for both online and walk-in bookings, including the saved design and additional terms. The linked clinic service policies are included in each agreement.</p>
               <p v-else>No Client Contract has been saved yet. Configure it in Policy &amp; Contract Management to use a clinic agreement at this branch. Until then, new bookings use their service-specific agreement.</p>
               <p v-if="contractConfigured" class="branch-contract-preview-help">Preview reflects your current selections. Save Policy Links to apply changes. Existing booking agreements retain their saved content and design.</p>
             </div>

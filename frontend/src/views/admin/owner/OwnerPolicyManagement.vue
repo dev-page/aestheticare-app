@@ -4,7 +4,7 @@
     <main v-page-loading="{ active: pageLoading, variant: 'settings', fields: 4, sections: 2 }" class="min-w-0 flex-1 p-6 md:p-8">
       <div class="mx-auto max-w-5xl">
         <h1 class="text-3xl font-bold">Policy &amp; Contract Management</h1>
-        <p class="mt-2 text-slate-400">Manage your clinic policies and the agreement customers review and sign.</p>
+        <p class="mt-2 text-slate-400">Manage service policies for both walk-in and online bookings, plus the agreement customers review and sign.</p>
         <nav class="policy-contract-tabs" aria-label="Policy and contract management tabs">
           <button type="button" :class="{ 'is-active': activeTab === 'policies' }" :aria-pressed="activeTab === 'policies'" @click="activeTab = 'policies'">Policies</button>
           <button type="button" :class="{ 'is-active': activeTab === 'contract' }" :aria-pressed="activeTab === 'contract'" @click="activeTab = 'contract'">Client Contract</button>
@@ -12,31 +12,14 @@
         <template v-if="activeTab === 'policies'">
 
         <div class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
-          <p><strong>Services:</strong> Turn on only the policies your clinic will enforce. Use the edit button to set each enabled policy.</p>
+          <p><strong>Clinic services:</strong> These policies apply to services booked online and handled as walk-ins. Turn on the rules your clinic will enforce.</p>
           <span class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold" :class="canManagePolicies ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-500 bg-slate-800 text-slate-300'">{{ canManagePolicies ? 'Editing enabled' : 'View only' }}</span>
         </div>
 
-        <section class="mt-6 rounded-2xl border border-slate-700 bg-slate-800 p-6">
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><h2 class="text-xl font-semibold">Clinic tax status</h2><p class="mt-1 max-w-3xl text-sm text-slate-400">An administrator reviews your BIR Certificate of Registration and records the clinic’s tax status. Branches inherit the confirmed organization status.</p></div>
-            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="clinicIsVatRegistered(savedPolicy) ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : taxProfileReviewed ? 'border-slate-600 bg-slate-900 text-slate-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-200'">{{ clinicTaxStatusLabel }}</span>
-          </div>
-          <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.75fr)]">
-            <div class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-6 text-slate-300">
-              <p class="font-semibold text-slate-100">Appointment pricing</p>
-              <p class="mt-1">Once VAT registration is confirmed, you can mark individual services, consultations, or packages as VAT-applicable. Customers see the subtotal, VAT, and total before payment.</p>
-              <p v-if="savedPolicy.taxProfile?.reviewedAt" class="mt-2 text-xs text-slate-500">Reviewed {{ formatDate(savedPolicy.taxProfile.reviewedAt) }}</p>
-            </div>
-            <aside class="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm leading-6 text-amber-100">
-              <p class="font-semibold">{{ taxProfileReviewed ? 'Need to update this status?' : 'BIR review required' }}</p>
-              <p class="mt-1">{{ taxProfileReviewed ? 'Contact AesthetiCare support if your BIR registration changes or this decision needs correction.' : 'VAT controls stay unavailable until a reviewer confirms the tax status from your submitted BIR certificate.' }}</p>
-            </aside>
-          </div>
-        </section>
 
         <section class="mt-8 rounded-2xl border border-slate-700 bg-slate-800 p-6">
           <h2 class="text-xl font-semibold">Services</h2>
-          <p class="mt-1 text-sm text-slate-400">These settings apply when customers book an appointment for a clinic service.</p>
+          <p class="mt-1 text-sm text-slate-400">These settings apply to clinic services booked online and handled as walk-ins.</p>
           <div class="mt-5 grid gap-4 md:grid-cols-2">
             <article v-for="policy in servicePolicies" :key="policy.id" class="rounded-2xl border border-slate-700 bg-slate-900/60 p-5" :class="!isPolicyAvailable(policy) ? 'opacity-55' : ''">
               <div class="flex items-start justify-between gap-4">
@@ -62,25 +45,6 @@
           </div>
         </section>
 
-        <section class="walk-in-policy-section mt-6 rounded-2xl border border-slate-700 bg-slate-800 p-6">
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><h2 class="text-xl font-semibold">Walk-In Policy</h2><p class="mt-1 text-sm text-slate-400">Rules for services, consultations, and packages provided to clients who visit the clinic.</p></div>
-            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="form.walkInPolicyEnabled ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-600 bg-slate-900 text-slate-400'">{{ form.walkInPolicyEnabled ? 'Enabled' : 'Disabled' }}</span>
-          </div>
-          <div class="mt-5 grid overflow-hidden rounded-2xl border border-slate-700 lg:grid-cols-2">
-            <div class="space-y-4 bg-slate-900/60 p-5">
-              <div><p class="text-sm font-semibold text-slate-100">Policy settings</p><p class="mt-1 text-xs leading-5 text-slate-400">Turn this policy on to display and enforce it during walk-in checkout.</p></div>
-              <PolicyToggle v-model="form.walkInPolicyEnabled" :disabled="!canManagePolicies" label="Enable Walk-In Policy" description="Enabled by default for payment-first walk-in services." />
-              <div class="space-y-3" :class="!form.walkInPolicyEnabled ? 'pointer-events-none opacity-45' : ''">
-                <div class="rounded-xl border border-slate-700 bg-slate-950/40 p-4"><div class="flex items-center gap-3"><span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-500/35 bg-emerald-500/10 text-emerald-300"><Icon icon="mdi:cash-check" class="h-5 w-5" /></span><div><p class="text-sm font-medium text-slate-100">Payment First</p><p class="mt-1 text-xs text-slate-400">Full payment is required before a walk-in service starts.</p></div></div></div>
-
-                <PolicyToggle v-model="form.walkInPolicyAcknowledgementRequired" :disabled="!canManagePolicies || !form.walkInPolicyEnabled" label="Confirm policy acknowledgement" description="Require staff to confirm the service details and applicable policies with the client before payment." />
-              </div>
-            </div>
-            <aside class="border-t border-slate-700 bg-slate-950/40 p-5 lg:border-l lg:border-t-0"><div class="flex items-center gap-2 text-amber-200"><Icon icon="mdi:information-outline" class="h-5 w-5" /><h3 class="font-semibold">How this policy works</h3></div><div class="mt-4 space-y-4 text-sm leading-6 text-slate-300"><p>This policy applies when a client visits the clinic for a service, consultation, or treatment package.</p><ul class="space-y-3 text-slate-400"><li>Full payment is required before the service starts.</li><li>Appointments follow the clinic's applicable payment, cancellation, rescheduling, and no-show policies.</li><li>Before recording payment, staff verifies the selected service, price, session details, and applicable policies with the client.</li></ul></div></aside>
-          </div>
-          <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5"><span class="text-xs text-slate-500">Last saved: {{ savedAt ? formatDate(savedAt) : 'Not saved yet' }}</span><button type="button" :aria-busy="saving" :disabled="saving || !canManagePolicies" @click="savePolicies" class="app-form-action rounded-xl bg-amber-600 px-5 py-3 font-semibold transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50">{{ saving ? 'Saving...' : canManagePolicies ? 'Save Walk-In Policy' : 'View-only access' }}</button></div>
-        </section>
         </template>
         <section v-else class="client-contract-editor">
           <div class="contract-editor-heading"><div><h2>Client Contract</h2><p>This agreement applies to both online and walk-in bookings. Enabled policies become part of the agreement automatically. Save policy changes in the Policies tab first.</p></div><span>{{ canManagePolicies ? 'Editing enabled' : 'View only' }}</span></div>
@@ -92,7 +56,7 @@
               <label for="client-contract-additional">Additional clinic terms</label>
               <div class="contract-format-toolbar" aria-label="Additional terms formatting"><button v-for="format in ['Bold', 'Italic', 'List']" :key="format" type="button" :disabled="!canManagePolicies || savingContract" @click="formatTerms(format)">{{ format }}</button></div>
               <textarea id="client-contract-additional" ref="termsInput" v-model="additionalTerms" :disabled="!canManagePolicies || savingContract" rows="10" maxlength="12000" placeholder="Add treatment instructions, consent information, or other terms customers should review." />
-              <p class="contract-editor-note">{{ additionalTerms.length }} / 12,000 characters. Walk-in policy applies to walk-in appointments. Branch policy links determine which enabled policies apply at that branch.</p>
+              <p class="contract-editor-note">{{ additionalTerms.length }} / 12,000 characters. Branch policy links determine which enabled clinic service policies apply at that branch.</p>
               <fieldset class="contract-appearance-controls" :disabled="!canManagePolicies || savingContract">
                 <legend>Contract appearance</legend>
                 <div class="contract-control-grid">
@@ -114,7 +78,7 @@
       </div>
     </main>
 
-    <div v-if="activeEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" @click.self="closeEditor">
+    <div v-if="activeEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-md" @click.self="closeEditor">
       <section class="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl" role="dialog" aria-modal="true" :aria-labelledby="`policy-editor-${activeEditor}`">
         <header class="flex items-start justify-between gap-4 border-b border-slate-700 px-6 py-5">
           <div><p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Services policy</p><h2 :id="`policy-editor-${activeEditor}`" class="mt-1 text-xl font-bold">{{ activePolicy?.title }}</h2></div>
@@ -166,8 +130,7 @@ import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
-import { isProductOrderPolicyKey, walkInServicePolicy } from '@/utils/clinicPolicies'
-import { clinicIsVatRegistered, clinicTaxProfileIsReviewed } from '../../../../../shared/clinicTaxProfile.js'
+import { isProductOrderPolicyKey } from '@/utils/clinicPolicies'
 import { buildClientContractDocument, clientContractPolicies, normalizeContractAppearance } from '../../../../../shared/clientContract.js'
 import { isCancellationWindowConfigurationValid } from '../../../../../shared/appointmentChangePolicy.js'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
@@ -193,16 +156,10 @@ const servicePolicies = [
 ]
 
 
-const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0, walkInPolicyEnabled: true, walkInPolicyAcknowledgementRequired: true })
+const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0 })
 const retiredPolicyFields = ref([])
 const activeTab = ref('policies')
 const savedPolicy = ref({})
-const taxProfileReviewed = computed(() => clinicTaxProfileIsReviewed(savedPolicy.value.taxProfile))
-const clinicTaxStatusLabel = computed(() => {
-  if (clinicIsVatRegistered(savedPolicy.value)) return 'VAT-registered · confirmed'
-  if (!taxProfileReviewed.value) return 'Needs BIR review'
-  return savedPolicy.value.taxProfile.status === 'non_vat' ? 'Non-VAT · confirmed' : 'Needs clarification'
-})
 const additionalTerms = ref('')
 const termsInput = ref(null)
 const contractAppearance = reactive(normalizeContractAppearance())
@@ -279,7 +236,6 @@ const noShowSummary = () => `Customers are considered a no-show after ${Number(f
 
 
 
-const walkInPolicySummary = () => walkInServicePolicy(form.walkInPolicyAcknowledgementRequired)
 const lastSavedAdditionalTerms = ref('')
 const load = trackPageLoad(async () => {
   try {
@@ -320,11 +276,12 @@ const savePolicies = async () => {
   if (form.serviceReschedulingPolicyEnabled && (!isNonNegative(form.maximumRescheduleAllowance) || !Number.isInteger(Number(form.maximumRescheduleAllowance)))) return toast.error('Maximum Reschedule Allowance must be a whole number of zero or more.')
   saving.value = true
   try {
-    const payload = { ...form, ...Object.fromEntries(retiredPolicyFields.value.map(key => [key, deleteField()])), ownerId: policyOwnerId.value, policyScope: 'clinic', updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp(), paymentPolicy: form.servicePaymentPolicyEnabled ? paymentSummary() : '', paymentPolicyEnabled: form.servicePaymentPolicyEnabled, cancellationPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', cancellationPolicyEnabled: form.serviceCancellationPolicyEnabled, refundPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', refundPolicyEnabled: form.serviceCancellationPolicyEnabled, reschedulePolicy: form.serviceReschedulingPolicyEnabled ? rescheduleSummary() : '', reschedulePolicyEnabled: form.serviceReschedulingPolicyEnabled, noShowPolicy: form.serviceNoShowPolicyEnabled ? noShowSummary() : '', noShowPolicyEnabled: form.serviceNoShowPolicyEnabled, walkInPolicy: form.walkInPolicyEnabled ? walkInPolicySummary() : '', walkInPolicyEnabled: form.walkInPolicyEnabled }
+    const legacyWalkInFields = ['walkInPolicy', 'walkInPolicyEnabled', 'walkInPolicyAcknowledgementRequired']
+    const payload = { ...form, ...Object.fromEntries(retiredPolicyFields.value.map(key => [key, deleteField()])), ...Object.fromEntries(legacyWalkInFields.map(key => [key, deleteField()])), ownerId: policyOwnerId.value, policyScope: 'clinic', updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp(), paymentPolicy: form.servicePaymentPolicyEnabled ? paymentSummary() : '', paymentPolicyEnabled: form.servicePaymentPolicyEnabled, cancellationPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', cancellationPolicyEnabled: form.serviceCancellationPolicyEnabled, refundPolicy: form.serviceCancellationPolicyEnabled ? cancellationSummary() : '', refundPolicyEnabled: form.serviceCancellationPolicyEnabled, reschedulePolicy: form.serviceReschedulingPolicyEnabled ? rescheduleSummary() : '', reschedulePolicyEnabled: form.serviceReschedulingPolicyEnabled, noShowPolicy: form.serviceNoShowPolicyEnabled ? noShowSummary() : '', noShowPolicyEnabled: form.serviceNoShowPolicyEnabled }
     await setDoc(doc(db, 'clinicPolicies', policyOwnerId.value), payload, { merge: true })
-    const summaries = { paymentPolicy: payload.paymentPolicy, paymentPolicyEnabled: payload.paymentPolicyEnabled, cancellationPolicy: payload.cancellationPolicy, cancellationPolicyEnabled: payload.cancellationPolicyEnabled, refundPolicy: payload.refundPolicy, refundPolicyEnabled: payload.refundPolicyEnabled, earlyMinimumHours: payload.earlyMinimumHours, earlyNonRefundable: payload.earlyNonRefundable, earlyRefundPercentage: payload.earlyRefundPercentage, midMinimumHours: payload.midMinimumHours, midMaximumHours: payload.midMaximumHours, midNonRefundable: payload.midNonRefundable, midRefundPercentage: payload.midRefundPercentage, lateMaximumHours: payload.lateMaximumHours, lateNonRefundable: payload.lateNonRefundable, lateRefundPercentage: payload.lateRefundPercentage, reschedulePolicy: payload.reschedulePolicy, reschedulePolicyEnabled: payload.reschedulePolicyEnabled, maximumRescheduleAllowance: payload.maximumRescheduleAllowance, noShowPolicy: payload.noShowPolicy, noShowPolicyEnabled: payload.noShowPolicyEnabled, walkInPolicy: payload.walkInPolicy, walkInPolicyEnabled: payload.walkInPolicyEnabled, policiesUpdatedAt: serverTimestamp() }
+    const summaries = { paymentPolicy: payload.paymentPolicy, paymentPolicyEnabled: payload.paymentPolicyEnabled, cancellationPolicy: payload.cancellationPolicy, cancellationPolicyEnabled: payload.cancellationPolicyEnabled, refundPolicy: payload.refundPolicy, refundPolicyEnabled: payload.refundPolicyEnabled, earlyMinimumHours: payload.earlyMinimumHours, earlyNonRefundable: payload.earlyNonRefundable, earlyRefundPercentage: payload.earlyRefundPercentage, midMinimumHours: payload.midMinimumHours, midMaximumHours: payload.midMaximumHours, midNonRefundable: payload.midNonRefundable, midRefundPercentage: payload.midRefundPercentage, lateMaximumHours: payload.lateMaximumHours, lateNonRefundable: payload.lateNonRefundable, lateRefundPercentage: payload.lateRefundPercentage, reschedulePolicy: payload.reschedulePolicy, reschedulePolicyEnabled: payload.reschedulePolicyEnabled, maximumRescheduleAllowance: payload.maximumRescheduleAllowance, noShowPolicy: payload.noShowPolicy, noShowPolicyEnabled: payload.noShowPolicyEnabled, walkInPolicy: deleteField(), walkInPolicyEnabled: deleteField(), walkInPolicyAcknowledgementRequired: deleteField(), policiesUpdatedAt: serverTimestamp() }
     const branches = await getDocs(query(collection(db, 'clinics'), where('ownerId', '==', policyOwnerId.value)))
-    const batch = writeBatch(db); branches.docs.forEach((branch) => batch.update(branch.ref, { ...summaries, ...Object.fromEntries(Object.keys(branch.data()).filter(isProductOrderPolicyKey).map(key => [key, deleteField()])) })); await batch.commit()
+    const batch = writeBatch(db); branches.docs.forEach((branch) => batch.update(branch.ref, { ...summaries, ...Object.fromEntries([...Object.keys(branch.data()).filter(isProductOrderPolicyKey), 'walkInPolicy', 'walkInPolicyEnabled', 'walkInPolicyAcknowledgementRequired'].map(key => [key, deleteField()])) })); await batch.commit()
     toast.success('Clinic-wide policies saved for every branch.')
   } catch (error) { console.error('Failed to save clinic policies:', error); toast.error(error?.message || 'Could not save services policies.') } finally { saving.value = false }
 }
@@ -378,34 +335,5 @@ onUnmounted(() => {
 .client-contract-preview { border: 1px solid #ead4b9; padding: 20px; border-radius: 12px; background: #fffaf3; }
 .contract-preview-text { white-space: pre-wrap; line-height: 1.75; font-size: 13px; margin-top: 20px; max-height: 600px; overflow-y: auto; }
 @media(max-width: 767px) { .contract-editor-grid { grid-template-columns: 1fr; }.contract-editor-heading { flex-direction: column; }.client-contract-editor { padding: 16px; } }
-/* The walk-in workflow is deliberately presented as a warm, high-contrast
-   cream panel so its policy text, status, and action icons stay legible. */
-.walk-in-policy-section {
-  background: #fff8ea !important;
-  border-color: #dfbc90 !important;
-  color: #422b1d;
-}
 
-.walk-in-policy-section :deep(.border-slate-700) { border-color: #e5caa4 !important; }
-.walk-in-policy-section :deep(.border-slate-600) { border-color: #cfaa7d !important; }
-.walk-in-policy-section :deep(.bg-slate-900\/60),
-.walk-in-policy-section :deep(.bg-slate-950\/40),
-.walk-in-policy-section :deep(.bg-slate-900) { background: #fffdf7 !important; }
-.walk-in-policy-section :deep(.text-slate-100),
-.walk-in-policy-section :deep(.text-slate-200),
-.walk-in-policy-section :deep(.text-slate-300) { color: #422b1d !important; }
-.walk-in-policy-section :deep(.text-slate-400),
-.walk-in-policy-section :deep(.text-slate-500) { color: #73533d !important; }
-.walk-in-policy-section :deep(.text-amber-200) { color: #825025 !important; }
-.walk-in-policy-section :deep(.text-emerald-200),
-.walk-in-policy-section :deep(.text-emerald-300),
-.walk-in-policy-section :deep(.text-teal-300) { color: #17634e !important; }
-.walk-in-policy-section :deep(.bg-emerald-500\/10),
-.walk-in-policy-section :deep(.bg-teal-500\/10) { background: #e4f4e9 !important; }
-.walk-in-policy-section :deep(.border-emerald-500\/35),
-.walk-in-policy-section :deep(.border-teal-500\/35) { border-color: #75a886 !important; }
-.walk-in-policy-section :deep(.bg-slate-800) { background: #e9d3b4 !important; }
-.walk-in-policy-section :deep(.peer:checked + span) { background: #a9632e !important; border-color: #8a4f24 !important; }
-.walk-in-policy-section :deep(.bg-amber-600) { background: #9a5729 !important; color: #fffaf2 !important; }
-.walk-in-policy-section :deep(.bg-amber-600:hover) { background: #7f431e !important; }
 </style>

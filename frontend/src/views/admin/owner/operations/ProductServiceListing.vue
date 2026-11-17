@@ -31,7 +31,7 @@
             {{ contractPdfLoading ? 'Preparing PDF...' : 'Open contract PDF' }}
           </button>
         </div>
-        <details v-if="hasClientContract" class="listing-contract-disclosure"><summary class="listing-disclosure-trigger"><span>Preview applied contract</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary><div class="listing-contract-preview-body"><p class="listing-contract-preview-note">This preview uses this branch's linked policies. The Walk-In Policy applies to walk-ins. The booked service details are added to each customer's agreement. Existing agreements retain their saved content and design.</p><ClientContractDocument :document="listingContractPreview" /></div></details>
+        <details v-if="hasClientContract" class="listing-contract-disclosure"><summary class="listing-disclosure-trigger"><span>Preview applied contract</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary><div class="listing-contract-preview-body"><p class="listing-contract-preview-note">This preview uses this branch's linked clinic service policies. The booked service details are added to each customer's agreement. Existing agreements retain their saved content and design.</p><ClientContractDocument :document="listingContractPreview" /></div></details>
       </section>
 
       <div v-if="activeListingTab === 'create' && canCreateListing" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">

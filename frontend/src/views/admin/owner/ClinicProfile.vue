@@ -62,6 +62,26 @@
         </section>
 
         <section class="clinic-profile-card">
+          <div class="clinic-card-heading"><div><h2>Operating hours</h2><p>Set each day independently. Mark a day closed or remove all hours when the clinic is unavailable.</p></div></div>
+          <div class="clinic-schedule-grid">
+            <div v-for="day in operatingHourDays" :key="day.key" class="clinic-schedule-row">
+              <strong>{{ day.label }}</strong>
+              <div v-if="!clinic.operatingHours[day.key].closed" class="clinic-schedule-ranges">
+                <div v-for="(range, index) in clinic.operatingHours[day.key].ranges" :key="`${day.key}-${index}`" class="clinic-schedule-range">
+                  <label><span class="sr-only">{{ day.label }} opening time</span><input v-model="range.open" type="time" :disabled="!canEditClinicProfile" /></label>
+                  <span>to</span>
+                  <label><span class="sr-only">{{ day.label }} closing time</span><input v-model="range.close" type="time" :disabled="!canEditClinicProfile" /></label>
+                  <button v-if="canEditClinicProfile" type="button" class="clinic-hours-button" @click="removeOperatingRange(day.key, index)">Remove</button>
+                </div>
+                <button v-if="canEditClinicProfile" type="button" class="clinic-hours-button" @click="addOperatingRange(day.key)">+ Add hours</button>
+              </div>
+              <span v-else class="clinic-closed-label">Closed</span>
+              <button v-if="canEditClinicProfile" type="button" class="clinic-day-toggle" :aria-pressed="clinic.operatingHours[day.key].closed" @click="toggleOperatingDay(day.key)">{{ clinic.operatingHours[day.key].closed ? 'Set hours' : 'Mark closed' }}</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="clinic-profile-card">
           <div class="clinic-card-heading"><div><h2>Clinic location</h2><p>View the saved clinic location customers will use.</p></div></div>
           <LocationPicker
             v-if="hasLocationCoords"
@@ -106,6 +126,34 @@ import { toast } from 'vue3-toastify';
 import LocationPicker from '@/components/common/LocationPicker.vue';
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig';
 
+const operatingHourDays = [
+  { key: 'monday', label: 'Monday' }, { key: 'tuesday', label: 'Tuesday' }, { key: 'wednesday', label: 'Wednesday' },
+  { key: 'thursday', label: 'Thursday' }, { key: 'friday', label: 'Friday' }, { key: 'saturday', label: 'Saturday' }, { key: 'sunday', label: 'Sunday' },
+];
+const defaultOperatingHours = () => Object.fromEntries(operatingHourDays.map(({ key }) => [key, { ranges: [{ open: '09:00', close: '18:00' }], closed: key === 'sunday' }]));
+const normalizeOperatingHours = (source, clinicData = {}) => {
+  const defaults = defaultOperatingHours();
+  if (!source || !Object.keys(source).some(key => operatingHourDays.some(day => day.key === key))) {
+    if (Array.isArray(clinicData.openDays)) {
+      return Object.fromEntries(operatingHourDays.map(({ key, label }) => {
+        const shortName = label.slice(0, 3);
+        const open = String(clinicData.openTime || '09:00').slice(0, 5);
+        const close = String(clinicData.closeTime || '18:00').slice(0, 5);
+        const isOpen = clinicData.openDays.some(value => String(value).slice(0, 3).toLowerCase() === shortName.toLowerCase());
+        return [key, { ranges: isOpen ? [{ open, close }] : [], closed: !isOpen }];
+      }));
+    }
+    return defaults;
+  }
+  return Object.fromEntries(operatingHourDays.map(({ key }) => {
+    const value = source[key] || {};
+    const ranges = Array.isArray(value.ranges) ? value.ranges : (value.open || value.close ? [{ open: value.open, close: value.close }] : []);
+    const normalized = ranges.map(range => ({ open: /^\d{2}:\d{2}$/.test(String(range?.open || '')) ? range.open : '09:00', close: /^\d{2}:\d{2}$/.test(String(range?.close || '')) ? range.close : '18:00' }));
+    const closed = value.closed === true || normalized.length === 0;
+    return [key, { ranges: closed ? [] : normalized, closed }];
+  }));
+};
+
 export default {
   name: 'ClinicProfile',
   components: { OwnerSidebar, LocationPicker },
@@ -126,6 +174,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       clinicLocationLat: '',
       clinicLocationLng: '',
       description: '',
+      operatingHours: defaultOperatingHours(),
       profilePicture: null,
       bannerPicture: null,
     });
@@ -183,6 +232,28 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       contactNumberError.value = /^9\d{9}$/.test(String(clinic.value.contactNumber || '').trim()) ? '' : 'Enter exactly 10 digits starting with 9.';
       return !contactNumberError.value;
     };
+    const addOperatingRange = (dayKey) => {
+      const day = clinic.value.operatingHours[dayKey];
+      day.closed = false;
+      if (!Array.isArray(day.ranges)) day.ranges = [];
+      day.ranges.push({ open: '09:00', close: '18:00' });
+    };
+    const removeOperatingRange = (dayKey, index) => {
+      const day = clinic.value.operatingHours[dayKey];
+      day.ranges.splice(index, 1);
+      if (!day.ranges.length) day.closed = true;
+    };
+    const toggleOperatingDay = (dayKey) => {
+      const day = clinic.value.operatingHours[dayKey];
+      day.closed = !day.closed;
+      if (!day.closed && !day.ranges.length) day.ranges.push({ open: '09:00', close: '18:00' });
+    };
+    const validOperatingHours = () => operatingHourDays.every(({ key }) => {
+      const day = clinic.value.operatingHours[key];
+      if (day.closed) return true;
+      if (!day.ranges.length) return false;
+      return day.ranges.every(range => /^\d{2}:\d{2}$/.test(range.open) && /^\d{2}:\d{2}$/.test(range.close) && range.close > range.open);
+    });
     const handleContactNumberInput = (event) => {
       clinic.value.contactNumber = normalizePhilippineMobile(event?.target?.value);
       if (contactNumberError.value) validateContactNumber();
@@ -479,6 +550,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             }
           }
           clinic.value.contactNumber = normalizePhilippineMobile(clinic.value.contactNumber);
+          clinic.value.operatingHours = normalizeOperatingHours(clinic.value.operatingHours, clinic.value);
           logoPreview.value = String(clinic.value.profilePicture || '');
           bannerPreview.value = String(clinic.value.bannerPicture || '');
           if (!locationSearchQuery.value) {
@@ -692,6 +764,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Enter a valid Philippine mobile number before saving.');
         return;
       }
+      if (!validOperatingHours()) {
+        toast.error('Enter valid opening and closing times, or mark the day closed.');
+        return;
+      }
 
       saving.value = true;
       try {
@@ -713,6 +789,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           businessEmail: String(clinic.value.businessEmail || '').trim(),
           contactNumber: `+63${clinic.value.contactNumber}`,
           description: String(clinic.value.description || '').trim(),
+          operatingHours: Object.fromEntries(operatingHourDays.map(({ key }) => [key, { closed: clinic.value.operatingHours[key].closed, ranges: clinic.value.operatingHours[key].ranges.map(range => ({ ...range })) }])),
           profilePicture,
           bannerPicture,
           updatedAt: serverTimestamp(),
@@ -766,6 +843,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       buildLocationSearchQuery,
       hasLocationCoords,
       validateContactNumber,
+      operatingHourDays,
+      addOperatingRange,
+      removeOperatingRange,
+      toggleOperatingDay,
     };
   },
 };
@@ -971,6 +1052,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   gap: 1rem;
 }
 
+.clinic-schedule-grid { display: grid; gap: .65rem; }
+.clinic-schedule-row { display: grid; grid-template-columns: minmax(6rem, .55fr) minmax(0, 1.5fr) auto; align-items: center; gap: .75rem; border: 1px solid #ecd7be; border-radius: .75rem; background: #fffaf3; padding: .7rem .8rem; }
+.clinic-schedule-row > strong { color: #533a29; font-size: .84rem; }
+.clinic-schedule-ranges { display: grid; gap: .5rem; min-width: 0; }
+.clinic-schedule-range { display: flex; align-items: center; gap: .5rem; color: #81634e; font-size: .75rem; }
+.clinic-schedule-range label { min-width: 0; flex: 1; }
+.clinic-schedule-range input { width: 100%; min-height: 38px; border: 1px solid #e2c5a4; border-radius: .5rem; background: #fff; color: #493021; padding: .4rem .55rem; font: inherit; }
+.clinic-hours-button, .clinic-day-toggle { border: 1px solid #d9ae7c; border-radius: .55rem; background: #fff9f0; padding: .45rem .65rem; color: #754a2b; font-size: .74rem; font-weight: 700; white-space: nowrap; }
+.clinic-hours-button:hover, .clinic-day-toggle:hover { background: #f9eddd; }
+.clinic-closed-label { color: #8a6f59; font-size: .82rem; }
+
 .clinic-field {
   display: grid;
   align-content: start;
@@ -1118,6 +1210,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   .clinic-profile-main { padding: 1rem; }
   .clinic-profile-heading { align-items: flex-start; flex-direction: column; }
   .clinic-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .clinic-schedule-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .clinic-schedule-ranges { grid-column: 1 / -1; }
+  .clinic-schedule-range { flex-wrap: wrap; }
   .clinic-field-full { grid-column: auto; }
   .clinic-branding-footer { flex-wrap: wrap; }
   .clinic-profile-actions { align-items: stretch; flex-direction: column; }

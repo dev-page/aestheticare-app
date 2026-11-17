@@ -13,14 +13,14 @@
 
       <section v-if="mode === 'inventory'" class="mt-6 rounded-2xl border border-slate-700 bg-slate-800/80 shadow-xl shadow-slate-950/20">
         <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-700 px-5 py-5 sm:px-6">
-          <div><p class="text-xs font-bold tracking-[0.14em] text-amber-400">NEW REQUEST</p><h2 class="mt-1 text-lg font-semibold text-white">Request clinic supplies</h2><p class="mt-1 max-w-2xl text-sm leading-6 text-slate-400">Describe the item your clinic needs. Procurement will compare external quotations and prepare a purchase order.</p></div>
+          <div><p class="text-xs font-bold tracking-[0.14em] text-amber-400">NEW REQUEST</p><h2 class="mt-1 text-lg font-semibold text-white">Request clinic supplies</h2><p class="mt-1 max-w-2xl text-sm leading-6 text-slate-400">Describe what the clinic needs. Procurement will contact a supplier, prepare the purchase order, and send the supplier invoice to Finance for review.</p></div>
           <span class="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200">Inventory starts the request</span>
         </div>
           <form class="p-5 sm:p-6" @submit.prevent="createRequest" :aria-busy="busy">
             <p v-if="!requestBranchId" class="mb-5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">Your assigned clinic branch is still loading. Wait a moment before sending this request.</p>
           <div class="grid gap-5 md:grid-cols-2">
             <label class="form-field"><span>Supply or item name <b>*</b></span><input v-model.trim="draft.name" placeholder="e.g. Surgical gloves" required /><small>Use a general item description. It does not need to match a supplier's exact product name.</small></label>
-            <label class="form-field"><span>Category <b>*</b></span><input v-model.trim="draft.category" placeholder="e.g. Medical supplies" required /><small>Group similar supplies to make the request easier to review.</small></label>
+            <div class="form-field category-select-field"><ContractAppearanceSelect id="supply-request-category" label="Category *" v-model="draft.category" :options="[{ value: '', label: 'Select a category' }, ...inventoryCategories.map(value => ({ value, label: value }))]" /><small>Choose the closest supply group.</small></div>
             <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the amount of supply the clinic needs.</small></label>
             <label class="form-field"><span>Unit of measure <b>*</b></span><select v-model="draft.unit" required><option value="units">Units</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="bottles">Bottles</option><option value="pairs">Pairs</option><option value="pieces">Pieces</option><option value="rolls">Rolls</option><option value="tubes">Tubes</option><option value="grams">Grams</option><option value="kilograms">Kilograms</option><option value="milliliters">Milliliters</option><option value="liters">Liters</option></select><small>Choose how the requested quantity is measured.</small></label>
             <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" required /><small>Choose the date when this supply is needed.</small></label>
@@ -28,12 +28,12 @@
             <label class="form-field"><span>Priority</span><select v-model="draft.priority"><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Normal is selected by default; raise it only if operations are affected.</small></label>
             <label class="form-field md:col-span-2"><span>Reason for request <b>*</b></span><textarea v-model.trim="draft.reason" placeholder="Explain why this supply is needed and how it will be used." required /><small>This helps Procurement and Finance assess the request.</small></label>
           </div>
-          <div class="mt-6 flex flex-col gap-4 border-t border-slate-700 pt-5 sm:flex-row sm:items-center sm:justify-between"><p class="max-w-2xl text-sm leading-6 text-slate-400"><span class="font-semibold text-slate-200">Next step:</span> Procurement will be notified to contact clinic suppliers, record an external quotation, and prepare a purchase order.</p><button class="rounded-lg bg-amber-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="busy || !requestBranchId">{{ busy ? 'Sending request…' : 'Send to Procurement' }}</button></div>
+          <div class="mt-6 flex flex-col gap-4 border-t border-slate-700 pt-5 sm:flex-row sm:items-center sm:justify-between"><p class="max-w-2xl text-sm leading-6 text-slate-400"><span class="font-semibold text-slate-200">Next step:</span> Procurement will contact the supplier and prepare the order.</p><button class="rounded-lg bg-amber-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="busy || !requestBranchId">{{ busy ? 'Sending request…' : 'Send to Procurement' }}</button></div>
         </form>
       </section>
 
       <section class="mt-6">
-        <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : mode === 'procurement' ? 'Inventory requests for review' : 'Records requiring action' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : mode === 'procurement' ? 'Open a request to review its details, record the external supplier quotation, and prepare a purchase order.' : 'Review the information below and complete the next workflow step.' }}</p></div>
+        <div class="mb-4"><h2 class="text-lg font-semibold text-white">{{ mode === 'inventory' ? 'Your requests' : mode === 'procurement' ? 'Inventory requests for review' : 'Purchase orders and supplier invoices' }}</h2><p class="mt-1 text-sm text-slate-400">{{ mode === 'inventory' ? 'Track the requests you have sent to Procurement.' : mode === 'procurement' ? 'Open a request to record the supplier invoice and prepare its purchase order.' : 'Review the supplier invoice, then approve the order or reject it with a reason.' }}</p></div>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3"><label class="min-w-64 flex-1 text-sm text-slate-300"><span class="sr-only">Filter records</span><input v-model.trim="recordSearch" class="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500" placeholder="Filter by reference, supply, status, or department" /></label><p class="text-xs text-slate-400">Newest records first · {{ filteredTableRecords.length }} record{{ filteredTableRecords.length === 1 ? '' : 's' }}</p></div>
         <TablePagination v-model:page="tablePage" v-model:page-size="rowsPerPage" :total-items="filteredTableRecords.length" part="top" item-label="records" />
         <div v-if="mode === 'procurement'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
@@ -55,7 +55,7 @@
           <p v-if="!inventoryRecords.length" class="px-5 py-8 text-center text-sm text-slate-400">No inventory requests have been created yet.</p>
         </div>
         <div v-if="mode === 'finance'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
-          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Budget decision</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Review'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose a budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Approve &amp; reserve</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget reserved' : '—' }}</span><button v-if="record.status === 'Approved'" class="ml-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold" :disabled="busy" @click="goToProcurementOrders">Open in Procurement</button></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
+          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3 text-right">Actions</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="whitespace-nowrap px-4 py-4 text-right"><div class="flex justify-end gap-2"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Review invoice</button><button v-if="record.status === 'Approved'" class="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200" :disabled="busy" @click="goToProcurementOrders">Procurement</button></div></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
         <TablePagination v-model:page="tablePage" v-model:page-size="rowsPerPage" :total-items="filteredTableRecords.length" part="bottom" item-label="records" />
       </section>
       </div>
@@ -66,35 +66,33 @@
         <div v-if="selectedProcurementRecord" class="space-y-5">
           <section class="rounded-xl border border-slate-700 bg-slate-900/70 p-4"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold text-white">Inventory request details</h3><p class="mt-1 text-sm text-slate-400">The original supply request sent by Inventory.</p></div><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ relatedInventoryRequest(selectedProcurementRecord)?.number || 'Linked request' }}</span></div><dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt>Requested supplies</dt><dd>{{ requestLines(selectedProcurementRecord).map(line => `${line.name} × ${line.quantity} ${line.unit || 'units'}`).join(', ') || '—' }}</dd></div><div><dt>Category</dt><dd>{{ requestValue(selectedProcurementRecord, 'category') }}</dd></div><div><dt>Priority</dt><dd>{{ requestValue(selectedProcurementRecord, 'priority') }}</dd></div><div><dt>Required by</dt><dd>{{ requestValue(selectedProcurementRecord, 'requiredDate') }}</dd></div><div class="sm:col-span-2"><dt>Delivery location</dt><dd>{{ requestValue(selectedProcurementRecord, 'location') }}</dd></div><div class="sm:col-span-2"><dt>Reason for request</dt><dd>{{ requestValue(selectedProcurementRecord, 'reason') }}</dd></div></dl></section>
           <section v-if="selectedProcurementRecord.status === 'Received'" class="supply-quote-form space-y-4 rounded-xl border border-amber-500/35 bg-amber-950/15 p-4">
-            <div><p class="supply-form-step">NEXT STEP · PROCUREMENT</p><h3 class="mt-1 font-semibold text-white">Add supplier quote</h3><p class="mt-1 text-sm text-slate-400">Choose a supplier, enter prices, and attach the quote. This creates the purchase order for Finance to approve.</p></div>
+            <div><p class="supply-form-step">PROCUREMENT REVIEW</p><h3 class="mt-1 font-semibold text-white">Prepare purchase order</h3><p class="mt-1 text-sm text-slate-400">Record the supplier invoice and upload it for Finance to review with the purchase order.</p></div>
             <label class="form-field">Supplier <b>*</b><select v-model="supplierByRecord[selectedProcurementRecord.id]" class="mt-1 w-full"><option value="">Choose a clinic supplier</option><option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.businessName || supplier.name }}</option></select></label>
+            <div class="grid gap-3 sm:grid-cols-2"><label class="form-field">Supplier invoice number <b>*</b><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].invoiceNumber" maxlength="120" required /></label><label class="form-field">Invoice date <b>*</b><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].invoiceDate" type="date" required /></label></div>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="form-field">Expected delivery date <b>*</b><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].deliveryDate" type="date" required /></label>
               <label class="form-field">Delivery location <b>*</b><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].deliveryLocation" required /></label>
             </div>
-            <div class="space-y-3"><div><h4 class="font-semibold text-white">Quoted item prices</h4><p class="mt-1 text-xs text-slate-400">Enter the unit price shown for each requested item.</p></div>
+            <div class="space-y-3"><div><h4 class="font-semibold text-white">Invoice item prices</h4><p class="mt-1 text-xs text-slate-400">Enter the unit price shown on the supplier invoice.</p></div>
               <div v-for="(line, index) in quoteDraftByRecord[selectedProcurementRecord.id].lines" :key="line.itemId" class="supply-quote-line rounded-lg border border-slate-700 bg-slate-900/60 p-3">
                 <div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-medium text-white">{{ line.name }}</p><span class="text-xs text-slate-400">{{ line.quantity }} {{ line.unit || 'units' }}</span></div>
                 <label class="form-field mt-3">Unit price (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].lines[index].unitPrice" type="number" min="0.01" step="0.01" required /></label>
               </div>
             </div>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="form-field">Tax on the quote<select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Included in item prices</option><option value="separate">Listed separately</option><option value="not-applicable">No tax applies</option></select></label>
-              <label class="form-field">Total shown on quote (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /></label>
+              <label class="form-field">Tax on the invoice<select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Included in item prices</option><option value="separate">Listed separately</option><option value="not-applicable">No tax applies</option></select></label>
+              <label class="form-field">Invoice total (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /></label>
             </div>
             <p v-if="quoteTotalMatches(selectedProcurementRecord)" role="status" class="supply-quote-status is-ready">The entered total matches the item prices and any listed charges.</p>
             <p v-else role="status" class="supply-quote-status is-warning">{{ quotePricingMessage(selectedProcurementRecord) }}</p>
             <details class="supply-quote-options rounded-lg border border-slate-700 bg-slate-900/60 p-3">
-              <summary class="cursor-pointer text-sm font-semibold text-slate-200">Optional quote details and extra charges</summary>
+              <summary class="cursor-pointer text-sm font-semibold text-slate-200">Invoice charges, discounts, and payment terms</summary>
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <label class="form-field">Quote reference<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].quoteReference" maxlength="200" /></label>
-                <label class="form-field">Quote date<input v-model="quoteDraftByRecord[selectedProcurementRecord.id].quoteDate" type="date" /></label>
-                <label class="form-field">Budget category<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].category" /></label>
                 <label class="form-field">Payment terms<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].paymentTerms" /></label>
                 <label class="form-field">Warranty<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].warranty" /></label>
                 <label class="form-field sm:col-span-2">Purchase terms<textarea v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].terms" rows="2" /></label>
               </div>
-              <div class="mt-4 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold text-slate-200">Charges or discounts <span class="font-normal text-slate-400">(only if shown on the quote)</span></p><button type="button" class="rounded border border-slate-600 px-3 py-2 text-sm text-white" @click="addQuoteAdjustment(selectedProcurementRecord)">Add amount</button></div>
+                <div class="mt-4 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold text-slate-200">Charges or discounts <span class="font-normal text-slate-400">(only if shown on the invoice)</span></p><button type="button" class="rounded border border-slate-600 px-3 py-2 text-sm text-white" @click="addQuoteAdjustment(selectedProcurementRecord)">Add amount</button></div>
                 <div v-for="(adjustment, index) in quoteDraftByRecord[selectedProcurementRecord.id].adjustments" :key="adjustment.id" class="grid gap-2 rounded border border-slate-700 p-3 sm:grid-cols-[1fr_1.5fr_1fr_auto]">
                   <label class="form-field">Type<select v-model="adjustment.type"><option value="tax">Tax</option><option value="fee">Fee</option><option value="discount">Discount</option></select></label>
                   <label class="form-field">Description<input v-model.trim="adjustment.label" maxlength="120" :placeholder="adjustment.type === 'tax' ? 'VAT' : adjustment.type === 'discount' ? 'Discount' : 'Delivery or handling'" /></label>
@@ -104,10 +102,10 @@
               </div>
               <dl class="mt-3 space-y-1 border-t border-slate-700 pt-3 text-sm"><div class="flex justify-between gap-3"><dt>Items subtotal</dt><dd>{{ currency(Math.round(quoteItemsSubtotal(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Tax and fees</dt><dd>{{ currency(Math.round(quotePositiveAdjustments(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Discounts</dt><dd>-{{ currency(Math.round(quoteDiscounts(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3 border-t border-slate-700 pt-2 font-bold"><dt>Calculated total</dt><dd>{{ currency(Math.round(quoteTotal(selectedProcurementRecord) * 100)) }}</dd></div></dl>
             </details>
-            <label class="supply-quote-evidence form-field"><span>Supplier quote document <b>*</b><small>PDF, PNG, or JPEG up to 5 MB. Kept as an internal clinic record.</small></span><input type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" /><span v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="supply-evidence-list"><button v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id" type="button" @click="downloadDocument(document)">{{ document.name }}</button></span></label>
-            <label class="supply-quote-check rounded-lg border border-slate-700 bg-slate-900/60 p-3"><input type="checkbox" :checked="procurementQuoteVerified(selectedProcurementRecord.id)" :disabled="busy" @change="setProcurementQuoteVerified(selectedProcurementRecord.id, $event.target.checked)" /><span><strong>I checked the items, quantities, supplier availability, and prices against this quote.</strong><small>This one confirmation records the four procurement checks together.</small></span></label>
+            <label class="supply-quote-evidence form-field"><span>Supplier invoice file <b>*</b><small>PDF, PNG, or JPEG up to 5 MB. Finance can review this internal clinic record.</small></span><input type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" /><span v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="supply-evidence-list"><button v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id" type="button" @click="downloadDocument(document)">{{ document.name }}</button></span></label>
+            <label class="supply-quote-check rounded-lg border border-slate-700 bg-slate-900/60 p-3"><input type="checkbox" :checked="procurementQuoteVerified(selectedProcurementRecord.id)" :disabled="busy" @change="setProcurementQuoteVerified(selectedProcurementRecord.id, $event.target.checked)" /><span><strong>I checked the requested items, quantities, supplier availability, and prices against the invoice.</strong><small>This records the Procurement review before Finance approval.</small></span></label>
             <div v-if="financeReadinessItems(selectedProcurementRecord).length" role="status" class="supply-quote-status is-warning"><strong>Still needed</strong><ul class="mt-1 list-disc pl-5"><li v-for="item in financeReadinessItems(selectedProcurementRecord)" :key="item">{{ item }}</li></ul></div>
-            <div v-else role="status" class="supply-quote-status is-ready">Ready for Finance to review and assign a budget.</div>
+            <div v-else role="status" class="supply-quote-status is-ready">Ready to submit the purchase order and invoice to Finance.</div>
             <button class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!readyForFinance(selectedProcurementRecord) || busy" @click="sendForApproval(selectedProcurementRecord)">{{ busy ? 'Sending to Finance…' : 'Create order and send to Finance' }}</button>
           </section>
           <p v-else class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm text-slate-300">This request has already been sent to the next workflow step and can no longer be edited here.</p>
@@ -129,10 +127,17 @@
             <dl class="purchase-order-info">
               <div><dt>Supplier</dt><dd>{{ selectedFinanceOrder.supplierBusinessName || 'Not specified' }}</dd></div>
               <div><dt>Department</dt><dd>{{ selectedFinanceOrder.department || 'Inventory' }}</dd></div>
-              <div><dt>Purpose</dt><dd>{{ selectedFinanceOrder.category || 'Not specified' }}</dd></div>
+              <div><dt>Supply category</dt><dd>{{ selectedFinanceOrder.category || 'Not specified' }}</dd></div>
+              <div><dt>Supplier invoice</dt><dd>{{ selectedFinanceOrder.invoiceNumber || 'Not recorded' }}</dd></div>
+              <div><dt>Invoice date</dt><dd>{{ formatDateCreated(selectedFinanceOrder.invoiceDate) }}</dd></div>
               <div><dt>Delivery date</dt><dd>{{ formatDateCreated(selectedFinanceOrder.deliveryDate) }}</dd></div>
               <div class="purchase-order-location"><dt>Delivery location</dt><dd>{{ selectedFinanceOrder.deliveryLocation || 'Not specified' }}</dd></div>
             </dl>
+          </section>
+          <section class="purchase-order-section">
+            <h3>Supplier invoice evidence</h3>
+            <p v-if="financeOrderDocuments.length === 0" class="purchase-order-pricing-note">No invoice file is attached to this order.</p>
+            <ul v-else class="space-y-2"><li v-for="document in financeOrderDocuments" :key="document.id"><button type="button" class="text-left font-semibold text-amber-700 underline" @click="downloadDocument(document)">{{ document.name }}</button></li></ul>
           </section>
           <section class="purchase-order-section">
             <div class="purchase-order-supplies-heading"><h3>Requested supplies</h3><span>{{ selectedFinanceOrder.lines?.length || 0 }} item{{ selectedFinanceOrder.lines?.length === 1 ? '' : 's' }}</span></div>
@@ -153,6 +158,17 @@
             <p v-if="quoteTaxTreatmentLabel(selectedFinanceOrder)" class="purchase-order-pricing-note">{{ quoteTaxTreatmentLabel(selectedFinanceOrder) }}.</p>
           </section>
           <div class="purchase-order-total"><div><span>Purchase order total</span><p>Total amount for this order</p></div><strong>{{ currency(selectedFinanceOrder.total) }}</strong></div>
+          <section v-if="selectedFinanceOrder.status === 'For Review'" class="purchase-order-section space-y-3">
+            <h3>Finance decision</h3>
+            <p class="purchase-order-pricing-note">Approve the purchase order, or reject it with a reason for Procurement.</p>
+            <label v-if="financeRejecting" class="form-field">Reason for rejection <b>*</b><textarea v-model.trim="financeDecisionReason" rows="3" maxlength="1000" placeholder="Explain what Procurement needs to correct." /></label>
+            <div class="flex flex-wrap justify-end gap-2">
+              <button v-if="!financeRejecting" type="button" class="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-700" :disabled="busy" @click="financeRejecting = true">Reject</button>
+              <button v-else type="button" class="rounded-lg border border-slate-500 px-4 py-2 text-sm font-semibold" :disabled="busy" @click="financeRejecting = false; financeDecisionReason = ''">Cancel rejection</button>
+              <button v-if="financeRejecting" type="button" class="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60" :disabled="busy || !financeDecisionReason.trim()" @click="rejectFinanceOrder(selectedFinanceOrder)">Confirm rejection</button>
+              <button v-else type="button" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60" :disabled="busy" @click="approve(selectedFinanceOrder)">Approve purchase order</button>
+            </div>
+          </section>
         </div>
       </template>
     </Modal>
@@ -166,6 +182,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
+import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 import Modal from '@/components/common/Modal.vue'
 import { auth } from '@/config/firebaseConfig'
@@ -184,7 +201,9 @@ const supplierByRecord = ref({})
 const quoteDraftByRecord = ref({})
 const evidenceByRecord = ref({})
 const procurementChecksByRecord = ref({})
-const budgetByRecord = ref({})
+const financeOrderDocuments = ref([])
+const financeRejecting = ref(false)
+const financeDecisionReason = ref('')
 const selectedDeliveryBranchId = ref('')
 const selectedProcurementRecord = ref(null)
 const selectedFinanceOrder = ref(null)
@@ -199,13 +218,13 @@ const tablePage = ref(1)
 const rowsPerPage = ref(10)
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
 const title = computed(() => mode.value === 'inventory' ? 'Request Supplies' : mode.value === 'procurement' ? 'Review Supply Requests' : 'Approve Purchase Orders')
-const intro = computed(() => mode.value === 'inventory' ? 'Send one clear request. Procurement will add the supplier quote, and Finance will review the order.' : mode.value === 'procurement' ? 'Add the supplier and quoted prices, then send the order to Finance for approval.' : 'Check the order total, choose its budget, and approve or return it to Procurement.')
+const intro = computed(() => mode.value === 'inventory' ? 'Send a supply request to Procurement.' : mode.value === 'procurement' ? 'Record the supplier invoice, prepare the purchase order, and submit both to Finance.' : 'Review the supplier invoice and purchase order, then approve or reject the order.')
 const branchId = computed(() => data.value.branchId || data.value.branches?.[0]?.id || '')
 const activeBranch = computed(() => data.value.branches.find(branch => branch.id === selectedDeliveryBranchId.value) || {})
 const requestBranchId = computed(() => String(activeBranch.value?.id || '').trim())
 const branchAddress = computed(() => String(activeBranch.value.address || activeBranch.value.name || '').trim())
 const suppliers = computed(() => data.value.suppliers.filter(supplier => supplier.status === 'Active' && supplier.associationStatus === 'Active'))
-const budgets = computed(() => data.value.records.filter(record => record.kind === 'budget' && record.status === 'Active'))
+const inventoryCategories = ['Medical supplies', 'Personal protective equipment', 'Cleaning and sanitation', 'Office supplies', 'Equipment', 'Pharmacy supplies', 'Other']
 const records = computed(() => data.value.records.filter(record => mode.value === 'inventory' ? record.kind === 'request' : mode.value === 'procurement' ? ['procurement', 'po'].includes(record.kind) : record.kind === 'po'))
 const procurementRecords = computed(() => records.value.filter(record => record.kind === 'procurement').sort((first, second) => createdTimestamp(second.createdAt) - createdTimestamp(first.createdAt)))
 const financePurchaseOrders = computed(() => [...records.value].sort((first, second) => createdTimestamp(second.createdAt) - createdTimestamp(first.createdAt)))
@@ -304,8 +323,6 @@ const hasRecordedMoney = value => value !== null && value !== undefined && value
 const recordedMoney = value => hasRecordedMoney(value) ? currency(value) : 'Not recorded'
 const orderLineTotal = line => hasRecordedMoney(line.total) ? line.total : hasRecordedMoney(line.unitPrice) && hasRecordedMoney(line.quantity) ? Number(line.unitPrice) * Number(line.quantity) : null
 const currency = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(cents || 0) / 100)
-const budgetAvailable = budget => Math.max(0, Number(budget?.total || 0) - Number(budget?.committed || 0) - Number(budget?.spent || 0))
-const eligibleBudgetsFor = record => budgets.value.filter(budget => String(budget.department || '') === String(record?.department || 'Inventory'))
 const procurementCheckKeys = ['productsCorrect', 'quantitiesVerified', 'availabilityConfirmed', 'pricesVerified']
 const procurementQuoteVerified = recordId => procurementCheckKeys.every(key => procurementChecksByRecord.value[recordId]?.[key])
 const setProcurementQuoteVerified = (recordId, checked) => {
@@ -318,8 +335,7 @@ const openProcurementDetails = async record => {
     const request = relatedInventoryRequest(record) || record
     quoteDraftByRecord.value[record.id] = {
       lines: (record.lines || []).map(line => ({ ...line, unitPrice: Number(line.unitPrice || 0) / 100 })),
-      quoteReference: '', quoteDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()),
-      category: record.lines?.[0]?.category || 'Clinic Supplies',
+      invoiceNumber: '', invoiceDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()),
       deliveryDate: request.requiredDate || '', deliveryLocation: request.lines?.[0]?.location || request.location || '',
       paymentTerms: '', warranty: '', terms: '', taxTreatment: 'not-applicable', adjustments: [], statedTotal: '',
     }
@@ -330,8 +346,19 @@ const openProcurementDetails = async record => {
   } catch (caught) { error.value = caught.message }
 }
 const closeProcurementDetails = () => { selectedProcurementRecord.value = null }
-const openFinanceOrderDetails = record => { selectedFinanceOrder.value = record }
-const closeFinanceOrderDetails = () => { selectedFinanceOrder.value = null }
+const openFinanceOrderDetails = async record => {
+  selectedFinanceOrder.value = record
+  financeOrderDocuments.value = []
+  financeRejecting.value = false
+  financeDecisionReason.value = ''
+  try {
+    const history = await api(`/records/${record.id}/history`)
+    financeOrderDocuments.value = history.documents || []
+  } catch (caught) {
+    error.value = caught.message
+  }
+}
+const closeFinanceOrderDetails = () => { selectedFinanceOrder.value = null; financeOrderDocuments.value = []; financeRejecting.value = false; financeDecisionReason.value = '' }
 const quoteTotal = record => {
   const quote = quoteDraftByRecord.value[record?.id]
   if (!quote) return 0
@@ -350,10 +377,10 @@ const quotePricingMessage = record => {
   if (quote.adjustments.some(row => !Number.isFinite(Number(row.amount || 0)) || Number(row.amount || 0) < 0)) return 'Enter a valid amount for each charge or discount.'
   if (quote.adjustments.some(row => Number(row.amount || 0) > 0 && !String(row.label || '').trim())) return 'Add a description for each charge or discount with an amount.'
   if (quote.taxTreatment !== 'separate' && quote.adjustments.some(row => row.type === 'tax' && Number(row.amount || 0) > 0)) return 'Choose “Tax is listed as a separate amount” or remove the separate tax amount.'
-  if (!Number(quote.statedTotal) || Number(quote.statedTotal) <= 0) return 'Enter the final total shown on the supplier’s quote.'
+  if (!Number(quote.statedTotal) || Number(quote.statedTotal) <= 0) return 'Enter the final total shown on the supplier invoice.'
   const difference = Math.abs(Number(quote.statedTotal) - quoteTotal(record))
-  if (Math.round(difference * 100) > 0) return `The totals differ by ${currency(Math.round(difference * 100))}. Check the item prices and quote charges.`
-  return 'Check that the entered prices match the supplier’s quotation.'
+  if (Math.round(difference * 100) > 0) return `The totals differ by ${currency(Math.round(difference * 100))}. Check the item prices and invoice charges.`
+  return 'Check that the entered prices match the supplier invoice.'
 }
 const quoteTaxTreatmentLabel = record => taxTreatmentLabel(quoteTaxTreatment(record))
 const addQuoteAdjustment = record => quoteDraftByRecord.value[record.id].adjustments.push({ id: `adjustment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'fee', label: '', amount: 0 })
@@ -363,10 +390,11 @@ const financeReadinessItems = record => {
   const checks = procurementChecksByRecord.value[record?.id]
   const items = []
   if (!supplierByRecord.value[record?.id]) items.push('Choose the clinic supplier.')
-  if (!quote?.quoteDate || !String(quote.category || '').trim() || !quote.deliveryDate || !String(quote.deliveryLocation || '').trim()) items.push('Complete the quotation date, budget category, expected delivery date, and delivery location.')
-  if (!quoteTotalMatches(record)) items.push('Complete the quote prices and make the calculated total match the supplier’s total.')
-  if (!evidenceByRecord.value[record?.id]?.length) items.push('Attach the supplier quotation file.')
-  if (!checks || procurementCheckKeys.some(key => !checks[key])) items.push('Confirm that the quote matches the requested items and quantities.')
+  if (!String(quote?.invoiceNumber || '').trim() || !quote?.invoiceDate) items.push('Enter the supplier invoice number and invoice date.')
+  if (!quote?.deliveryDate || !String(quote.deliveryLocation || '').trim()) items.push('Enter the expected delivery date and delivery location.')
+  if (!quoteTotalMatches(record)) items.push('Complete the invoice prices and make the calculated total match the supplier invoice.')
+  if (!evidenceByRecord.value[record?.id]?.length) items.push('Attach the supplier invoice file.')
+  if (!checks || procurementCheckKeys.some(key => !checks[key])) items.push('Confirm that the invoice matches the requested items and quantities.')
   return items
 }
 const readyForFinance = record => {
@@ -374,7 +402,8 @@ const readyForFinance = record => {
 }
 const actionSuccessMessage = actionName => ({
   confirm: 'Purchase order prepared and sent to Finance for approval.',
-  approve: 'Purchase order approved. Procurement can record when it is issued externally.',
+  approve: 'Purchase order approved. Procurement can now issue it to the supplier.',
+  reject: 'Purchase order rejected and returned to Procurement.',
   issue: 'Purchase order issue recorded. Inventory can receive the delivery after supplier confirmation.',
 }[actionName] || 'Supply workflow updated.')
 const action = async (record, actionName, extra = {}) => {
@@ -394,7 +423,7 @@ const sendForApproval = async record => {
   await action(record, 'confirm', {
     supplierId: supplierByRecord.value[record.id],
     lines: quote.lines.map(line => ({ itemId: line.itemId, quantity: line.quantity, unitPrice: Number(line.unitPrice) })),
-    quoteReference: quote.quoteReference, quoteDate: quote.quoteDate, category: quote.category,
+    invoiceNumber: quote.invoiceNumber, invoiceDate: quote.invoiceDate,
     deliveryDate: quote.deliveryDate, deliveryLocation: quote.deliveryLocation, paymentTerms: quote.paymentTerms,
     warranty: quote.warranty, terms: quote.terms, taxTreatment: quote.taxTreatment,
     adjustments: quote.adjustments.map(({ type, label, amount }) => ({ type, label, amount: Number(amount || 0) })),
@@ -403,7 +432,8 @@ const sendForApproval = async record => {
   })
   if (!error.value) closeProcurementDetails()
 }
-const approve = record => action(record, 'approve', { budgetId: budgetByRecord.value[record.id], approvedAmount: Number(record.total ?? record.requestedAmount ?? 0) / 100, remarks: 'Approved' })
+const approve = record => action(record, 'approve', { remarks: 'Approved after Finance review.' }).then(() => { if (!error.value) closeFinanceOrderDetails() })
+const rejectFinanceOrder = record => action(record, 'reject', { remarks: financeDecisionReason.value.trim() }).then(() => { if (!error.value) closeFinanceOrderDetails() })
 const goToProcurementOrders = () => router.push('/procurement/orders')
 const uploadQuotation = async (record, event) => {
   const file = event.target.files?.[0]
@@ -425,9 +455,9 @@ const uploadQuotation = async (record, event) => {
     await api(`/records/${record.id}/documents`, { name: file.name, contentType: file.type, data: encoded })
     const history = await api(`/records/${record.id}/history`)
     evidenceByRecord.value[record.id] = history.documents || []
-    toast.success('Quotation saved as an internal clinic document.')
+    toast.success('Supplier invoice saved as an internal clinic document.')
   } catch (caught) {
-    error.value = caught.message || 'Unable to upload quotation.'
+    error.value = caught.message || 'Unable to upload the supplier invoice.'
     toast.error(error.value)
   } finally { busy.value = false; event.target.value = '' }
 }
@@ -449,6 +479,7 @@ onMounted(load)
 .supply-requests-page .form-field, .supply-requests-page .form-field-label { display:flex; flex-direction:column; gap:.42rem; color:var(--ac-text-secondary); font-size:.875rem; font-weight:600; }
 .supply-requests-page .form-field b { color:var(--ac-danger); }
 .supply-requests-page .form-field small { color:var(--ac-text-muted); font-size:.75rem; font-weight:400; line-height:1.25rem; }
+.supply-requests-page .category-select-field .appearance-select { margin:0; }
 .supply-requests-page .delivery-location-panel { border:1px solid var(--ac-border); border-radius:.75rem; background:var(--ac-surface-soft); padding:1rem; }
 .supply-requests-page input:not([type="checkbox"]), .supply-requests-page select, .supply-requests-page textarea { width:100%; border:1px solid var(--ac-border-strong); border-radius:.5rem; background:var(--ac-surface); padding:.7rem .8rem; color:var(--ac-text); font-weight:400; }
 .supply-requests-page input::placeholder, .supply-requests-page textarea::placeholder { color:var(--ac-text-muted); }

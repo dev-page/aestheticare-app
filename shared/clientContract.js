@@ -1,6 +1,6 @@
 import { serviceOnlyClinicPolicies } from './clinicPolicyContent.js'
 
-export const clientContractPolicies = (source = {}, { source: bookingSource = '', branch = null } = {}) => {
+export const clientContractPolicies = (source = {}, { branch = null } = {}) => {
   const policy = serviceOnlyClinicPolicies(source)
   const linked = Array.isArray(branch?.enforcedPolicyKeys) ? new Set(branch.enforcedPolicyKeys) : null
   const definitions = [
@@ -8,12 +8,10 @@ export const clientContractPolicies = (source = {}, { source: bookingSource = ''
     ['cancellationPolicy', 'Cancellation Policy', 'serviceCancellationPolicyEnabled'],
     ['reschedulePolicy', 'Rescheduling Policy', 'serviceReschedulingPolicyEnabled'],
     ['noShowPolicy', 'No-Show Policy', 'serviceNoShowPolicyEnabled'],
-    ['walkInPolicy', 'Walk-In Policy', 'walkInPolicyEnabled'],
   ]
   return definitions.filter(([key, , flag]) => {
     const enabled = policy[flag] ?? policy[`${key}Enabled`]
     return enabled === true && String(policy[key] || '').trim() && (!linked || linked.has(key))
-      && (key !== 'walkInPolicy' || !bookingSource || bookingSource === 'walk_in')
   }).map(([key, title]) => ({ key, title, text: String(policy[key]).trim() }))
 }
 

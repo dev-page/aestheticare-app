@@ -708,7 +708,10 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isSuperadmin()
         || resource.data.sharedDirectory == true
         || resource.data.createdForClinicId == request.auth.uid
-        || isStaffOfOwner(resource.data.createdForClinicId));
+        || isStaffOfOwner(resource.data.createdForClinicId)
+        || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
+          && (isOwnerOfBranch(resource.data.branchId) || hasPermission('inventory:view') || hasPermission('procurement:view')
+            || hasPermission('suppliers:create') || hasPermission('suppliers:update'))));
       allow create: if isSignedIn() && hasPermission('suppliers:create')
         && request.resource.data.createdForClinicId != null
         && (request.resource.data.createdForClinicId == request.auth.uid || isStaffOfOwner(request.resource.data.createdForClinicId))
@@ -723,13 +726,13 @@ service cloud.firestore {
     match /clinicSuppliers/{associationId} {
       allow read: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('inventory:view') || hasPermission('procurement:view')
+        && (isOwnerOfBranch(resource.data.branchId) || hasPermission('inventory:view') || hasPermission('procurement:view')
           || hasPermission('suppliers:create') || hasPermission('suppliers:update'));
       allow create: if isSignedIn() && request.resource.data.branchId != null
-        && canAccessBranch(request.resource.data.branchId) && hasPermission('suppliers:create')
+        && canAccessBranch(request.resource.data.branchId) && (isOwnerOfBranch(request.resource.data.branchId) || hasPermission('suppliers:create'))
         && request.resource.data.createdBy == request.auth.uid;
       allow update: if isSignedIn() && resource.data.branchId != null
-        && canAccessBranch(resource.data.branchId) && hasPermission('suppliers:update')
+        && canAccessBranch(resource.data.branchId) && (isOwnerOfBranch(resource.data.branchId) || hasPermission('suppliers:update'))
         && request.resource.data.branchId == resource.data.branchId
         && request.resource.data.clinicId == resource.data.clinicId
         && request.resource.data.supplierId == resource.data.supplierId;

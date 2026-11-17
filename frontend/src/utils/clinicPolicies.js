@@ -24,7 +24,6 @@ export const getClinicPolicyForBranch = async (db, branchId, knownClinic = null)
       ['cancellationPolicy', ['cancellationPolicyEnabled', 'serviceCancellationPolicyEnabled', 'refundPolicyEnabled']],
       ['reschedulePolicy', ['reschedulePolicyEnabled', 'serviceReschedulingPolicyEnabled']],
       ['noShowPolicy', ['noShowPolicyEnabled', 'serviceNoShowPolicyEnabled']],
-      ['walkInPolicy', ['walkInPolicyEnabled']],
     ]
     definitions.forEach(([key, enabledKeys]) => {
       if (!linked.has(key)) enabledKeys.forEach((enabledKey) => { policy[enabledKey] = false })

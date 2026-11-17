@@ -713,8 +713,10 @@ onUnmounted(() => { clearInterval(clockTimer) })
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-review-row .walk-in-review-note { color: var(--ac-warning); }
 :global(html[data-ac-theme="dark"]) .walk-in-desk .walk-in-payment-note { background: var(--ac-surface-soft); border-color: var(--ac-border); color: var(--ac-text-secondary); }
 :global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form { background: var(--ac-surface-soft); border-color: var(--ac-border); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form :is(.field-label, .muted) { color: var(--ac-text-secondary); }
-:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .desk-input { background: var(--ac-bg-deep); border-color: var(--ac-border); color: var(--ac-text); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .field-label { color: #533a29 !important; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .muted { color: #73533d !important; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .desk-input { background: #21150e !important; border-color: #805b3d !important; color: #fff7ed !important; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .new-recipient-form .desk-input::placeholder { color: #c8aa8c !important; }
 .page-heading, .section-heading, .client-heading, .visit-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .page-heading { align-items: flex-start; }
 h1 { margin: 0; font-size: clamp(26px, 3vw, 34px); font-weight: 700; }

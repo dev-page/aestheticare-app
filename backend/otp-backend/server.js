@@ -727,6 +727,7 @@ const configuredCorsOrigins = new Set(
     process.env.FRONTEND_BASE_URL,
     process.env.APP_URL,
     process.env.PUBLIC_APP_URL,
+    process.env.CUSTOMER_APP_URL,
     process.env.VERCEL_PROJECT_PRODUCTION_URL,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
     'https://aestheticare.online',
@@ -2371,7 +2372,6 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
       ['cancellationPolicy', ['cancellationPolicyEnabled', 'serviceCancellationPolicyEnabled', 'refundPolicyEnabled']],
       ['reschedulePolicy', ['reschedulePolicyEnabled', 'serviceReschedulingPolicyEnabled']],
       ['noShowPolicy', ['noShowPolicyEnabled', 'serviceNoShowPolicyEnabled']],
-      ['walkInPolicy', ['walkInPolicyEnabled']],
     ]
     definitions.forEach(([key, enabledKeys]) => {
       if (!linked.has(key)) enabledKeys.forEach((enabledKey) => { policy[enabledKey] = false })
@@ -7078,7 +7078,6 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       ['paymentPolicy', 'Payment policy'],
       ['noShowPolicy', 'No-show policy'],
     ]
-    if (walkIn) policyDefinitions.push(['walkInPolicy', 'Walk-in policy'])
     const clinicPolicySnapshot = Object.fromEntries(
       policyDefinitions
         .filter(([key]) => policyData[`${key}Enabled`] === true && String(policyData[key] || '').trim())
@@ -11199,6 +11198,7 @@ app.use((error, req, res, _next) => {
     requestId,
     method: req.method,
     path: req.originalUrl || req.url,
+    origin: req.get('origin') || null,
     errorName: error?.name || null,
     errorCode: error?.code || null,
     errorMessage: error?.message || null,

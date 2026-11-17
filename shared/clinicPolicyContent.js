@@ -18,6 +18,8 @@ export const walkInServicePolicy = acknowledgementRequired => `Full payment is r
 // Ignore retired settings even when older clinic documents still contain them.
 export const serviceOnlyClinicPolicies = source => {
   const policy = Object.fromEntries(Object.entries(source || {}).filter(([key]) => !isProductOrderPolicyKey(key)))
-  if (typeof policy.walkInPolicy === 'string' && /product|counter sale|pickup|delivery/i.test(policy.walkInPolicy)) policy.walkInPolicy = walkInServicePolicy(policy.walkInPolicyAcknowledgementRequired !== false)
+  delete policy.walkInPolicy
+  delete policy.walkInPolicyEnabled
+  delete policy.walkInPolicyAcknowledgementRequired
   return policy
 }

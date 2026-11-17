@@ -20,6 +20,10 @@ Only the customer app build's HTML links to the customer manifest. The website H
 
 Choose the real Android package ID and signing key when generating the APK. PWABuilder generates the corresponding Digital Asset Links file. Publish that exact file at `https://<app-host>/.well-known/assetlinks.json` to associate the signed APK with the site. Do not use placeholder package names or certificate fingerprints. Save the signing key for future updates.
 
+The repository includes a deployment template at `frontend/public/.well-known/assetlinks.json`. Replace both placeholders with the package name and SHA-256 fingerprint for the certificate that signs the APK users install (use the Play App Signing fingerprint for a Play Store build). The template alone cannot verify the TWA: the deployed response must contain the real values and return directly with HTTP 200, `Content-Type: application/json`, and no login/redirect page. Both Vercel and Firebase Hosting are configured to serve it as a static JSON file; Firebase Hosting must not ignore the `.well-known` directory.
+
+If the customer app is deployed on a different host from the API, build it with `VITE_OTP_API_BASE_URL` set to the API base URL (for example, `https://aestheticare.online/api`) and set the backend's `CUSTOMER_APP_URL` to the app's exact HTTPS origin (scheme and host, with no path). `CUSTOMER_APP_URL` is included in the API's exact-origin CORS allowlist. Keep it in sync with Firebase Authentication's authorized domains. If the PWA and API share one origin, the default same-origin `/api` URL needs no extra CORS entry.
+
 Official packaging instructions: https://github.com/pwa-builder/PWABuilder/blob/main/docs/builder/android.md
 
 ## Navigation and account behavior

@@ -90,6 +90,8 @@
                   {{ service }}
                 </span>
               </div>
+              <p v-else-if="catalogLoading" class="center-panel-copy text-sm" role="status">Loading offered services...</p>
+              <p v-else-if="catalogError" class="center-panel-copy text-sm">Services are temporarily unavailable. Open Services &amp; Consultations to retry.</p>
               <p v-else class="center-panel-copy text-sm">No services listed yet.</p>
             </div>
 
@@ -163,7 +165,11 @@
               </div>
             </div>
 
-            <div v-if="loading" class="center-muted-state py-10">Loading services and consultations...</div>
+            <div v-if="loading || catalogLoading" class="center-muted-state py-10" role="status">Loading services and consultations...</div>
+            <div v-else-if="catalogError" class="center-muted-state py-10" role="alert">
+              <p>{{ catalogError }}</p>
+              <button type="button" class="service-category-reset mt-3" @click="retryCenterLoad">Try again</button>
+            </div>
             <div v-else-if="!serviceListings.length && !items.some(item => item.type === 'Consultation')" class="center-muted-state py-10">
               No services or consultations have been published yet.
             </div>
@@ -656,6 +662,8 @@ const centerId = String(route.params.id || '')
 const tabs = ['About Us', 'Services & Consultations', 'Reviews']
 const activeTab = ref(route.query.demo === 'service' ? 'Services & Consultations' : 'About Us')
 const loading = ref(true)
+const catalogLoading = ref(false)
+const catalogError = ref('')
 const reviews = ref([])
 const items = ref([])
 const searchQuery = ref('')
@@ -1482,12 +1490,76 @@ const loadBranchData = trackPageLoad(async (branchId) => {
   await nextTick()
   await initBranchMap()
 
-  const catalogResponse = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/catalog`)
-  const catalogPayload = await catalogResponse.json().catch(() => ({}))
-  if (!catalogResponse.ok || !catalogPayload?.success) throw new Error(catalogPayload?.error || 'Unable to load clinic services and consultations.')
-  const catalogPosts = Array.isArray(catalogPayload.posts) ? catalogPayload.posts : []
+  catalogLoading.value = true
+  catalogError.value = ''
+  items.value = []
+  center.value.services = []
+  const catalogUrl = `${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/catalog`
+  try {
+    let catalogResponse
+    try {
+      catalogResponse = await fetch(catalogUrl, { headers: { Accept: 'application/json' } })
+    } catch (error) {
+      console.error('Customer clinic catalog request did not receive an HTTP response.', {
+        branchId,
+        url: catalogUrl,
+        origin: window.location.origin,
+        errorName: error?.name || null,
+        errorMessage: error?.message || String(error),
+      })
+      throw new Error('We could not reach this clinic’s service list. Check your connection and try again.')
+    }
 
-  items.value = catalogPosts.filter(isCustomerCareListing).map((post) => {
+    const responseText = await catalogResponse.text().catch(() => '')
+    const contentType = catalogResponse.headers.get('content-type') || ''
+    let catalogPayload = null
+    try {
+      catalogPayload = responseText ? JSON.parse(responseText) : null
+    } catch (_error) {
+      catalogPayload = null
+    }
+
+    const catalogData = catalogPayload?.data && typeof catalogPayload.data === 'object'
+      ? catalogPayload.data
+      : catalogPayload
+    const catalogRows = [
+      catalogData?.posts,
+      catalogData?.services,
+      catalogData?.center?.posts,
+      catalogData?.center?.services,
+    ].find(Array.isArray)
+
+    if (!catalogResponse.ok || catalogPayload?.success === false || catalogData?.success === false || !catalogRows) {
+      console.error('Customer clinic catalog response was unsuccessful or had an unexpected shape.', {
+        branchId,
+        url: catalogUrl,
+        origin: window.location.origin,
+        status: catalogResponse.status,
+        statusText: catalogResponse.statusText,
+        contentType,
+        requestId: catalogPayload?.requestId || catalogResponse.headers.get('x-request-id') || null,
+        serverError: catalogPayload?.error || catalogData?.error || null,
+        responseKeys: catalogPayload && typeof catalogPayload === 'object' ? Object.keys(catalogPayload) : [],
+        responsePreview: responseText.slice(0, 400),
+      })
+      if (!catalogResponse.ok) {
+        throw new Error(`Services could not be loaded (HTTP ${catalogResponse.status}). Please try again.`)
+      }
+      throw new Error('The clinic service list returned an unexpected response. Please try again.')
+    }
+
+    const catalogPosts = catalogRows
+      .filter((post) => post && typeof post === 'object' && !Array.isArray(post))
+      .map((post) => ({
+        ...post,
+        postType: post.postType || (post.consultationName ? 'Consultation' : 'Service'),
+        // This is a public catalog endpoint: alternate response envelopes may
+        // omit the visibility flags, but the API has already applied them.
+        financeStatus: post.financeStatus || 'approved',
+        isPublished: post.isPublished ?? true,
+      }))
+
+    items.value = catalogPosts.filter(isCustomerCareListing).map((post) => {
     const packageComponents = Array.isArray(post.packageServiceIds)
       ? post.packageServiceIds.map((componentId) => catalogPosts.find((candidate) => candidate.id === componentId) || {}).filter(Boolean)
       : []
@@ -1546,8 +1618,23 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       imageUrl: post.imageUrl || '',
       quantity: 1,
     }
-  })
-  consultationModeSelection.value = Object.fromEntries(items.value.filter(item => item.type === 'Consultation').map(item => [item.id, item.consultationModes[0]]))
+    })
+    consultationModeSelection.value = Object.fromEntries(items.value.filter(item => item.type === 'Consultation').map(item => [item.id, item.consultationModes[0]]))
+
+    const catalogServiceNames = catalogRows
+      .map((post) => typeof post === 'string'
+        ? post.trim()
+        : String(post?.productName || post?.serviceName || post?.consultationName || post?.packageName || post?.title || '').trim())
+      .filter(Boolean)
+    center.value.services = [...new Set(catalogServiceNames)]
+  } catch (error) {
+    items.value = []
+    center.value.services = []
+    consultationModeSelection.value = {}
+    catalogError.value = error?.message || 'Services are temporarily unavailable. Please try again.'
+  } finally {
+    catalogLoading.value = false
+  }
 
   startReviewsListener(branchId)
   await startAppointmentsListener(branchId)
@@ -1558,6 +1645,24 @@ const loadBranchData = trackPageLoad(async (branchId) => {
     syncSelectedSlot()
   }
 })
+
+const retryCenterLoad = async () => {
+  loading.value = true
+  try {
+    await loadBranchData(centerId)
+  } catch (error) {
+    console.error('Customer center reload failed.', {
+      branchId: centerId,
+      origin: window.location.origin,
+      errorName: error?.name || null,
+      errorCode: error?.code || error?.status || null,
+      errorMessage: error?.message || String(error),
+    })
+    toast.error('The clinic details could not be refreshed. Please try again.')
+  } finally {
+    loading.value = false
+  }
+}
 
 const bookingSlots = computed(() => {
   const preferredPractitioner = followUpPreferredPractitionerId.value
@@ -3095,8 +3200,14 @@ onMounted(trackPageLoad(async () => {
       toast.error('This branch is currently unavailable.')
       router.replace({ name: 'centers' })
     } else {
-      console.error(error)
-      toast.error('Failed to load center page.')
+      console.error('Customer center page failed to load.', {
+        branchId: centerId,
+        origin: window.location.origin,
+        errorName: error?.name || null,
+        errorCode: error?.code || error?.status || null,
+        errorMessage: error?.message || String(error),
+      })
+      toast.error('The clinic details could not be loaded. Check your connection and try again.')
     }
   } finally {
     loading.value = false

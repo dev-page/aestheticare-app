@@ -164,12 +164,13 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { collection, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { usePermissions } from '@/composables/usePermissions'
 
 defineProps({ embedded: { type: Boolean, default: false } })
@@ -196,6 +197,31 @@ const blank = () => ({
   verificationStatus: 'not_checked', checkedAt: '', sharedDirectory: false,
 })
 const form = ref(blank())
+
+const api = async path => {
+  await auth.authStateReady?.()
+  const token = await auth.currentUser?.getIdToken()
+  if (!token) throw new Error('Sign in to view supplier records.')
+  let lastError
+  for (const base of OTP_BACKEND_CANDIDATES) {
+    let response
+    try {
+      response = await fetch(`${base}/supply${path}`, { headers: { Authorization: `Bearer ${token}` } })
+    } catch (cause) {
+      lastError = cause
+      continue
+    }
+    let json = {}
+    try { json = await response.json() } catch { json = {} }
+    if (!response.ok || json.success === false) {
+      const failure = new Error(json.error || 'Unable to load supplier records.')
+      if (response.status >= 500) { lastError = failure; continue }
+      throw failure
+    }
+    return json.data
+  }
+  throw lastError || new Error('The supplier service is temporarily unavailable.')
+}
 
 const canCreate = computed(() => isClinicAdminOwner.value || hasPermission('suppliers:create'))
 const canManage = computed(() => isClinicAdminOwner.value || hasPermission('suppliers:update'))
@@ -246,13 +272,12 @@ async function load() {
   error.value = ''
   loadFailed.value = false
   try {
-    const links = await getDocs(query(collection(db, 'clinicSuppliers'), where('branchId', '==', scope.value.branchId)))
-    associations.value = (await Promise.all(links.docs.map(async link => {
-      const supplierId = link.data().supplierId
-      if (!supplierId) return null
-      const supplier = await getDoc(doc(db, 'suppliers', supplierId))
-      return supplier.exists() ? view({ id: supplier.id, ...supplier.data() }, { id: link.id, ...link.data() }) : null
-    }))).filter(Boolean)
+    const workspace = await api(`/workspace?branchId=${encodeURIComponent(scope.value.branchId)}`)
+    associations.value = (workspace.suppliers || []).filter(supplier => supplier.clinicSupplierId).map(supplier => view(supplier, {
+      id: supplier.clinicSupplierId,
+      status: supplier.associationStatus,
+      internalNotes: supplier.clinicSupplierNotes,
+    }))
     if (showDirectory.value) await loadDirectory()
   } catch (cause) {
     error.value = errorMessage(cause)

@@ -201,8 +201,8 @@ export const permissionGroups = [
         description: 'Purchases, payables, refunds, sales, and reports.',
         permissions: [
           { key: 'finance:purchases:view', label: 'View Purchase History', description: 'Review purchase costs without managing procurement.', icon: 'mdi:package-variant-closed' },
-          { key: 'finance:payables:view', label: 'View Accounts Payable', description: 'Review supplier balances, budgets, and settlement status.', icon: 'mdi:cash-minus' },
-          { key: 'finance:payables:approve', label: 'Approve Procurement Budgets', description: 'Review budget requests, invoices, matches, and payment approvals.', icon: 'mdi:check-decagram-outline' },
+          { key: 'finance:payables:view', label: 'View Supplier Invoices & Payments', description: 'Review supplier invoices, payment records, and settlement status.', icon: 'mdi:cash-minus' },
+          { key: 'finance:payables:approve', label: 'Review Supplier Invoices', description: 'Approve or reject purchase orders and review supplier payment records.', icon: 'mdi:check-decagram-outline' },
           { key: 'finance:payables:settle', label: 'Settle Supplier Balances', description: 'Record payment and settle delivered purchase variances.', icon: 'mdi:bank-check' },
           { key: 'finance:refunds:view', label: 'View Refunds', description: 'Review refund requests and issued vouchers.', icon: 'mdi:cash-refund' },
           { key: 'finance:refunds:manage', label: 'Manage Refunds', description: 'Approve or reject refunds and issue vouchers.', icon: 'mdi:cash-refund' },

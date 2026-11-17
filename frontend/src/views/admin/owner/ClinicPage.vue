@@ -509,7 +509,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       { key: 'reschedulePolicy', enabledKey: 'reschedulePolicyEnabled', label: 'Rescheduling Policy', category: 'Services', icon: 'mdi:calendar-sync-outline', iconClass: 'border-sky-500/35 bg-sky-500/10 text-sky-300' },
       { key: 'noShowPolicy', enabledKey: 'noShowPolicyEnabled', label: 'No-Show Policy', category: 'Services', icon: 'mdi:account-clock-outline', iconClass: 'border-amber-500/35 bg-amber-500/10 text-amber-300' },
       { key: 'consultationPolicy', enabledKey: 'consultationPolicyEnabled', label: 'Consultation Policy', category: 'Services', icon: 'mdi:stethoscope', iconClass: 'border-violet-500/35 bg-violet-500/10 text-violet-300' },
-      { key: 'walkInPolicy', enabledKey: 'walkInPolicyEnabled', label: 'Walk-In Policy', category: 'Walk-In', icon: 'mdi:walk', iconClass: 'border-cyan-500/35 bg-cyan-500/10 text-cyan-300' }
     ]
 
     const visiblePolicies = computed(() => policyDefinitions

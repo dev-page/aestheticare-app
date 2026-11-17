@@ -84,7 +84,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const setupTasks = computed(() => {
       const linkedKeys = setupBranch.value?.enforcedPolicyKeys
       const policiesLinked = Array.isArray(linkedKeys)
-        ? linkedKeys.some(key => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy', 'walkInPolicy'].includes(key))
+        ? linkedKeys.some(key => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy'].includes(key))
         : Boolean(setupBranch.value?.policiesLinkedAt)
       const postTypes = new Set(setupListings.value.map(post => String(post.postType || '').toLowerCase()))
       const plan = String(subscriptionStore.activePlan || '').toLowerCase()
@@ -228,7 +228,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             policyData.reschedulePolicyEnabled,
             policyData.serviceNoShowPolicyEnabled,
             policyData.noShowPolicyEnabled,
-            policyData.walkInPolicyEnabled,
           ].some(value => value === true)
         } catch (error) {
           if (!isPermissionDenied(error)) throw error
