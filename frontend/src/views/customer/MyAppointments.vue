@@ -1722,12 +1722,12 @@ const startAppointmentsListener = (userId) => {
       const now = new Date()
       const all = await Promise.all(snapshot.docs.map(async (snap) => {
         const data = snap.data()
-        const waitingForInvite = Boolean(data.consultationCustomerReadyAt && !data.consultationInviteAt)
-        const meetingSnap = waitingForInvite ? null : await getDoc(doc(db, 'appointmentMeetings', snap.id))
+        const invitationReady = Boolean(data.consultationCodeVerifiedAt && data.consultationInviteAt)
+        const meetingSnap = invitationReady ? await getDoc(doc(db, 'appointmentMeetings', snap.id)) : null
         return {
           id: snap.id,
           ...data,
-          ...(meetingSnap?.exists() && meetingSnap.data().hostVerified && data.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (data.assignedPractitionerId || data.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${data.date}T${data.time}+08:00`) ? meetingSnap.data() : { meetLink: '' }),
+          ...(meetingSnap?.exists() && (meetingSnap.data().hostVerified || meetingSnap.data().meetingProvider === 'google-meet-manual') && data.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (data.assignedPractitionerId || data.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${data.date}T${data.time}+08:00`) ? meetingSnap.data() : { meetLink: '' }),
           clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
         }
       }))
@@ -2114,7 +2114,7 @@ const submitServiceKey = async (serviceKey, appointmentOverride = null) => {
       const result = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/consultation-access`, { serviceKey })
       appointment.consultationCustomerReadyAt = new Date().toISOString()
       appointment.meetLink = ''
-      toast.success('You are checked in. Your practitioner will invite you to Google Meet when ready.')
+      toast.success('You are checked in. The clinic will add your Google Meet link and notify you when it is ready.')
     } else {
       await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
       toast.success('Service key verified.')

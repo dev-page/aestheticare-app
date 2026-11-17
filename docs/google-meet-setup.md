@@ -1,24 +1,20 @@
-# Google Meet consultation hosting
+# Google Meet for online consultations
 
-Customers use **My Appointments > Online consultations > Check in with saved code**, or enter the code from their email. The saved code appears after the required initial payment; the email is available as a fallback. The backend verifies approval, signed contract, required payment, and appointment timing, then prepares the meeting. The customer waits in the app until the practitioner invites them. The invitation sends an in-app notification, reveals **Join Google Meet** to the customer, and opens Meet for the practitioner. Code submission is allowed from 30 minutes before the appointment until the arrival grace deadline. Five incorrect codes lock submissions for ten minutes.
+AesthetiCare uses manually created Google Meet rooms. It does not connect to a Google account, call the Meet API, or create Calendar events. Clinic staff still sign in to Google directly at `meet.google.com`; the Google unverified-app consent screen is not part of this workflow.
 
-The backend creates the event in the assigned practitioner's connected Google account's **primary calendar** and checks Google's returned organizer. It does not use a shared platform account. The practitioner may need to admit the customer. The practitioner must confirm identity and readiness in the start checklist. When Meet attendance access is available, the backend also requires a recent report of at least two active participants. If the attendance scope is unavailable or revoked, the practitioner must reconnect the Google account; app waiting-room records alone do not bypass that check. The paid consultation timer starts on the practitioner's **Start consultation** action. After finishing, the practitioner records notes and optional prescriptions, then ends the external call using **End meeting for all** in Google Meet.
+## Clinic workflow
 
-## Administrator configuration
+1. The customer signs the consultation agreement and pays the required amount.
+2. Within 30 minutes of the appointment, the customer enters their six-digit service key in **My Appointments**. This verifies check-in and places them in the virtual waiting room. The key is not a Google credential.
+3. A clinic employee with branch access and the `consultations:create` permission opens **Appointment Management > Service queue > Online Consultations**. They select **Create room in Google Meet**, sign in to the Google account that should host the call, and create a room.
+4. The employee copies the URL from Google Meet, returns to the appointment, and selects **Add link & notify**. AesthetiCare validates and saves the link, posts an in-app notification, and emails the customer's appointment email. If the email cannot be sent, the link remains available in the app and the clinic sees a warning.
+5. The customer and clinic open the same link from their appointment. The assigned practitioner confirms the customer's identity and starts the consultation timer in AesthetiCare.
+6. At the end, the Meet host selects **End meeting for everyone** in Google Meet. The assigned practitioner confirms that in AesthetiCare and saves the clinical notes.
 
-1. In the Google Cloud project, enable the **Google Calendar API** and **Google Meet REST API**. Configure the Google Auth Platform consent screen and a Web application OAuth client. The app requests `openid`, `email`, `https://www.googleapis.com/auth/calendar.events.owned`, and `https://www.googleapis.com/auth/meetings.space.readonly`. Add practitioner accounts as OAuth test users during development. The Meet read-only scope is sensitive and public use may require Google's OAuth verification. External apps in Testing can have refresh tokens expire after seven days for these scopes.
-2. Add these environment variables in the **backend host's secret/environment settings**, not the frontend:
-   - `GOOGLE_OAUTH_CLIENT_ID`
-   - `GOOGLE_OAUTH_CLIENT_SECRET`
-   - In Vercel production, the app sends `https://aestheticare.online/api/google-meet/oauth/callback`. Add that exact URI under the OAuth client's **Authorized redirect URIs**. The Vercel API route removes `/api` before Express handles the callback, but Google must receive the public URL including `/api`.
-   - For local development or preview deployments, set `GOOGLE_OAUTH_REDIRECT_URI` to that environment's public backend callback URL and register that exact URI separately.
-   - `GOOGLE_TOKEN_ENCRYPTION_KEY`: a stable, base64-encoded random 32-byte key. Changing it requires practitioners to reconnect.
-   - `FRONTEND_BASE_URL`: the trusted frontend origin used after successful connection.
-3. Deploy the backend, frontend, and Firestore rules together. This implementation polls the Meet REST API, so it does not need Google Workspace Events subscriptions or Pub/Sub. Connection states, account ownership mappings, encrypted refresh tokens, and code-attempt counters remain server-only. The customer cannot read the meeting link until the practitioner invitation is recorded.
-4. Each practitioner opens **Online Consultation > Connect Google account**, chooses their Google account, and grants the Calendar and Meet permissions. Existing connections must reconnect to grant the new Meet attendance scope. Their Google email can differ from their AesthetiCare email. Switching hosting accounts is blocked while future meetings created under the original account remain scheduled. Disconnecting removes stored credentials but does not delete existing Calendar events.
+For the assigned practitioner to have host controls, create the room while signed into that practitioner's Google account. If another employee creates it, that employee is the host and must end the call or make the practitioner a co-host in Google Meet.
 
-## Verification before rollout
+## Setup and account keys
 
-Use separate customer and practitioner accounts. Confirm that code submission puts the customer in the virtual queue without revealing the Meet link, the practitioner can invite them, the customer receives the invitation and can join, Meet attendance enables **Start Consultation**, and the practitioner action starts the timer. Also check revoked Google access, wrong codes, OAuth denial, incomplete payment/contract, changed practitioner/schedule, and organization admission policies. Mocked tests do not verify live Google authorization, Firestore rules deployment, or Meet host controls.
+No Google OAuth client, Calendar permission, Meet API scope, or Google service-account key is needed for this workflow. Email delivery uses the backend's existing email-provider configuration. AesthetiCare's six-digit service key remains the customer's appointment check-in code; it is not used to create or authenticate a Google room.
 
-Google references: [Calendar event creation](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert), [Meet API setup](https://developers.google.com/workspace/meet/api/guides/quickstart/nodejs), [Meet OAuth scopes](https://developers.google.com/workspace/meet/api/guides/authenticate-authorize), [OAuth app verification](https://support.google.com/cloud/answer/13463073?hl=en).
+Google OAuth credentials that were used by the older automatic-room workflow can remain in deployment settings while legacy consultation records still need them. New consultations do not use those credentials. Do not put a Firebase Admin service-account JSON key in the browser or use it as a Google Meet credential.

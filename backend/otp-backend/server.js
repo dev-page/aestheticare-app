@@ -4191,10 +4191,55 @@ const zipJsonBuffer = async (jsonBuffer, fileBaseName) => {
   return finalizePromise
 }
 
+const serializeBackupValue = (value) => {
+  if (value instanceof admin.firestore.Timestamp) {
+    return { __aestheticCareBackupType: 'timestamp', seconds: value.seconds, nanoseconds: value.nanoseconds }
+  }
+  if (value instanceof Date) {
+    return { __aestheticCareBackupType: 'date', value: value.toISOString() }
+  }
+  if (Buffer.isBuffer(value)) {
+    return { __aestheticCareBackupType: 'buffer', value: value.toString('base64') }
+  }
+  if (Array.isArray(value)) return value.map(serializeBackupValue)
+  if (!value || typeof value !== 'object') return value
+
+  if (value.constructor?.name === 'GeoPoint') {
+    return { __aestheticCareBackupType: 'geoPoint', latitude: value.latitude, longitude: value.longitude }
+  }
+  if (value.constructor?.name === 'DocumentReference' && typeof value.path === 'string') {
+    return { __aestheticCareBackupType: 'documentReference', path: value.path }
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, serializeBackupValue(nested)]))
+}
+
+const deserializeBackupValue = (value) => {
+  if (Array.isArray(value)) return value.map(deserializeBackupValue)
+  if (!value || typeof value !== 'object') return value
+
+  const type = value.__aestheticCareBackupType
+  if (type === 'timestamp') return new admin.firestore.Timestamp(Number(value.seconds), Number(value.nanoseconds || 0))
+  if (type === 'date') return new Date(String(value.value))
+  if (type === 'buffer') return Buffer.from(String(value.value || ''), 'base64')
+  if (type === 'geoPoint') return new admin.firestore.GeoPoint(Number(value.latitude), Number(value.longitude))
+  if (type === 'documentReference') return admin.firestore().doc(String(value.path || ''))
+
+  // Older exports serialized Timestamp's private fields directly.
+  if (Number.isInteger(value._seconds) && Number.isInteger(value._nanoseconds)) {
+    return new admin.firestore.Timestamp(value._seconds, value._nanoseconds)
+  }
+  if (value.type === 'firestore/timestamp' && Number.isInteger(Number(value.seconds))) {
+    return new admin.firestore.Timestamp(Number(value.seconds), Number(value.nanoseconds || 0))
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, deserializeBackupValue(nested)]))
+}
+
+const backupRecord = (docSnap) => ({ docId: docSnap.id, data: serializeBackupValue(docSnap.data() || {}) })
+
 const buildBackupPayload = async (firestore, ownerId) => {
   const clinicsSnapshot = await firestore.collection('clinics').where('ownerId', '==', ownerId).get()
-  const clinics = clinicsSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-  const branchIds = clinics.map((clinic) => clinic.id)
+  const clinics = clinicsSnapshot.docs.map(backupRecord)
+  const branchIds = clinics.map((clinic) => clinic.docId)
 
   const chunkArray = (items, size) => {
     const chunks = []
@@ -4214,7 +4259,7 @@ const buildBackupPayload = async (firestore, ownerId) => {
         queryRef = queryRef.where(extraFilter.field, extraFilter.op, extraFilter.value)
       }
       const snap = await queryRef.get()
-      snap.forEach((docSnap) => results.push({ id: docSnap.id, ...docSnap.data() }))
+      snap.forEach((docSnap) => results.push(backupRecord(docSnap)))
     }
     return results
   }
@@ -4238,9 +4283,10 @@ const buildBackupPayload = async (firestore, ownerId) => {
 
   const ownerData = ownerSnap.exists ? ownerSnap.data() : {}
   return {
+    formatVersion: 2,
     ownerId,
     generatedAt: new Date().toISOString(),
-    owner: ownerData,
+    owner: serializeBackupValue(ownerData),
     clinics,
     collections: {
       users: staffUsers,
@@ -4286,27 +4332,35 @@ const pruneOldBackups = async (firestore, bucket, ownerId) => {
   }
 }
 
-const generateOwnerBackup = async ({ ownerId, kind = 'manual', triggeredBy = 'system' }) => {
+const generateOwnerBackup = async ({ ownerId, kind = 'manual', triggeredBy = 'system', onStage = () => {} }) => {
   const firestore = admin.firestore()
+  onStage('checking Firebase Storage configuration')
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
   if (!bucketName) {
-    throw new Error('Firebase Storage bucket is not configured.')
+    const error = new Error('Firebase Storage bucket is not configured.')
+    error.status = 503
+    throw error
   }
   const bucket = admin.storage().bucket(bucketName)
+  onStage('collecting clinic records from Firestore')
   const backupPayload = await buildBackupPayload(firestore, ownerId)
 
+  onStage('preparing the backup file')
   const backupJson = JSON.stringify(backupPayload, null, 2)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const fileName = `backup-${timestamp}.json`
   const storagePath = `backups/${ownerId}/${timestamp}/${fileName}`
   const file = bucket.file(storagePath)
+  onStage('uploading the backup file to Firebase Storage')
   await file.save(backupJson, {
     contentType: 'application/json',
     resumable: false,
   })
 
+  onStage('saving backup history')
   const backupDoc = {
     ownerId,
+    formatVersion: 2,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     status: 'complete',
     size: Buffer.byteLength(backupJson, 'utf8'),
@@ -4316,6 +4370,7 @@ const generateOwnerBackup = async ({ ownerId, kind = 'manual', triggeredBy = 'sy
     triggeredBy,
   }
   await firestore.collection('backups').add(backupDoc)
+  onStage('applying backup retention')
   await pruneOldBackups(firestore, bucket, ownerId)
 
   return { storagePath, fileName }
@@ -4450,7 +4505,7 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
 const sendServiceCode = async ({ email, serviceKey, date, time }) => {
   if (!email) return { skipped: true, reason: 'Missing recipient email for the refreshed service code.' }
   if (!postmarkClient || !senderEmail) return { skipped: true, reason: 'Postmark not configured for the refreshed service code.' }
-  return sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends; the system will create your Google Meet link. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
+  return sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends. The clinic will add and send your Google Meet link after check-in. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
 }
 let runAppointmentPaymentHoldSweep = async () => ({ expired: 0 })
 const safelySweepAppointmentPaymentHolds = async () => {
@@ -4950,7 +5005,7 @@ app.get('/maps/cavite-boundary', async (_req, res) => {
 })
 
 registerGoogleConsultations(app, {
-  admin, google, requireAuth, authorizeClinicAction, loadUserContext,
+  admin, google, requireAuth, authorizeClinicAction, loadUserContext, sendEmail: sendPostmarkMessage,
   config: {
     clientId: googleOauthClientId, clientSecret: googleOauthClientSecret,
     redirectUri: googleOauthRedirectUri,
@@ -4961,7 +5016,7 @@ registerGoogleConsultations(app, {
 
 // Legacy manual creation cannot bypass customer verification or hosting identity.
 app.post('/google-meet/create-consultation-link', requireAuth, (req, res) => {
-  res.status(409).json({ success: false, error: 'The customer must submit their service code in My Appointments. Google Meet links are now generated automatically.' })
+  res.status(410).json({ success: false, error: 'Create the room in Google Meet, then add its link to the appointment in Online Consultations.' })
 })
 
 app.patch('/admin/system-admin/:uid/status', requireAuth, requireRole(['superadmin']), requirePermission('system:admins:manage'), async (req, res) => {
@@ -8121,6 +8176,57 @@ const authorizeOwnerBackupAccess = async (req, ownerId) => {
   assertWorkflow(belongsToOwner, 'You are not allowed to access this clinic backup.', 403)
 }
 
+const BACKUP_RESTORE_COLLECTIONS = Object.freeze([
+  'users', 'clients', 'appointments', 'transactions', 'attendance', 'payrolls',
+  'inventoryItems', 'suppliers', 'purchaseRequests', 'productServicePosts', 'reviews', 'messages',
+])
+
+const normalizeBackupRecords = (records, collectionName, ownerId, branchIds) => {
+  if (!Array.isArray(records)) throw new Error(`Backup collection ${collectionName} is malformed.`)
+  return records.map((record) => {
+    const docId = String(record?.docId || record?.id || '').trim()
+    assertWorkflow(docId && !docId.includes('/') && docId.length <= 1500, `Backup contains an invalid ${collectionName} record id.`, 400)
+    let rawData = record?.data
+    if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+      rawData = { ...(record || {}) }
+      delete rawData.id
+      delete rawData.docId
+      delete rawData.data
+    }
+    const data = deserializeBackupValue(rawData)
+    assertWorkflow(data && typeof data === 'object' && !Array.isArray(data), `Backup contains an invalid ${collectionName} record.`, 400)
+    if (collectionName === 'clinics') {
+      assertWorkflow(String(data.ownerId || '').trim() === ownerId, 'Backup contains a clinic branch outside this organization.', 403)
+    } else {
+      const recordBranches = [data.branchId, ...(Array.isArray(data.branchIds) ? data.branchIds : [])]
+        .map((value) => String(value || '').trim()).filter(Boolean)
+      assertWorkflow(recordBranches.some((branchId) => branchIds.has(branchId)), `Backup contains a ${collectionName} record outside this organization.`, 403)
+    }
+    return { collectionName, docId, data }
+  })
+}
+
+const readStoredBackupPayload = async ({ firestore, ownerId, backupId }) => {
+  const backupSnap = await firestore.collection('backups').doc(backupId).get()
+  assertWorkflow(backupSnap.exists, 'Backup was not found.', 404)
+  const metadata = backupSnap.data() || {}
+  assertWorkflow(String(metadata.ownerId || '').trim() === ownerId, 'You are not allowed to restore this backup.', 403)
+  assertWorkflow(metadata.status === 'complete' && String(metadata.storagePath || '').startsWith(`backups/${ownerId}/`), 'This backup is not complete or its file path is invalid.', 409)
+
+  const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+  assertWorkflow(bucketName, 'Firebase Storage bucket is not configured.', 503)
+  const [bytes] = await admin.storage().bucket(bucketName).file(metadata.storagePath).download()
+  let payload
+  try {
+    payload = JSON.parse(bytes.toString('utf8'))
+  } catch (_error) {
+    throw Object.assign(new Error('The backup file is not valid JSON.'), { status: 400 })
+  }
+  assertWorkflow(String(payload?.ownerId || '').trim() === ownerId, 'Backup data does not match this clinic organization.', 403)
+  assertWorkflow(payload?.collections && typeof payload.collections === 'object', 'This backup does not contain restorable clinic collections.', 400)
+  return payload
+}
+
 app.post('/owner/backup', requireAuth, requirePermission('backups:create'), async (req, res) => {
 
   const ownerId = String(req.body?.ownerId || '').trim()
@@ -8131,15 +8237,34 @@ app.post('/owner/backup', requireAuth, requirePermission('backups:create'), asyn
     })
   }
 
+  let stage = 'authorizing backup access'
   try {
     await authorizeOwnerBackupAccess(req, ownerId)
 
-    const result = await generateOwnerBackup({ ownerId, kind: 'manual', triggeredBy: req.user.uid === ownerId ? 'owner' : 'delegated-staff' })
+    const result = await generateOwnerBackup({
+      ownerId,
+      kind: 'manual',
+      triggeredBy: req.user.uid === ownerId ? 'owner' : 'delegated-staff',
+      onStage: (nextStage) => { stage = nextStage },
+    })
     return res.json({ success: true, data: result })
   } catch (error) {
-    return res.status(500).json({
+    const requestId = crypto.randomUUID()
+    console.error('Owner backup generation failed:', {
+      requestId,
+      stage,
+      code: error?.code || null,
+      status: error?.status || error?.statusCode || null,
+      message: error?.message || 'Unknown backup error',
+    })
+    const status = Number(error?.status || error?.statusCode || error?.code)
+    return res.status(status >= 400 && status <= 599 ? status : 500).json({
       success: false,
-      error: error?.message || 'Failed to generate backup',
+      error: status === 503
+        ? 'Backup storage is unavailable or not configured. Check the Firebase Storage bucket and server credentials.'
+        : 'The backup could not be completed. Check the server logs for this request.',
+      stage,
+      requestId,
     })
   }
 })
@@ -8185,6 +8310,84 @@ app.post('/owner/backup/download', requireAuth, requirePermission('backups:view'
   } catch (error) {
     console.error('Failed to download clinic backup:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to download backup.' })
+  }
+})
+
+app.post('/owner/backup/restore', requireAuth, requirePermission('backups:create'), async (req, res) => {
+  const ownerId = String(req.body?.ownerId || '').trim()
+  const backupId = String(req.body?.backupId || '').trim()
+  const actorId = String(req.user?.uid || '').trim()
+  if (!ownerId || !backupId) return res.status(400).json({ success: false, error: 'ownerId and backupId are required.' })
+  if (req.body?.confirmRestore !== true) return res.status(400).json({ success: false, error: 'Confirm the restore before continuing.' })
+
+  try {
+    assertWorkflow(actorId === ownerId || req.userContext?.permissions?.has('administrator:full_access'), 'Only the clinic owner can restore clinic records.', 403)
+    await authorizeOwnerBackupAccess(req, ownerId)
+
+    const firestore = admin.firestore()
+    const payload = await readStoredBackupPayload({ firestore, ownerId, backupId })
+    const clinicRecords = normalizeBackupRecords(payload.clinics || [], 'clinics', ownerId, new Set())
+    const branchIds = new Set(clinicRecords.map((record) => record.docId))
+    const restoreRecords = [...clinicRecords]
+
+    for (const collectionName of BACKUP_RESTORE_COLLECTIONS) {
+      const records = payload.collections[collectionName]
+      if (records === undefined) continue
+      restoreRecords.push(...normalizeBackupRecords(records, collectionName, ownerId, branchIds))
+    }
+
+    const counts = {}
+    let restoredRecords = 0
+    let skippedExistingRecords = 0
+    for (const collectionName of [...new Set(restoreRecords.map((record) => record.collectionName))]) {
+      const records = restoreRecords.filter((record) => record.collectionName === collectionName)
+      counts[collectionName] = { restored: 0, alreadyPresent: 0 }
+      for (let offset = 0; offset < records.length; offset += 400) {
+        const chunk = records.slice(offset, offset + 400)
+        const refs = chunk.map((record) => firestore.collection(collectionName).doc(record.docId))
+        const existing = await firestore.getAll(...refs)
+        const missing = chunk.filter((_record, index) => !existing[index]?.exists)
+        const presentCount = chunk.length - missing.length
+        skippedExistingRecords += presentCount
+        counts[collectionName].alreadyPresent += presentCount
+        if (!missing.length) continue
+
+        const batch = firestore.batch()
+        missing.forEach((record) => {
+          batch.create(firestore.collection(collectionName).doc(record.docId), record.data)
+        })
+        await batch.commit()
+        restoredRecords += missing.length
+        counts[collectionName].restored += missing.length
+      }
+    }
+
+    const summary = { restoredRecords, skippedExistingRecords, byCollection: counts }
+    await firestore.collection('backupRestoreLogs').add({
+      ownerId,
+      backupId,
+      actorId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...summary,
+    }).catch((error) => console.error('Failed to write backup restore audit log:', error?.code || error?.message || error))
+
+    return res.json({ success: true, data: summary })
+  } catch (error) {
+    const status = Number(error?.status || error?.statusCode || error?.code)
+    if (status >= 500 || !Number.isFinite(status)) {
+      console.error('Clinic backup restore failed:', {
+        ownerId,
+        backupId,
+        code: error?.code || null,
+        message: error?.message || 'Unknown restore error',
+      })
+    }
+    return res.status(status >= 400 && status <= 599 ? status : 500).json({
+      success: false,
+      error: status === 503
+        ? 'Firebase Storage is unavailable. The backup file could not be read.'
+        : error?.message || 'Unable to restore clinic records.',
+    })
   }
 })
 

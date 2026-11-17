@@ -55,9 +55,9 @@ const send = async (action, extra = {}) => {
       <div class="consultation-controls">
         <p class="clock" aria-live="polite">{{ clock }}</p>
         <p v-if="warning && active" class="notice">{{ warning }}</p>
-        <p>Booked duration: {{ windowInfo.duration }} minutes from the confirmed start. The call stays available after booked time; the practitioner ends the consultation when it is finished. A new appointment receives a separate meeting link.</p>
+        <p>Booked duration: {{ windowInfo.duration }} minutes from the confirmed start. The call stays available after booked time; clinic staff end it in Google Meet and then record completion here. A new appointment receives a separate meeting link.</p>
         <p v-if="worker && canExtend" class="notice">You can extend the booked time by 5 minutes using the reserved appointment buffer.</p>
-        <p v-if="worker" class="notice">After finishing, choose <strong>End meeting for all</strong> in Google Meet. The app cannot disconnect the call.</p>
+        <p v-if="worker" class="notice">When you finish, use Google Meet's host controls to end the call for everyone, then confirm completion in AesthetiCare.</p>
         <p v-if="!onlineAccessOpen(appointment, now)">Joining through this app is closed. A previously copied Google Meet URL may still exist.</p>
         <p v-if="appointment.consultationReviewReason" class="notice">{{ appointment.consultationReviewReason }}</p>
         <p v-if="appointment.consultationDispute?.status === 'Open'" class="notice">Your reported problem is awaiting independent clinic review: {{ appointment.consultationDispute.note }}</p>

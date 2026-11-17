@@ -5,10 +5,13 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
-        <p class="text-slate-400">Customers check in to the virtual waiting room with their service code. Invite a waiting customer to Meet when you are ready; the consultation timer starts when both participants are detected and you start the session.</p>
+        <p class="text-slate-400">Customers check in with their service code. Create a room in Google Meet, add its link here, and AesthetiCare will notify the customer in the app and by email.</p>
       </div>
 
-      <GoogleHostingAccount />
+      <div class="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
+        <strong class="text-white">No Google connection needed in AesthetiCare.</strong>
+        <span> Open Google Meet, create a room, then paste its link into the checked-in customer's appointment.</span>
+      </div>
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -81,18 +84,21 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
-<p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-emerald-300">Customer checked in and is waiting. Invite them when you are ready.</p>
-<button v-if="appointment.meetLink && appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60" :disabled="invitingId === appointment.id || !canJoinConsultation(appointment)" @click="inviteCustomer(appointment)">{{ invitingId === appointment.id ? 'Inviting…' : 'Invite to Meet' }}</button>
-<p v-if="appointment.consultationInviteAt" class="text-sm text-slate-400">Invitation sent. Join as host using {{ appointment.hostEmail }}.</p>
+<p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-emerald-300">Customer checked in and is waiting for a Meet link.</p>
+<a v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt && canCreateMeetLink" href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">Create room in Google Meet</a>
+<button v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60" @click="openMeetLinkForm(appointment)">Add link & notify</button>
+<p v-if="appointment.consultationInviteAt" class="text-sm text-slate-400">Invitation sent to the customer. Join using your Google account.</p>
+<button v-if="appointment.consultationInviteAt && appointment.consultationInviteEmailStatus === 'failed' && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg border border-amber-500 text-amber-200 text-xs hover:bg-amber-900/30" @click="openMeetLinkForm(appointment)">Retry email</button>
                     <button
-                      v-if="appointment.meetLink && appointment.consultationInviteAt"
+                      v-if="appointment.meetLink && appointment.consultationInviteAt && isAssignedToPractitioner(appointment)"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="!canJoinConsultation(appointment)"
                       @click="joinCall(appointment)"
                     >
-                      Join Call
+                      Open Meet
                     </button>
+                    <a v-if="appointment.meetLink && appointment.consultationInviteAt && !isAssignedToPractitioner(appointment)" :href="appointment.meetLink" target="_blank" rel="noopener noreferrer" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">Open Meet</a>
                     <OnlineConsultationControls :appointment="appointment" />
                     <p v-if="appointment.meetPresenceTrackingEnabled && appointment.meetPresence?.state === 'participants_detected'" class="w-full text-xs text-emerald-300">Google Meet reports at least two active participants. Confirm the customer's identity in Meet before starting.</p>
                     <p v-else-if="appointment.meetPresenceTrackingEnabled && appointment.meetPresence?.state === 'one_participant'" class="w-full text-xs text-amber-300">Google Meet reports one active participant. Waiting for the other participant.</p>
@@ -111,7 +117,7 @@
                       {{ startingId === appointment.id ? 'Starting...' : 'Confirm and Start' }}
                     </button>
                     <button
-                      v-if="appointment.status === 'Ongoing'"
+                      v-if="appointment.status === 'Ongoing' && isAssignedToPractitioner(appointment)"
                       type="button"
                       class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-500 disabled:opacity-60"
                       :disabled="finishingId === appointment.id"
@@ -127,7 +133,7 @@
                 </td>
               </tr>
               <tr v-if="assignedAppointments.length === 0">
-                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No assigned appointments yet.</td>
+                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No online consultations for this branch yet.</td>
               </tr>
               <tr v-else-if="filteredAppointments.length === 0">
                 <td colspan="5" class="px-6 py-8 text-center text-slate-400">No matching appointments.</td>
@@ -137,6 +143,25 @@
         </div>
       </div>
     </component>
+
+    <Modal
+      :is-open="Boolean(meetLinkAppointment)"
+      title="Add Google Meet link"
+      :close-on-backdrop="false"
+      @close="closeMeetLinkForm"
+    >
+      <p class="mb-4 text-sm text-slate-600">Create a room in Google Meet, copy its link, and paste it below. AesthetiCare will show it in the customer's appointment and send an email.</p>
+      <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="mb-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Create room in Google Meet</a>
+      <label for="consultation-meet-link" class="mb-2 block text-sm font-semibold text-slate-700">Google Meet link</label>
+      <input id="consultation-meet-link" v-model="meetLinkDraft" type="url" inputmode="url" autocomplete="url" placeholder="https://meet.google.com/abc-defg-hij" class="w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" />
+      <p v-if="meetLinkError" role="alert" class="mt-2 text-sm text-rose-600">{{ meetLinkError }}</p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="invitingId === meetLinkAppointment?.id" @click="closeMeetLinkForm">Cancel</button>
+          <button type="button" class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!meetLinkDraft.trim() || invitingId === meetLinkAppointment?.id" @click="attachMeetLink(meetLinkAppointment)">{{ invitingId === meetLinkAppointment?.id ? 'Sending…' : 'Save link & notify' }}</button>
+        </div>
+      </template>
+    </Modal>
 
     <Modal
       :is-open="Boolean(startChecklistAppointment)"
@@ -167,7 +192,11 @@
       :close-on-backdrop="false"
       @close="closeCompletionForm"
     >
-      <p class="mb-4 text-sm text-slate-600">Save the consultation notes before marking the visit complete. The customer can then confirm completion or report a problem. When the call is over, also choose <strong>End meeting for all</strong> in Google Meet; this action only closes the visit in the app.</p>
+      <p class="mb-4 text-sm text-slate-600">End the call using Google Meet's host controls first. Then confirm below and save your consultation notes. The customer can confirm completion or report a problem.</p>
+      <label class="mb-4 flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <input v-model="meetEndedConfirmed" type="checkbox" class="mt-1" />
+        <span>I ended the Google Meet call for everyone.</span>
+      </label>
       <label for="consultation-completion-notes" class="mb-2 block text-sm font-semibold text-slate-700">Consultation notes and recommendations</label>
       <textarea id="consultation-completion-notes" v-model="completionNotes" rows="5" maxlength="5000" class="mb-1 w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" placeholder="Record the assessment, recommendations, and follow-up guidance." />
       <p class="mb-4 text-xs text-slate-500">Enter at least 10 characters. You can save a draft in Consultation controls.</p>
@@ -178,7 +207,7 @@
       <template #footer>
         <div class="flex justify-end gap-2">
           <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="finishingId === completionAppointment?.id" @click="closeCompletionForm">Cancel</button>
-          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="completionNotes.trim().length < 10 || finishingId === completionAppointment?.id" @click="completeConsultation(completionAppointment)">{{ finishingId === completionAppointment?.id ? 'Saving…' : 'Save notes and finish' }}</button>
+          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="completionNotes.trim().length < 10 || !meetEndedConfirmed || finishingId === completionAppointment?.id" @click="completeConsultation(completionAppointment)">{{ finishingId === completionAppointment?.id ? 'Saving…' : 'Save notes & finish' }}</button>
         </div>
       </template>
     </Modal>
@@ -198,8 +227,8 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
 import Modal from '@/components/common/Modal.vue'
 import { onlineWindow, onlineAccessOpen } from '../../../../../../shared/onlineConsultation.js'
-import GoogleHostingAccount from '@/components/common/GoogleHostingAccount.vue'
 import { Icon } from '@iconify/vue'
+import { usePermissions } from '@/composables/usePermissions'
 import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
@@ -209,9 +238,10 @@ import { parsePrescriptionText } from '@/utils/prescriptions'
 export default {
   name: 'PractitionerOnlineConsultation',
   props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' }, existingOnly: { type: Boolean, default: false } },
-  components: { OwnerSidebar, Icon, GoogleHostingAccount, OnlineConsultationControls, Modal },
+  components: { OwnerSidebar, Icon, OnlineConsultationControls, Modal },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+    const { hasPermission } = usePermissions()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -233,6 +263,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const completionNotes = ref('')
     const completionPrescriptionsText = ref('')
     const completionError = ref('')
+    const meetEndedConfirmed = ref(false)
+    const meetLinkAppointment = ref(null)
+    const meetLinkDraft = ref('')
+    const meetLinkError = ref('')
     const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
     const lastDemoAppointmentId = ref('')
@@ -268,6 +302,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const isAssignedToPractitioner = appointment => String(appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo || '') === currentUserId.value
+    const canCreateMeetLink = computed(() => hasPermission('consultations:create'))
     const activeDemoAppointment = computed(() => appointments.value.find(item => {
       if (item.demoMode !== true || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalized(item.status))) return false
       const window = onlineWindow(item)
@@ -277,7 +312,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }))
 
     const assignedAppointments = computed(() =>
-      sortRecordsNewestFirst(appointments.value.filter((item) => isAssignedToPractitioner(item))).sort((a, b) => {
+      sortRecordsNewestFirst(appointments.value).sort((a, b) => {
         const aWaiting = a.consultationCustomerReadyAt && !a.consultationInviteAt ? 1 : 0
         const bWaiting = b.consultationCustomerReadyAt && !b.consultationInviteAt ? 1 : 0
         return bWaiting - aWaiting
@@ -301,10 +336,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const loadAppointments = trackPageLoad(async (providedSnapshot = null) => {
       if (!currentBranchId.value) return
       const snapshot = providedSnapshot || await getDocs(query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')))
-      const records = await Promise.all(snapshot.docs.filter(snap => isAssignedToPractitioner(snap.data()) && normalized(snap.data().type) === 'consultation').map(async (snap) => {
+      const records = await Promise.all(snapshot.docs.filter(snap => normalized(snap.data().type) === 'consultation').map(async (snap) => {
         const appointment = { id: snap.id, ...snap.data() }
         const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
-        return meetingSnap.exists() && meetingSnap.data().hostVerified && appointment.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${appointment.date}T${appointment.time}+08:00`) ? { ...appointment, ...meetingSnap.data() } : { ...appointment, meetLink: '' }
+        const meeting = meetingSnap.data() || {}
+        return meetingSnap.exists() && (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual') && appointment.consultationCodeVerifiedAt && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && Date.parse(meeting.scheduledStartAt) === Date.parse(`${appointment.date}T${appointment.time}+08:00`) ? { ...appointment, ...meeting } : { ...appointment, meetLink: '' }
       }))
       appointments.value = sortRecordsNewestFirst(records)
       refreshMeetPresence()
@@ -373,6 +409,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const joinCall = async (appointment) => {
       const url = String(appointment.meetLink || '').trim()
       if (!url) return
+      if (!isAssignedToPractitioner(appointment)) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        return
+      }
       const callWindow = window.open('about:blank', '_blank')
       try {
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation', ...(appointment.demoMode ? { demoParticipantRole: 'practitioner' } : {}) }) })
@@ -384,29 +424,51 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (error) { callWindow?.close(); toast.error(error.message) }
     }
 
-    const inviteCustomer = async (appointment) => {
-      if (!appointment?.id || invitingId.value || !appointment.consultationCustomerReadyAt || appointment.consultationInviteAt) return
-      const callWindow = window.open('about:blank', '_blank')
+    const openMeetLinkForm = appointment => {
+      if (!appointment?.id || !appointment.consultationCustomerReadyAt || (appointment.consultationInviteAt && appointment.consultationInviteEmailStatus !== 'failed') || !canCreateMeetLink.value) return
+      meetLinkAppointment.value = appointment
+      meetLinkDraft.value = String(appointment.meetLink || '')
+      meetLinkError.value = ''
+    }
+
+    const closeMeetLinkForm = () => {
+      if (invitingId.value) return
+      meetLinkAppointment.value = null
+      meetLinkDraft.value = ''
+      meetLinkError.value = ''
+    }
+
+    const attachMeetLink = async (appointment) => {
+      if (!appointment?.id || invitingId.value || !appointment.consultationCustomerReadyAt || !canCreateMeetLink.value) return
+      let normalizedLink = ''
+      try {
+        const parsed = new URL(meetLinkDraft.value.trim())
+        if (parsed.protocol === 'https:' && parsed.hostname === 'meet.google.com' && /^\/[a-z0-9-]{6,40}\/?$/i.test(parsed.pathname)) normalizedLink = `https://meet.google.com/${parsed.pathname.split('/').filter(Boolean)[0]}`
+      } catch { /* the validation message below guides the user */ }
+      if (!normalizedLink) {
+        meetLinkError.value = 'Enter a valid link from meet.google.com.'
+        return
+      }
       invitingId.value = appointment.id
       try {
-        const response = await fetchFromBackend(`/appointments/${appointment.id}/invite-to-meet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) })
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/attach-meet-link`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ meetLink: normalizedLink }) })
         const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to invite the customer to Google Meet.')
-        appointment.consultationInviteAt = new Date().toISOString()
-        const joined = await fetchFromBackend(`/appointments/${appointment.id}/transition`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'join_consultation', ...(appointment.demoMode ? { demoParticipantRole: 'practitioner' } : {}) }) })
-        const joinPayload = await joined.json()
-        if (!joined.ok || !joinPayload?.success) throw new Error(joinPayload?.error || 'Invitation sent, but the waiting room entry could not be recorded.')
-        appointment.practitionerJoinedAt = new Date().toISOString()
-        if (callWindow) { callWindow.opener = null; callWindow.location.href = payload.data.meetLink }
-        else toast.info('Invitation sent. Open the meeting link from the appointment to join as host.')
-        toast.success('Customer invited to Google Meet.')
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to save the Google Meet link.')
+        appointment.meetLink = payload.data.meetLink
+        appointment.meetingProvider = 'google-meet-manual'
+        appointment.meetPresenceTrackingEnabled = false
+        appointment.consultationInviteAt = payload.data.invitedAt || new Date().toISOString()
+        meetLinkAppointment.value = null
+        meetLinkDraft.value = ''
+        if (payload.data.emailSent) toast.success('Meet link added. The customer was notified in the app and by email.')
+        else toast.warning('Meet link added and the customer was notified in the app, but the email could not be sent. Check the customer email and email service.')
       } catch (error) {
-        callWindow?.close()
-        toast.error(error.message || 'Unable to invite the customer.')
+        meetLinkError.value = error.message || 'Unable to save the Google Meet link.'
       } finally { invitingId.value = '' }
     }
 
     const canStartConsultation = (appointment) => {
+      if (!isAssignedToPractitioner(appointment)) return false
       if (!appointment?.meetLink || !canJoinConsultation(appointment)) return false
       if (String(appointment.consultationMode || '').trim().toLowerCase() !== 'online') return false
       if (meetLinkGateReason(appointment)) return false
@@ -481,12 +543,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       completionNotes.value = String(appointment.treatmentNotes || '')
       completionPrescriptionsText.value = prescriptionsToText(appointment.prescriptions)
       completionError.value = ''
+      meetEndedConfirmed.value = false
     }
 
     const closeCompletionForm = () => {
       if (finishingId.value) return
       completionAppointment.value = null
       completionError.value = ''
+      meetEndedConfirmed.value = false
     }
 
     const completeConsultation = async (appointment) => {
@@ -495,11 +559,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       try {
         const treatmentNotes = String(completionNotes.value || '').trim()
         if (treatmentNotes.length < 10) throw Error('Enter consultation notes of at least 10 characters.')
+        if (!meetEndedConfirmed.value) throw Error('End the Google Meet call for everyone before finishing the consultation.')
         const prescriptions = parsePrescriptionText(completionPrescriptionsText.value)
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions }),
+          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions, meetEndedConfirmed: true }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {
@@ -511,7 +576,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         appointment.workerCompleted = true
         appointment.workerCompletedAt = new Date().toISOString()
         completionAppointment.value = null
-        toast.success('Consultation marked done. End meeting for all in Google Meet; the customer can confirm receipt or report a problem.')
+        meetEndedConfirmed.value = false
+        toast.success('Consultation notes saved. The customer can confirm completion or report a problem.')
       } catch (error) {
         completionError.value = error.message || 'Failed to save consultation notes.'
         console.error('Failed to complete online consultation:', error)
@@ -618,6 +684,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       completionNotes,
       completionPrescriptionsText,
       completionError,
+      meetEndedConfirmed,
+      meetLinkAppointment,
+      meetLinkDraft,
+      meetLinkError,
       currentBranchId,
       currentUserId,
       isSeedingDemo,
@@ -626,8 +696,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       meetLinkGateReason,
       invitingId,
+      canCreateMeetLink,
+      isAssignedToPractitioner,
       joinCall,
-      inviteCustomer,
+      openMeetLinkForm,
+      closeMeetLinkForm,
+      attachMeetLink,
       canStartConsultation,
       openStartChecklist,
       startConsultation,

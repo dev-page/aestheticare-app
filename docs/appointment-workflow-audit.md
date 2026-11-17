@@ -32,9 +32,9 @@ Live Google Meet provider verification remains open.
 | High | App waiting-room timestamps record Join button clicks, not actual Google Meet attendance or identity. Duration is application elapsed time. A click and an open tab do not prove a delivered consultation. | Keep independent customer completion and Finance review. Define a disputed-session workflow before treating this timer as evidence of delivery. Consider provider attendance integration separately, subject to account capabilities. |
 | High | Ending the app session does not end the external Google Meet call. | Require the practitioner to end the call for everyone in Meet. Label app controls accurately; test this with two real Google accounts. |
 | High | A fixed scheduled end leaves less treatment time when the practitioner starts late. An expired unstarted session can be labeled No-show when the customer never clicked Join, including an outage or unavailable practitioner. | Decide a late-practitioner grace period, who records fault, and reschedule/refund rules. Review expired sessions before assigning customer penalties; do not treat an app No-show label as proof of fault. |
-| High | OAuth configuration, actual host/admission behavior, expired/revoked credentials, email delivery, payment webhooks/refunds, and deployed Firebase rules have not been verified against live integrations in this review. | Run the staging checklist below before release. Follow `google-meet-setup.md`. |
+| High | Manual room creation, actual host/admission behavior, email delivery, payment webhooks/refunds, and deployed Firebase rules have not been verified against live integrations in this review. | Run the staging checklist below before release. Follow `google-meet-setup.md`. |
 | Medium | Legacy appointments have broader direct Firestore editing rules than version 2 records. The new protection does not migrate historical records. | Inventory legacy records and frontend writers; migrate them to server-controlled transitions before tightening legacy rules. Avoid breaking existing appointments through an untested blanket rule change. |
-| Medium | Google account change/disconnection and appointment rescheduling do not remove old Calendar events. The app rejects mismatched appointment metadata, but a previously shared external link may still exist. | Add idempotent Calendar cancellation/replacement reconciliation, including failed Google requests and notification to both participants. |
+| Medium | Appointment rescheduling cannot revoke a Google Meet URL that was already shared. | Send the replacement URL to both participants and ask the host to retire the old room. |
 | Medium | A customer may never confirm completed work, leaving an appointment awaiting confirmation. | Define reminders, a dispute window, and a reviewed resolution path. Do not automatically confirm receipt merely because the practitioner completed it. |
 | Medium | Staff-assisted recipient signatures rely on the clinic handing the screen to the correct recipient. A saved signature image is not independent identity verification. | Require staff to verify recipient identity, retain the witness, and define guardian/representative handling explicitly. The arranger's financial agreement remains separate from treatment consent. |
 
@@ -52,10 +52,10 @@ with production Firebase, PayMongo, email, or Google accounts.
 - Two customers attempt the last practitioner/resource slot simultaneously.
 - Payment arrives after a cancellation/reschedule request; duplicate webhook and
   refund retries leave exactly one correct financial result.
-- Customer arrives first in Meet; practitioner joins with the connected hosting
-  account and has host controls. Repeat with the wrong Google account.
-- Google authorization is revoked, a meeting creation request fails, or the page
-  refreshes during code submission; retry does not create duplicate meetings.
+- Customer checks in with the service key; authorized clinic staff create a Meet
+  room, attach the correct URL, and trigger both in-app and email notifications.
+- Confirm the assigned practitioner or room creator has host controls and can end
+  the call for everyone in Google Meet.
 - Reschedule after code verification and waiting-room entry; the old evidence
   cannot start the new appointment, and a fresh code is delivered.
 - Both browsers close during a consultation; the external scheduler still closes

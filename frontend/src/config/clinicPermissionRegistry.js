@@ -82,7 +82,7 @@ export const permissionGroups = [
           { key: 'appointments:update', label: 'Update Appointments', description: 'Record permitted practitioner updates, follow-ups, and appointment changes.', icon: 'mdi:calendar-edit-outline' },
           { key: 'appointments:review', label: 'Review Appointment Changes', description: 'Review customer cancellation and reschedule requests.', icon: 'mdi:calendar-check-outline' },
           { key: 'consultations:view', label: 'View Online Consultations', description: 'Access online consultation screens.', icon: 'mdi:video-outline' },
-          { key: 'consultations:create', label: 'Create Consultation Links', description: 'Generate secure online-consultation meeting links.', icon: 'mdi:video-plus-outline' },
+          { key: 'consultations:create', label: 'Add Consultation Links', description: 'Add a Google Meet link to an appointment and notify its customer.', icon: 'mdi:video-plus-outline' },
         ],
       },
       {
@@ -239,7 +239,7 @@ export const permissionGroups = [
         permissions: [
           { key: 'subscription:view', label: 'View Subscription', description: 'Open the clinic subscription plan screen.', icon: 'mdi:card-outline' },
           { key: 'backups:view', label: 'View Backups', description: 'Access database backup history and downloads.', icon: 'mdi:file-download-outline' },
-          { key: 'backups:create', label: 'Create Backups', description: 'Generate a database backup.', icon: 'mdi:database-plus-outline' },
+          { key: 'backups:create', label: 'Create Backups', description: 'Generate a database export. Restoring missing records is reserved for the clinic owner.', icon: 'mdi:database-plus-outline' },
           { key: 'profile:view', label: 'View Profile', description: 'Open employee profile pages.', icon: 'mdi:card-account-details-outline' },
           { key: 'password:update', label: 'Change Password', description: 'Access password reset and change screens.', icon: 'mdi:shield-key-outline' },
         ],

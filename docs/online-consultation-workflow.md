@@ -6,9 +6,10 @@ policy in the initial Google Meet setup and appointment audit.
 ## Booking and attendance
 
 Online consultations remain individual. Clinic approval, signed contract, and
-required payment precede access. The assigned practitioner must connect their
-Google hosting account before accepting new online consultation bookings.
-Google connection setup is documented in `google-meet-setup.md`.
+required payment precede access. Clinic staff do not connect a Google account
+to AesthetiCare. A clinic user with branch access and `consultations:create`
+creates the room in Google Meet, then saves its link to the checked-in
+appointment. See `google-meet-setup.md` for the manual workflow.
 
 Customers submit the booking request without paying at booking time. After any
 required clinic approval, they review and sign the agreement, then complete the required
@@ -26,10 +27,12 @@ the timing policy and contract terms. Service cards disclose the timing rules
 before booking; the actual agreement includes a timing section before payment.
 
 The customer submits their saved in-app or emailed code beginning thirty minutes
-before the schedule and before arrival grace expires. Code submission creates an appointment
-meeting through the connected practitioner's Google Calendar. The waiting room
-opens five minutes before the schedule. Customer arrival first does not assign
-Google organizer ownership to them.
+before the schedule and before arrival grace expires. Code submission verifies
+check-in and places the customer in the virtual waiting room; it does not create
+a Meet room. A clinic user creates a room in Google Meet, attaches its URL to the
+appointment, and AesthetiCare sends the customer an in-app notification and an
+email. The customer sees the link only after it has been attached. The waiting
+room opens five minutes before the schedule.
 
 After both app waiting-room entries, the practitioner must explicitly attest that
 the recipient is present in Meet, identity has been checked, and both are ready.
@@ -50,11 +53,11 @@ does not itself disconnect the call.
 
 Live countdowns show five-minute and one-minute warnings. Ordinary practitioner
 completion requires notes and confirmed team participation. At expiry, the app
-closes access and flags the record for review. The practitioner must select
-**End meeting for all** in Meet and save notes, including after a timer expiry.
-Neither the app timer nor a Calendar event end disconnects the external call.
-Closing app access cannot invalidate a copied Google Meet URL. New appointments
-and approved reschedules use their own appointment/schedule-specific meetings.
+closes access and flags the record for review. Clinic staff end the call through
+Google Meet's host controls, then the assigned practitioner confirms this in
+AesthetiCare and saves the visit. AesthetiCare cannot end a manually created
+Google Meet call or invalidate a copied link. New appointments and approved
+reschedules use their own appointment/schedule-specific links.
 
 ## Confirmation, disputes, and review
 
@@ -130,5 +133,7 @@ frontend variables, source control, or public scheduler URLs.
 
 Scheduler activation deploys the dedicated cleanup function only. The remaining
 backend, frontend, and updated Firebase rules must be deployed together for the
-full consultation workflow. Test two real Google accounts, revoked access, actual host
-controls, notifications, and reviewed refund/reschedule processing in staging.
+full consultation workflow. Test with separate clinic and customer accounts,
+service-key check-in, manual room creation, in-app and email notifications,
+host call ending, and reviewed refund/reschedule processing in staging. New
+consultation setup does not require Google OAuth or Calendar access.

@@ -159,10 +159,6 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const worker = await tx.get(db.collection('users').doc(workerId))
   check(worker.exists && [worker.data().branchId, ...(worker.data().branchIds || [])].includes(branchId) && !['inactive', 'disabled', 'archived'].includes(normalized(worker.data().status)), 'The selected worker is unavailable.')
   const workerData = worker.data()
-  if (isOnline) {
-    const connection = (await tx.get(db.collection('googlePractitionerConnections').doc(workerId))).data()
-    check(connection?.active === true, 'This practitioner must connect their Google hosting account before accepting online consultation bookings.')
-  }
   let practitioner = ['practitioner', 'doctor', 'therapist'].includes(normalized(workerData.role).replace(/[\s_-]+/g, '')) || [...(workerData.permissions || []), ...(workerData.effectivePermissions || [])].some(permission => ['appointments:update', 'consultations:view', 'consultations:create'].includes(permission))
   if (!practitioner) {
     const branch = (await tx.get(db.collection('clinics').doc(branchId))).data() || {}

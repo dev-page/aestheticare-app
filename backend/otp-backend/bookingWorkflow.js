@@ -28,6 +28,7 @@ export const resetAppointmentAccess = () => ({
   clientJoinedAt: null, practitionerJoinedAt: null,
   consultationCodeVerifiedAt: null, consultationCodeVerifiedBy: null,
   consultationCustomerReadyAt: null, consultationInviteAt: null, consultationInviteSentBy: null,
+  consultationInviteEmailStatus: null, meetEndConfirmedAt: null, meetEndConfirmedById: null,
   consultationAccessVersion: null,
   consultationWindowStartAt: null, consultationWindowEndAt: null,
   consultationClientEndedAt: null, consultationEndedAt: null,

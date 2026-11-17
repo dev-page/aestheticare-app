@@ -135,7 +135,7 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must submit their service code before joining.', 409)
             const meeting = (await tx.get(db.collection('appointmentMeetings').doc(ref.id))).data()
             const hostId = appointment.assignedPractitionerId || appointment.practitionerId
-            check(meeting?.hostVerified && meeting.practitionerId === hostId && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must be generated for the current assigned practitioner and schedule.', 409)
+            check((meeting?.hostVerified || meeting?.meetingProvider === 'google-meet-manual') && meeting.practitionerId === hostId && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'Add a Google Meet link for the current assigned practitioner and schedule.', 409)
             check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, payment, and a signed contract are required.')
             check(['paid', 'checked in', 'ready to start', 'scheduled', 'ongoing'].includes(status), 'This consultation is closed.')
             const window = getOnlineConsultationWindow(appointment)
@@ -173,9 +173,9 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             if (onlineConsultation) {
               check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId, 'The customer must verify their service code before consultation starts.', 409)
               const meetingSnap = await tx.get(db.collection('appointmentMeetings').doc(ref.id))
-              check(meetingSnap.exists && String(meetingSnap.data()?.meetLink || '').trim(), 'Create the system Google Meet link before starting this consultation.')
+              check(meetingSnap.exists && String(meetingSnap.data()?.meetLink || '').trim(), 'The clinic must add a Google Meet link before this consultation can start.')
               const meeting = meetingSnap.data()
-              check(meeting.hostVerified && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must belong to the current assigned practitioner and schedule.', 409)
+              check((meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual') && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && meeting.customerId === appointment.customerId && meeting.scheduledStartAt === new Date(`${appointment.date}T${appointment.time}+08:00`).toISOString(), 'The meeting must belong to the current assigned practitioner and schedule.', 409)
               if (meeting.consultationQueueEnabled) check(appointment.consultationCustomerReadyAt && appointment.consultationInviteAt, 'The customer must check in and receive the practitioner invitation before starting.')
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled date and time.')
@@ -259,6 +259,9 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               const window = getOnlineConsultationWindow(appointment)
               check(window, 'This consultation needs a valid scheduled window.')
               check(String(req.body?.treatmentNotes || '').trim().length >= 10, 'Save consultation notes and recommendations (at least 10 characters).', 400)
+              check(req.body?.meetEndedConfirmed === true, 'End the Google Meet call for everyone, then confirm it before finishing.', 400)
+              update.meetEndConfirmedAt = timestamp
+              update.meetEndConfirmedById = req.user.uid
               const end = new Date(Math.min(Date.now(), window.end.getTime()))
               update.consultationEndedAt = end.toISOString()
               update.consultationEndedById = appointment.consultationEndedById || req.user.uid

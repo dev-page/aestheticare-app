@@ -9,7 +9,7 @@
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Backup Database</h1>
           <p class="text-slate-400">Generate and download a clinic data export for offline reference or analysis.</p>
-          <p class="mt-2 max-w-3xl text-xs leading-5 text-slate-500">Exports include selected clinic records. They do not include every Firebase resource and cannot restore deleted or changed data from this page.</p>
+          <p class="mt-2 max-w-3xl text-xs leading-5 text-slate-500">Restore adds records missing from a saved backup and keeps existing records unchanged. Exports do not include every Firebase resource, uploaded files, or Firebase Authentication accounts.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <button
@@ -21,6 +21,7 @@
             <svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh</span>
           </button>
           <button
+            v-if="canCreate"
             type="button"
             class="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
             :disabled="loading || creating"
@@ -125,6 +126,15 @@
         @click.stop
       >
         <button
+          v-if="canRestoreBackups"
+          type="button"
+          class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          :disabled="menuState.backup?.status !== 'complete'"
+          @click="openRestoreDialog(menuState.backup)"
+        >
+          Restore missing records
+        </button>
+        <button
           type="button"
           class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
           @click="downloadBackup(menuState.backup)"
@@ -148,6 +158,35 @@
       </div>
     </div>
   </teleport>
+
+  <teleport to="body">
+    <div
+      v-if="restoreState.visible"
+      class="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
+      @click.self="closeRestoreDialog"
+    >
+      <section role="dialog" aria-modal="true" aria-labelledby="restore-backup-title" class="w-full max-w-lg rounded-xl border border-slate-600 bg-slate-900 p-6 shadow-2xl">
+        <h2 id="restore-backup-title" class="text-xl font-semibold text-white">Restore missing clinic records?</h2>
+        <p class="mt-3 text-sm leading-6 text-slate-300">
+          This adds records from <strong>{{ restoreState.backup?.fileName }}</strong> only when their document is missing. Records that exist now will be left unchanged.
+        </p>
+        <p class="mt-2 text-sm leading-6 text-slate-400">
+          This cannot restore uploaded files or Firebase sign-in accounts. Staff profiles may be restored, but their sign-in accounts must still exist.
+        </p>
+        <label class="mt-5 flex items-start gap-3 text-sm text-slate-200">
+          <input v-model="restoreConfirmed" type="checkbox" class="mt-1 accent-emerald-500" :disabled="restoring" />
+          <span>I understand this will add missing records from the selected backup.</span>
+        </label>
+        <p v-if="restoreError" class="mt-3 text-sm text-rose-300">{{ restoreError }}</p>
+        <div class="mt-6 flex justify-end gap-3">
+          <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" :disabled="restoring" @click="closeRestoreDialog">Cancel</button>
+          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!restoreConfirmed || restoring" @click="restoreBackup">
+            {{ restoring ? 'Restoring…' : 'Restore missing records' }}
+          </button>
+        </div>
+      </section>
+    </div>
+  </teleport>
 </template>
 
 <script setup>
@@ -158,8 +197,10 @@ import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OwnerPageSkeleton from '@/components/common/OwnerPageSkeleton.vue'
+import { usePermissions } from '@/composables/usePermissions'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
+const { hasPermission, isClinicAdminOwner } = usePermissions()
 
 
 const loading = ref(true)
@@ -173,8 +214,13 @@ const menuState = ref({ visible: false, x: 0, y: 0, backup: null })
 let unsubscribe = null
 const backupSchedule = ref(null)
 const backupScheduleLoading = ref(false)
+const restoreState = ref({ visible: false, backup: null })
+const restoreConfirmed = ref(false)
+const restoring = ref(false)
+const restoreError = ref('')
 
-const canCreate = computed(() => true)
+const canCreate = computed(() => isClinicAdminOwner.value || hasPermission('backups:create'))
+const canRestoreBackups = computed(() => isClinicAdminOwner.value)
 
 const resolveBackupOwnerId = async (user) => {
   const profileSnap = await getDoc(doc(db, 'users', user.uid))
@@ -360,14 +406,76 @@ const createBackup = async () => {
     const contentType = String(response.headers.get('content-type') || '')
     const data = contentType.includes('application/json') ? await response.json() : null
     if (!response.ok || !data?.success) {
-      const fallback = contentType.includes('application/json') ? data?.error : 'Backend did not return JSON. Check OTP_API_BASE and backend status.'
-      throw new Error(fallback || 'Failed to generate backup.')
+      const fallback = response.status === 503
+        ? 'The backup service is temporarily unavailable. Check the Vercel runtime log for /api/owner/backup.'
+        : `The backup service returned HTTP ${response.status}. Check the Vercel runtime log for /api/owner/backup.`
+      const runtimeId = response.headers.get('x-vercel-id')
+      const details = [data?.error || fallback, data?.stage ? `Stage: ${data.stage}.` : '', data?.requestId ? `Request ID: ${data.requestId}.` : runtimeId ? `Vercel request ID: ${runtimeId}.` : '']
+        .filter(Boolean)
+        .join(' ')
+      throw new Error(details)
     }
+    success.value = 'Backup created and saved to the clinic backup history.'
   } catch (err) {
     console.error('Backup error:', err)
     error.value = err?.message || 'Failed to generate backup.'
   } finally {
     creating.value = false
+  }
+}
+
+const openRestoreDialog = (backup) => {
+  closeMenu()
+  if (!backup?.id || backup.status !== 'complete') return
+  restoreError.value = ''
+  restoreConfirmed.value = false
+  restoreState.value = { visible: true, backup }
+}
+
+const closeRestoreDialog = () => {
+  if (restoring.value) return
+  restoreState.value = { visible: false, backup: null }
+  restoreConfirmed.value = false
+  restoreError.value = ''
+}
+
+const restoreBackup = async () => {
+  const backup = restoreState.value.backup
+  const user = auth.currentUser
+  if (!backup?.id || !user || !restoreConfirmed.value || restoring.value) return
+  restoring.value = true
+  restoreError.value = ''
+  error.value = ''
+  success.value = ''
+  try {
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/owner/backup/restore`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        ownerId: backupOwnerId.value || await resolveBackupOwnerId(user),
+        backupId: backup.id,
+        confirmRestore: true
+      })
+    })
+    const contentType = String(response.headers.get('content-type') || '')
+    const payload = contentType.includes('application/json') ? await response.json() : null
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Restore failed with HTTP ${response.status}.`)
+    }
+    const restored = Number(payload.data?.restoredRecords || 0)
+    const existing = Number(payload.data?.skippedExistingRecords || 0)
+    success.value = `Recovery finished: restored ${restored} missing record${restored === 1 ? '' : 's'}; left ${existing} existing record${existing === 1 ? '' : 's'} unchanged.`
+    restoreState.value = { visible: false, backup: null }
+    restoreConfirmed.value = false
+  } catch (restoreFailure) {
+    console.error('Backup restore error:', restoreFailure)
+    restoreError.value = restoreFailure?.message || 'Unable to restore missing clinic records.'
+  } finally {
+    restoring.value = false
   }
 }
 
