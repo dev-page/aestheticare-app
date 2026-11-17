@@ -530,10 +530,10 @@
           </div>
 
           <div class="footer-cta-side">
-            <div class="footer-cta-qr" aria-label="Mobile application QR placeholder">
+            <div class="footer-cta-qr" aria-label="AesthetiCare customer app QR code">
               <div class="footer-cta-qr-frame">
                 <div class="footer-cta-qr-code">
-                  <img src="@/assets/qr.png" alt="Mobile App QR Code" />
+                  <img src="@/assets/AesthetiCareCustomerApp.png" alt="Scan to open the AesthetiCare customer app" />
                 </div>
               </div>
               <div class="footer-cta-qr-copy">
@@ -1659,6 +1659,14 @@ export default {
   font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: 0.22em;
+}
+
+.footer-cta-qr-code img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .footer-cta-qr-copy {

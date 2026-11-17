@@ -1449,16 +1449,34 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
   if (!currentUser) return
   try { await loadConsultationEligibility(branchId) } catch (error) { console.warn('Unable to load consultation eligibility:', error) }
   try {
-    const token = await currentUser.getIdToken()
     const startDate = new Date()
     const endDate = new Date(startDate)
     endDate.setDate(endDate.getDate() + SLOT_DAYS_LOOKAHEAD - 1)
     const availabilityQuery = new URLSearchParams({ startDate: toDateInput(startDate), endDate: toDateInput(endDate) })
-    const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners?${availabilityQuery}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(payload?.error || 'Unable to load booking availability.')
+    const availabilityUrl = `${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners?${availabilityQuery}`
+    const fetchAvailability = async (forceRefresh = false) => {
+      const token = await currentUser.getIdToken(forceRefresh)
+      const response = await fetch(availabilityUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const payload = await response.json().catch(() => ({}))
+      return { response, payload }
+    }
+
+    let { response, payload } = await fetchAvailability()
+    // A token can become stale while the app is resumed from Android's
+    // background. Refresh it once before reporting an authentication error.
+    if (response.status === 401) {
+      const refreshedAvailability = await fetchAvailability(true)
+      response = refreshedAvailability.response
+      payload = refreshedAvailability.payload
+    }
+    if (!response.ok) {
+      const error = new Error(payload?.error || 'Unable to load booking availability.')
+      error.status = response.status
+      error.code = payload?.code || ''
+      throw error
+    }
     practitioners.value = Array.isArray(payload.practitioners) ? payload.practitioners : []
     center.value.operatingHours = payload.operatingHours && typeof payload.operatingHours === 'object' ? payload.operatingHours : {}
     center.value.legacyOperatingHours = payload.legacyOperatingHours && typeof payload.legacyOperatingHours === 'object' ? payload.legacyOperatingHours : {}
@@ -1468,7 +1486,10 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
     customerBusyDates.value = Array.isArray(payload.customerBusyDates) ? payload.customerBusyDates : []
   } catch (error) {
     console.error('Unable to load practitioner availability:', error)
-    toast.error(error?.message || 'Unable to load booking availability.')
+    const message = error?.status === 401
+      ? 'We could not verify your sign-in for booking. Please sign out and sign back in. If this keeps happening, the app’s authentication setup needs attention.'
+      : error?.message || 'Unable to load booking availability.'
+    toast.error(message)
   }
 })
 

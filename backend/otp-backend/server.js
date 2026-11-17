@@ -1898,6 +1898,21 @@ const resolveFrontendBaseUrl = (req) => {
   return configured || 'http://localhost:5173'
 }
 
+const getIdTokenDiagnostics = (token) => {
+  try {
+    const payload = String(token || '').split('.')[1]
+    if (!payload) return {}
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+    return {
+      audience: typeof claims.aud === 'string' ? claims.aud : null,
+      issuer: typeof claims.iss === 'string' ? claims.iss : null,
+      expiresAt: Number.isFinite(Number(claims.exp)) ? Number(claims.exp) : null,
+    }
+  } catch (_error) {
+    return {}
+  }
+}
+
 const requireAuth = async (req, res, next) => {
   if (!adminReady) {
     return res.status(500).json({
@@ -1923,10 +1938,19 @@ const requireAuth = async (req, res, next) => {
     }
     return next()
   } catch (error) {
-    console.warn('Firebase ID token verification failed:', error?.code || 'unknown', error?.message || 'unknown error')
+    const tokenDiagnostics = getIdTokenDiagnostics(tokenMatch[1])
+    console.warn('Firebase ID token verification failed:', {
+      code: error?.code || 'unknown',
+      message: error?.message || 'unknown error',
+      expectedProjectId: firebaseProjectId || null,
+      tokenAudience: tokenDiagnostics.audience,
+      tokenIssuer: tokenDiagnostics.issuer,
+      tokenExpired: tokenDiagnostics.expiresAt ? tokenDiagnostics.expiresAt * 1000 <= Date.now() : null,
+    })
     return res.status(401).json({
       success: false,
       error: 'Invalid authorization token',
+      code: error?.code || 'auth/invalid-id-token',
     })
   }
 }
