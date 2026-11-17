@@ -32,7 +32,7 @@ export const loadOwnerBranchScope = async (db, userId) => {
   const userSnap = await getDoc(doc(db, 'users', userId))
   const userProfile = userSnap.exists() ? (userSnap.data() || {}) : {}
   const userType = normalizeText(userProfile.userType || '').toLowerCase()
-  const isStaffUser = userType === 'staff'
+  const isStaffUser = userType === 'staff' || userType === 'employee'
   const directBranchId = normalizeText(userProfile.branchId || userProfile.clinicBranch || '')
   const assignedBranchIds = Array.isArray(userProfile.branchIds) ? userProfile.branchIds.map(normalizeText).filter(Boolean) : []
   const fallbackOwnerId = normalizeText(userProfile.ownerId || userProfile.owner || '')

@@ -21,7 +21,7 @@ const routes = [
   { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/inventory/onboarding', redirect: '/inventory/receiving' },
   { path: '/logistics/:page?', redirect: '/inventory/receiving' },
-  { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermission: 'procurement:view', requiresFeature: 'inventory' } },
+  { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermissionsAny: ['procurement:view', 'suppliers:create', 'suppliers:update'], requiresFeature: 'inventory' } },
   { path: '/:department(inventory|procurement)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },

@@ -123,6 +123,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const records = (await scopedDocs('supplyRecords')).filter(r => canRead(ctx, r))
     const internal = true
     const broadRead = ['inventory:view', 'procurement:view', 'finance:payables:view', 'reports:view'].some(p => hasPermission(ctx, p))
+    const supplierRead = broadRead || ['suppliers:create', 'suppliers:update'].some(p => hasPermission(ctx, p))
     const items = broadRead ? (await scopedDocs('inventoryItems')).map(i => ({ ...i, signals: stockSignals(i), availableStock: availableStock(i) })) : []
     const stockReconciliation = hasPermission(ctx, 'inventory:view') && req.query.reconcile === '1'
       ? summarizeInventoryLotReconciliation(items, await scopedDocs('supplyLots'))
@@ -131,7 +132,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     // private purchasing notes live in clinicSuppliers, so never infer access
     // from the legacy suppliers.branchId field.
     let suppliers = []
-    if (broadRead) {
+    if (supplierRead) {
       const associationDocs = await scopedDocs('clinicSuppliers')
       const supplierIds = [...new Set(associationDocs.map(link => String(link.supplierId || '')).filter(Boolean))]
       const supplierDocs = await Promise.all(supplierIds.map(async id => {

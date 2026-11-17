@@ -138,7 +138,8 @@ service cloud.firestore {
 
     function isStaffOfOwner(ownerId) {
       return isSignedIn()
-        && (userData().userType == 'Staff' || userData().userType == 'staff')
+        && (userData().userType == 'Staff' || userData().userType == 'staff'
+          || userData().userType == 'Employee' || userData().userType == 'employee')
         && (userData().organizationOwnerId == ownerId
           || (userData().branchId != null
             && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
@@ -719,7 +720,8 @@ service cloud.firestore {
     match /clinicSuppliers/{associationId} {
       allow read: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('inventory:view') || hasPermission('procurement:view'));
+        && (hasPermission('inventory:view') || hasPermission('procurement:view')
+          || hasPermission('suppliers:create') || hasPermission('suppliers:update'));
       allow create: if isSignedIn() && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId) && hasPermission('suppliers:create')
         && request.resource.data.createdBy == request.auth.uid;

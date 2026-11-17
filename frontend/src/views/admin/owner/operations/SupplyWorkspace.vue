@@ -65,6 +65,24 @@
             <label>Created from<input type="date" v-model="fromDate" /></label>
             <label>Created through<input type="date" v-model="toDate" /></label>
           </div>
+          <div v-else-if="department === 'inventory' && page === 'items'" class="inventory-item-filters">
+            <label class="inventory-item-search">Search inventory
+              <input v-model="search" placeholder="Item name or reference" aria-label="Search inventory" />
+            </label>
+            <ContractAppearanceSelect id="inventory-item-status" label="Status" v-model="status" :options="[{ value: '', label: 'All statuses' }, ...statuses.map(value => ({ value, label: value }))]" />
+            <details class="inventory-item-more-filters">
+              <summary>More filters</summary>
+              <div class="inventory-item-advanced-grid">
+                <ContractAppearanceSelect id="inventory-item-type" label="Record type" v-model="type" :options="[{ value: '', label: 'All record types' }, ...types.map(value => ({ value, label: value }))]" />
+                <label>Department<input v-model="departmentFilter" placeholder="All departments" /></label>
+                <ContractAppearanceSelect id="inventory-item-supplier" label="Supplier" v-model="supplierFilter" :options="[{ value: '', label: 'All suppliers' }, ...data.suppliers.map(supplier => ({ value: supplier.id, label: supplierName(supplier.id) }))]" />
+                <label>Category<input v-model="categoryFilter" placeholder="All categories" /></label>
+                <label>From<input type="date" v-model="fromDate" /></label>
+                <label>Through<input type="date" v-model="toDate" /></label>
+                <ContractAppearanceSelect id="inventory-item-sort" label="Sort" v-model="sort" :options="[{ value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }, { value: 'name', label: 'Name / reference' }]" />
+              </div>
+            </details>
+          </div>
           <div v-else-if="department === 'inventory' && page === 'receiving'" class="inventory-receiving-filters">
             <label class="inventory-receiving-search">Search receiving records<input v-model="search" placeholder="Search reference, supplier, or supply..." /></label>
             <ContractAppearanceSelect id="inventory-receiving-status" label="Status" v-model="status" :options="[{ value: '', label: 'All statuses' }, ...statuses.map(value => ({ value, label: value }))]" />
@@ -268,10 +286,32 @@ const api = async (path, body) => {
   let last
   for (const base of OTP_BACKEND_CANDIDATES) {
     let response
-    try { response = await fetch(base + '/supply' + path, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }) } catch (e) { last = e; continue }
-    const result = await response.json(); if (!response.ok || !result.success) { console.error('Supply API request failed', { path, status: response.status, statusText: response.statusText, recordId: path.match(/\/records\/([^/]+)/)?.[1] || '', action: body?.action || '', branchId: body?.branchId || '', response: result }); throw Error(result.error || 'Unable to complete action.') }; return result.data
+    try {
+      response = await fetch(base + '/supply' + path, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    } catch (cause) {
+      if (body !== undefined) throw cause
+      last = cause
+      continue
+    }
+
+    let result = {}
+    try { result = await response.json() } catch { result = {} }
+    if (!response.ok || !result.success) {
+      const failure = Error(result.error || (response.status >= 500 ? 'Supply service is temporarily unavailable.' : 'Unable to complete action.'))
+      console.error('Supply API request failed', { path, status: response.status, statusText: response.statusText, recordId: path.match(/\/records\/([^/]+)/)?.[1] || '', action: body?.action || '', branchId: body?.branchId || '', response: result })
+      if (body === undefined && response.status >= 500) {
+        last = failure
+        continue
+      }
+      throw failure
+    }
+    return result.data
   }
-  throw last || Error('Backend is unavailable.')
+  throw last || Error('Supply service is unavailable. Please try again.')
 }
 const load = trackPageLoad(async (silent = false) => {
   if (!silent) loading.value = true
@@ -741,4 +781,25 @@ input:not([type=checkbox]),select,textarea{display:block;width:100%;margin-top:.
 .po-supporting-details > summary:focus-visible, .po-extra-details > summary:focus-visible { outline: 2px solid #b98b60; outline-offset: 4px; }
 .po-extra-details { margin-top: 20px; padding-top: 12px; border-top: 1px solid #efd8c0; }
 .po-extra-details dl { margin-top: 12px; }
+.inventory-page .inventory-item-filters {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(10rem, 13rem) auto;
+  align-items: end;
+  gap: .75rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--ac-border);
+  border-radius: .85rem;
+  background: var(--ac-surface);
+  padding: .85rem;
+}
+.inventory-page .inventory-item-filters > label,
+.inventory-page .inventory-item-advanced-grid > label { display: grid; gap: .3rem; color: var(--ac-text-secondary); font-size: .75rem; font-weight: 700; }
+.inventory-page .inventory-item-more-filters { grid-column: 1 / -1; border-top: 1px solid var(--ac-border); padding-top: .65rem; }
+.inventory-page .inventory-item-more-filters > summary { width: fit-content; cursor: pointer; color: var(--ac-text-secondary); font-size: .78rem; font-weight: 700; }
+.inventory-page .inventory-item-advanced-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .7rem; margin-top: .75rem; }
+.inventory-page .inventory-item-advanced-grid :is(input, select) { min-width: 0; }
+@media (max-width: 640px) {
+  .inventory-page .inventory-item-filters { grid-template-columns: minmax(0, 1fr); }
+  .inventory-page .inventory-item-more-filters { grid-column: auto; }
+}
 </style>

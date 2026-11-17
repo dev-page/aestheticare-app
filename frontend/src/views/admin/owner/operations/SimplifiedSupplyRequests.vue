@@ -235,17 +235,37 @@ const filteredTableRecords = computed(() => {
 const pagedTableRecords = computed(() => filteredTableRecords.value.slice((tablePage.value - 1) * rowsPerPage.value, tablePage.value * rowsPerPage.value))
 watch([recordSearch, mode, filteredTableRecords], () => { tablePage.value = 1 })
 const api = async (path, body) => {
+  await auth.authStateReady?.()
   const token = await auth.currentUser?.getIdToken()
+  if (!token) throw Error('Sign in to continue.')
   let lastError
   for (const base of OTP_BACKEND_CANDIDATES) {
+    let response
     try {
-      const response = await fetch(`${base}/supply${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-      const json = await response.json()
-      if (!response.ok) throw Error(json.error || 'Request failed.')
-      return json.data
-    } catch (caught) { lastError = caught }
+      response = await fetch(`${base}/supply${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    } catch (caught) {
+      if (body !== undefined) throw caught
+      lastError = caught
+      continue
+    }
+
+    let json = {}
+    try { json = await response.json() } catch { json = {} }
+    if (!response.ok || json.success === false) {
+      const failure = Error(json.error || (response.status >= 500 ? 'Supply service is temporarily unavailable.' : 'Request failed.'))
+      if (body === undefined && response.status >= 500) {
+        lastError = failure
+        continue
+      }
+      throw failure
+    }
+    return json.data
   }
-  throw lastError
+  throw lastError || Error('Supply service is unavailable. Please try again.')
 }
 const load = trackPageLoad(async () => {
   try {
