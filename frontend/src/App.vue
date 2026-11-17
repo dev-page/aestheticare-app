@@ -140,6 +140,7 @@ const {
   setDontShowAgain: setOnboardingDontShowAgain,
 } = useOnboardingTour({ route, user })
 const { initSubscription, isReadOnly, isExpired, isSuspended, graceEndsAt, activePlan } = useSubscription()
+const isCustomerAppBuild = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isPoorConnection = ref(false)
 
@@ -301,7 +302,7 @@ const isInGracePeriod = computed(() => {
 
 onMounted(() => {
   initAuth()
-  initSubscription()
+  if (!isCustomerAppBuild) initSubscription()
   updateConnectionStatus()
   window.addEventListener('online', updateConnectionStatus)
   window.addEventListener('offline', updateConnectionStatus)
@@ -329,7 +330,7 @@ onMounted(() => {
 watch(
   () => user.value?.uid || null,
   (nextUserId, prevUserId) => {
-    if (nextUserId !== prevUserId) {
+    if (!isCustomerAppBuild && nextUserId !== prevUserId) {
       initSubscription()
     }
   }

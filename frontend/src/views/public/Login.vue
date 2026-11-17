@@ -132,6 +132,20 @@ const firebaseLoginMessages = {
   'permission-denied': 'Your credentials were accepted, but your account profile could not be loaded. Please try again or contact support.'
 }
 
+const profileLoginErrorMessage = (error) => {
+  const failures = error instanceof AggregateError ? error.errors : [error]
+  const status = failures.find((failure) => Number(failure?.status))?.status
+  if (status === 401 || status === 403) {
+    return 'We could not verify this account. Please sign in again. If this continues, contact support.'
+  }
+  if (status === 503) return 'Account service is temporarily unavailable. Please try again in a moment.'
+  if (status === 404) return 'We could not find an account profile for this sign-in. Please contact support.'
+  if (failures.some((failure) => failure instanceof TypeError)) {
+    return 'We could not reach the account service. Check your connection and try again.'
+  }
+  return 'We could not load your account. Please try again or contact support.'
+}
+
 const resendActivationEmail = async () => {
   const normalizedEmail = email.value.trim().toLowerCase()
   if (!EMAIL_REGEX.test(normalizedEmail)) {
@@ -254,6 +268,7 @@ const handleLogin = async () => {
     }
 
     isSubmitting.value = true
+    if (props.customerApp) setProcessLoading(false)
 
     try {
       // An inactivity redirect must start from a clean Firebase session. A
@@ -265,10 +280,10 @@ const handleLogin = async () => {
       )
 
       const userCredentials = await signInWithEmailAndPassword(auth, email.value.trim(), password.value)
-      // Do not show the full-screen loader for rejected credentials. Firebase
-      // has confirmed the password at this point; the remaining profile and
-      // redirect work can use the global loading screen.
-      setProcessLoading(true, 'Loading your account...')
+      // The customer app must identify the account before showing its global
+      // loader. Otherwise a clinic or staff account gets an error underneath
+      // an overlay that never clears.
+      if (!props.customerApp) setProcessLoading(true, 'Loading your account...')
       await userCredentials.user.reload()
 
       try {
@@ -283,11 +298,13 @@ const handleLogin = async () => {
         }
 
         if (props.customerApp && !isCustomerAppAccount(userData)) {
-          await signOut(auth)
+          await signOut(auth).catch(() => {})
           toast.error('This sign-in page is for customer accounts only.')
-          isSubmitting.value = false
+          setProcessLoading(false)
           return
         }
+
+        if (props.customerApp) setProcessLoading(true, 'Loading your account...')
 
         const accountStatus = String(userData.status || '').trim().toLowerCase()
         // Deletion requests also set status to Inactive. Route them to recovery
@@ -373,12 +390,16 @@ const handleLogin = async () => {
         clearFormFields()
         startRedirectFlow(redirectPath)
       } catch (profileError) {
-        await signOut(auth)
+        await signOut(auth).catch(() => {})
         throw profileError
       }
     } catch (err) {
       console.error(err)
-      toast.error(firebaseLoginMessages[err.code] || 'Login failed. Please try again.')
+      const isProfileError = err instanceof AggregateError
+        || err?.message === 'Unable to load the authenticated profile.'
+      const message = firebaseLoginMessages[err.code]
+        || (isProfileError ? profileLoginErrorMessage(err) : 'Login failed. Please try again.')
+      toast.error(message)
       setProcessLoading(false)
     } finally {
       isSubmitting.value = false

@@ -5,6 +5,7 @@ import { usePermissions } from "@/composables/usePermissions";
 import { useSubscription } from "@/composables/useSubscription";
 import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { auth, db } from "@/config/firebaseConfig";
+import { fetchAuthenticatedProfile } from '@/utils/authenticatedProfile';
 import { isSubscriptionRecoveryRoute } from '../../../shared/subscriptionRecoveryRoutes.js';
 import { CUSTOMER_APP_LOGIN, customerAppAuthRedirect, isCustomerAppAccount, isCustomerAppContext, isCustomerAppRoute } from '@/utils/customerApp';
 import { recoverFromStaleAsset } from '@/utils/appUpdate';
@@ -426,8 +427,7 @@ router.beforeEach(async (to, from, next) => {
   let currentUserData = {}
   if (currentUser?.uid) {
     try {
-      const userSnap = await getDoc(doc(db, "users", currentUser.uid));
-      const userData = userSnap.exists() ? userSnap.data() || {} : {};
+      const userData = await fetchAuthenticatedProfile(currentUser)
       currentUserData = userData
       if (customerApp && !isCustomerAppAccount(userData)) {
         await signOut(auth).catch(() => {})

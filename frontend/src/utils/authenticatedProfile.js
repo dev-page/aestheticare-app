@@ -10,12 +10,23 @@ export const fetchAuthenticatedProfile = async (firebaseUser) => {
   // Admin SDK being available just to load the same profile document.
   try {
     const profile = await getDoc(doc(db, 'users', firebaseUser.uid))
-    return profile.exists() ? profile.data() || {} : {}
+    if (profile.exists()) return profile.data() || {}
+    firestoreError = new Error('User profile was not found in Firestore.')
   } catch (error) {
     firestoreError = error
   }
 
-  const token = await firebaseUser.getIdToken()
+  // Refresh tokens after inactivity or a restored PWA session before asking
+  // Firebase Admin to verify them.
+  let token
+  try {
+    token = await firebaseUser.getIdToken(true)
+  } catch (error) {
+    throw new AggregateError(
+      [firestoreError, error].filter(Boolean),
+      'Unable to load the authenticated profile.'
+    )
+  }
   let lastError = null
 
   for (const baseUrl of OTP_API_BASE_CANDIDATES) {
@@ -27,15 +38,20 @@ export const fetchAuthenticatedProfile = async (firebaseUser) => {
         const payload = await response.json()
         return payload.data || {}
       }
-      lastError = new Error(`Authenticated profile request failed (${response.status}).`)
+      const payload = await response.json().catch(() => ({}))
+      lastError = Object.assign(
+        new Error(payload.error || `Authenticated profile request failed (${response.status}).`),
+        { status: response.status, code: payload.code || null }
+      )
     } catch (error) {
       lastError = error
     }
   }
 
   if (firestoreError) {
+    const profileErrors = [lastError, firestoreError].filter(Boolean)
     throw new AggregateError(
-      [lastError, firestoreError].filter(Boolean),
+      profileErrors,
       'Unable to load the authenticated profile.'
     )
   }

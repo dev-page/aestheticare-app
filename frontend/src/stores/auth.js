@@ -5,6 +5,9 @@ import { auth } from '@/config/firebaseConfig'
 import { clearSidebarTransientState } from '@/composables/useSidebarState'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 import { fetchAuthenticatedProfile } from '@/utils/authenticatedProfile'
+import { isCustomerAppAccount } from '@/utils/customerApp'
+
+const isCustomerAppBuild = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -50,7 +53,12 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const data = await fetchAuthenticatedProfile(firebaseUser)
 
-        if (!data.welcomeNotificationSent) await ensureWelcomeNotification(firebaseUser)
+        if (
+          !data.welcomeNotificationSent
+          && (!isCustomerAppBuild || isCustomerAppAccount(data))
+        ) {
+          await ensureWelcomeNotification(firebaseUser)
+        }
       } catch (error) {
         console.warn('Unable to initialize the authenticated profile:', error)
       }

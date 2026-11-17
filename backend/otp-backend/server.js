@@ -728,7 +728,11 @@ const configuredCorsOrigins = new Set(
     process.env.APP_URL,
     process.env.PUBLIC_APP_URL,
     process.env.CUSTOMER_APP_URL,
-    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? (/^https?:\/\//i.test(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+        ? process.env.VERCEL_PROJECT_PRODUCTION_URL
+        : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
+      : '',
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
     'https://aestheticare.online',
     'https://www.aestheticare.online',
