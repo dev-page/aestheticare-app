@@ -1,6 +1,5 @@
 import { defaultClinicRolePermissions } from '../../../shared/clinicRoleDefaults.js'
 
-export const fullAccessPermissionKey = 'administrator:full_access'
 export { defaultClinicRolePermissions }
 
 export const permissionGroups = [
@@ -238,7 +237,6 @@ export const permissionGroups = [
         label: 'Account Access',
         description: 'Core account controls.',
         permissions: [
-          { key: fullAccessPermissionKey, label: 'Administrator Full Access', description: 'Reserved for system administrators and cannot be delegated through clinic roles.', icon: 'mdi:key-star', ownerOnly: true },
           { key: 'subscription:view', label: 'View Subscription', description: 'Open the clinic subscription plan screen.', icon: 'mdi:card-outline' },
           { key: 'backups:view', label: 'View Backups', description: 'Access database backup history and downloads.', icon: 'mdi:file-download-outline' },
           { key: 'backups:create', label: 'Create Backups', description: 'Generate a database backup.', icon: 'mdi:database-plus-outline' },

@@ -305,7 +305,8 @@
                       class="danger-action"
                       @click="removeRole(selectedRole.id)"
                     >
-                      Delete Role
+                      <Icon icon="mdi:trash-can-outline" class="h-4 w-4" aria-hidden="true" />
+                      <span>Delete Role</span>
                     </button>
                     <span v-else class="rounded-2xl border border-[#5a3927] px-3 py-2 text-xs text-[#d2b7a6]">
                       Protected built-in role
@@ -526,7 +527,7 @@
                                   v-else-if="isPermissionLocked(permission.key)"
                                   class="permission-meta text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
                                 >
-                                  {{ isOwnerOnlyPermission(permission.key) ? 'System administrator only' : 'Locked by current plan' }}
+                                  Locked by current plan
                                 </div>
                               </div>
                             </div>
@@ -595,7 +596,6 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import {
   allPermissionKeys,
   defaultClinicRolePermissions,
-  fullAccessPermissionKey,
   permissionDependencies,
   permissionFeatureMap,
   permissionGroups,
@@ -606,11 +606,6 @@ const ROLE_COLOR = '#d2a679'
 // These pages are always available to clinic staff as self-service. Request
 // permissions do not grant access to review other employees' submissions.
 const defaultPermissionKeys = new Set(defaultClinicRolePermissions)
-const ownerOnlyPermissionKeys = new Set(
-  permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
-    section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
-  ))
-)
 
 const permissionSuggestionRules = [
   {
@@ -777,10 +772,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     )
 
     const selectedPermissionsCount = computed(() =>
-      selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
-        ? allPermissionKeys.length
-        : permissionGroups.flatMap((group) => group.sections.flatMap((section) => section.permissions))
-          .filter((permission) => isPermissionEnabled(permission.key)).length
+      permissionGroups.flatMap((group) => group.sections.flatMap((section) => section.permissions))
+        .filter((permission) => isPermissionEnabled(permission.key)).length
     )
 
     const statsCards = computed(() => [
@@ -791,18 +784,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const isPermissionLocked = (permissionKey) => {
       const requiredFeature = permissionFeatureMap[permissionKey] || ''
-      return isOwnerOnlyPermission(permissionKey)
-        || (Boolean(requiredFeature) && !hasFeature(requiredFeature))
+      return Boolean(requiredFeature) && !hasFeature(requiredFeature)
     }
 
     const isDefaultPermission = (permissionKey) => defaultPermissionKeys.has(permissionKey)
 
-    const isOwnerOnlyPermission = (permissionKey) => ownerOnlyPermissionKeys.has(permissionKey)
-
     const isPermissionEnabled = (permissionKey) =>
       defaultPermissionKeys.has(permissionKey)
       || selectedRoleDraft.value.permissions.includes(permissionKey)
-      || selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
 
     const normalizePermissionSet = (permissionList = []) => {
       // Drop retired permissions from older role documents. This keeps the
@@ -810,13 +799,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       // the features that are actually available now.
       const permissions = new Set(
         (Array.isArray(permissionList) ? permissionList : []).filter((permission) =>
-          allPermissionKeys.includes(permission) || permission === fullAccessPermissionKey
+          allPermissionKeys.includes(permission)
         )
       )
-      ownerOnlyPermissionKeys.forEach((permissionKey) => permissions.delete(permissionKey))
-      // Full access is a platform-level capability; clinic custom roles can
-      // never delegate it to a staff account.
-      permissions.delete(fullAccessPermissionKey)
 
       const pending = [...permissions]
       while (pending.length) {
@@ -1385,19 +1370,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (isDefaultPermission(permissionKey)) return
       if (isPermissionLocked(permissionKey)) return
       const permissions = new Set(selectedRoleDraft.value.permissions || [])
-      if (permissionKey === fullAccessPermissionKey) {
-        if (permissions.has(fullAccessPermissionKey)) {
-          permissions.delete(fullAccessPermissionKey)
-        } else {
-          permissions.clear()
-          permissions.add(fullAccessPermissionKey)
-        }
-        selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => permissions.has(key))
-        return
-      }
-      if (permissions.has(fullAccessPermissionKey)) {
-        permissions.delete(fullAccessPermissionKey)
-      }
       if (permissions.has(permissionKey)) {
         removePermissionDependents(permissions, permissionKey)
       } else {
@@ -1536,18 +1508,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       group.sections.reduce((total, section) => total + section.permissions.length, 0)
 
     const enabledCountForGroup = (group) =>
-      selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
-        ? countPermissionsInGroup(group)
-        : group.sections.reduce(
-          (total, section) =>
-            total + section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length,
-          0
-        )
+      group.sections.reduce(
+        (total, section) =>
+          total + section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length,
+        0
+      )
 
     const enabledCountForSection = (section) =>
-      selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
-        ? section.permissions.length
-        : section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length
+      section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length
 
     let unsubscribeAuth = null
 
@@ -1585,7 +1553,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       countPermissionsInGroup,
       enabledCountForGroup,
       isPermissionLocked,
-      isOwnerOnlyPermission,
       isDefaultPermission,
       isPermissionEnabled,
       loadRoles,
@@ -1763,13 +1730,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .danger-action {
-  border: 1px solid rgba(239, 68, 68, 0.28);
-  background: rgba(127, 29, 29, 0.16);
-  color: #fecaca;
+  min-height: 2.65rem;
+  gap: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--ac-danger) 48%, var(--ac-border));
+  background: var(--ac-danger-bg);
+  color: var(--ac-danger);
+  box-shadow: 0 1px 2px rgba(35, 20, 12, 0.08);
 }
 
 .danger-action:hover {
-  background: rgba(127, 29, 29, 0.24);
+  border-color: var(--ac-danger);
+  background: color-mix(in srgb, var(--ac-danger-bg) 82%, var(--ac-danger) 18%);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ac-danger) 16%, transparent);
+}
+
+.danger-action:active {
+  transform: translateY(1px);
+}
+
+.danger-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ac-danger) 35%, transparent);
+  outline-offset: 2px;
 }
 
 .discord-switch {
