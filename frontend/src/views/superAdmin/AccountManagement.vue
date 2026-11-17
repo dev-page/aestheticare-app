@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <SuperAdminSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">User Accounts</h1>
@@ -25,7 +25,7 @@
 
       <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div class="account-filters border-b border-slate-700 p-4">
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(18rem,1.5fr)_minmax(10rem,.7fr)_minmax(10rem,.7fr)_auto]">
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(18rem,1.5fr)_minmax(10rem,.7fr)_auto]">
             <label class="filter-field">
               <span>Search accounts</span>
               <div class="relative">
@@ -35,18 +35,10 @@
                 <input
                   v-model="search"
                   type="search"
-                  placeholder="Name, email, role, or user type"
+                  placeholder="Name, email, or user type"
                   class="w-full rounded-lg border border-slate-700 bg-slate-900 py-2 pl-9 pr-3 text-slate-100 placeholder:text-slate-500"
                 />
               </div>
-            </label>
-
-            <label class="filter-field">
-              <span>Role</span>
-              <select v-model="roleFilter" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100">
-                <option value="">All roles</option>
-                <option v-for="role in roleOptions" :key="role" :value="role">{{ role }}</option>
-              </select>
             </label>
 
             <label class="filter-field">
@@ -80,13 +72,12 @@
           </template>
         </TablePagination>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+        <div class="account-table-scroll overflow-x-auto">
+          <table class="accounts-table w-full text-sm">
             <thead class="border-b border-slate-700 bg-slate-800">
               <tr>
                 <th class="text-left text-slate-300 px-4 py-3">Name</th>
                 <th class="text-left text-slate-300 px-4 py-3">Email</th>
-                <th class="text-left text-slate-300 px-4 py-3">Role</th>
                 <th class="text-left text-slate-300 px-4 py-3">User Type</th>
                 <th class="text-left text-slate-300 px-4 py-3">Status</th>
                 <th class="text-left text-slate-300 px-4 py-3">Created</th>
@@ -95,17 +86,16 @@
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td class="px-4 py-3 text-slate-300" colspan="6">Loading user accounts...</td>
+                <td class="px-4 py-3 text-slate-300" colspan="5">Loading user accounts...</td>
               </tr>
 
               <tr v-else-if="!filteredAccounts.length">
-                <td class="px-4 py-3 text-slate-300" colspan="6">No user accounts found.</td>
+                <td class="px-4 py-3 text-slate-300" colspan="5">No user accounts found.</td>
               </tr>
 
               <tr v-for="account in paginatedAccounts" :key="account.id" class="border-b border-slate-700/60 last:border-b-0">
                 <td class="px-4 py-3 text-slate-200">{{ account.fullName }}</td>
                 <td class="px-4 py-3 text-slate-300">{{ account.email || '-' }}</td>
-                <td class="px-4 py-3 text-slate-300">{{ account.role || '-' }}</td>
                 <td class="px-4 py-3 text-slate-300">{{ account.userType || '-' }}</td>
                 <td class="px-4 py-3">
                   <span class="px-2 py-1 rounded-md text-xs font-medium" :class="statusClass(account.status)">
@@ -177,7 +167,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const loading = ref(false)
     const error = ref('')
     const search = ref('')
-    const roleFilter = ref('')
     const userTypeFilter = ref('')
     const currentPage = ref(1)
     const pageSize = ref(10)
@@ -233,7 +222,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               id: user.id,
               fullName,
               email: user.email || '',
-              role: normalizeRoleKey(user.role) || 'User',
               userType: displayUserType(user),
               status: user.status || 'Unknown',
               createdLabel: formatDate(user.createdAt),
@@ -254,14 +242,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const filteredAccounts = computed(() => {
       const keyword = String(search.value || '').trim().toLowerCase()
       return accounts.value.filter((account) => {
-        if (roleFilter.value && account.role !== roleFilter.value) return false
         if (userTypeFilter.value && account.userType !== userTypeFilter.value) return false
         if (!keyword) return true
 
         const haystack = [
           account.fullName,
           account.email,
-          account.role,
           account.userType,
           account.status,
         ]
@@ -272,21 +258,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     })
 
-    const roleOptions = computed(() => [...new Set(accounts.value.map((account) => account.role).filter(Boolean))].sort())
     const userTypeOptions = computed(() => [...new Set(accounts.value.map((account) => account.userType).filter(Boolean))].sort())
     const paginatedAccounts = computed(() => {
       const start = (currentPage.value - 1) * pageSize.value
       return filteredAccounts.value.slice(start, start + pageSize.value)
     })
-    const activeFilterCount = computed(() => [search.value.trim(), roleFilter.value, userTypeFilter.value].filter(Boolean).length)
+    const activeFilterCount = computed(() => [search.value.trim(), userTypeFilter.value].filter(Boolean).length)
 
     const clearFilters = () => {
       search.value = ''
-      roleFilter.value = ''
       userTypeFilter.value = ''
     }
 
-    watch([search, roleFilter, userTypeFilter, pageSize], () => {
+    watch([search, userTypeFilter, pageSize], () => {
       currentPage.value = 1
     })
 
@@ -299,9 +283,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       error,
       search,
       accounts,
-      roleFilter,
       userTypeFilter,
-      roleOptions,
       userTypeOptions,
       filteredAccounts,
       paginatedAccounts,
@@ -324,5 +306,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   font-size: .75rem;
   font-weight: 600;
 }
+.account-table-scroll { box-shadow: none !important; }
+.accounts-table thead,
+.accounts-table thead th {
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+.accounts-table thead { position: static !important; }
 
 </style>

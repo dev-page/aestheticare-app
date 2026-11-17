@@ -26,7 +26,7 @@
           </button>
           <button
             type="button"
-            class="admin-primary rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-slate-950 hover:bg-cyan-400"
+            class="admin-primary rounded-lg px-4 py-2 font-semibold"
             @click="openAddModal"
           >
             Add Admin
@@ -65,7 +65,7 @@
                 <td class="px-4 py-3 text-slate-100" data-label="Name">
                   <div class="flex items-center gap-2">
                     <span>{{ admin.fullName }}</span>
-                    <span v-if="admin.id === currentAdminUid" class="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[11px] font-semibold text-cyan-300">You</span>
+        <span v-if="admin.id === currentAdminUid" class="admin-you-badge rounded-full px-2 py-0.5 text-[11px] font-semibold">You</span>
                   </div>
                 </td>
                 <td class="px-4 py-3 text-slate-300" data-label="Email">{{ admin.email || '-' }}</td>
@@ -121,7 +121,7 @@
               <h2 id="admin-modal-title" class="text-2xl font-bold text-white">{{ editingAdminId ? 'Edit Admin' : 'Add Admin' }}</h2>
               <p class="mt-1 text-sm text-slate-400">{{ editingAdminId ? 'Update this administrator account and its access.' : 'Create a platform administrator account.' }}</p>
             </div>
-            <button type="button" class="admin-close rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Close" @click="closeAddModal">✕</button>
+            <button type="button" class="admin-close rounded-full p-2" aria-label="Close" @click="closeAddModal"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></button>
           </header>
 
           <form class="admin-form" @submit.prevent="createAdmin" :aria-busy="saving">
@@ -160,7 +160,7 @@
                 <div class="relative">
                   <button
                     type="button"
-                    class="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-left text-white transition hover:border-cyan-500/60 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="admin-role-select flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-left text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
                     :disabled="isEditingSelf"
                     @click="roleMenuOpen = !roleMenuOpen"
                   >
@@ -177,14 +177,14 @@
                       :key="role.key"
                       type="button"
                       class="admin-role-option w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-700"
-                      :class="newAdmin.adminRole === role.key ? 'admin-role-option--selected bg-cyan-500/15 text-cyan-200' : 'text-slate-200'"
+                      :class="newAdmin.adminRole === role.key ? 'admin-role-option--selected' : ''"
                       @click="selectAdminRole(role.key)"
                     >
                       <span class="flex items-center justify-between gap-3">
                         <span class="text-sm font-medium">{{ role.label }}</span>
-                        <span v-if="newAdmin.adminRole === role.key" class="text-xs text-cyan-300">Selected</span>
+                        <span v-if="newAdmin.adminRole === role.key" class="admin-role-option__selected-label">Selected</span>
                       </span>
-                      <span class="mt-1 block text-xs text-slate-400">{{ role.description }}</span>
+                      <span class="admin-role-option__description mt-1 block text-xs">{{ role.description }}</span>
                     </button>
                   </div>
                 </div>
@@ -232,7 +232,7 @@
               <button type="button" class="admin-secondary rounded-lg border border-slate-600 px-4 py-2.5 text-slate-700 hover:bg-slate-100" @click="closeAddModal">
                 Cancel
               </button>
-              <button type="submit" class="admin-primary rounded-lg bg-cyan-500 px-4 py-2.5 font-semibold text-slate-950 hover:bg-cyan-400" :disabled="saving">
+              <button type="submit" class="admin-primary rounded-lg px-4 py-2.5 font-semibold" :disabled="saving">
                 {{ saving ? (editingAdminId ? 'Saving...' : 'Creating...') : (editingAdminId ? 'Save Changes' : 'Create Admin') }}
               </button>
             </footer>
@@ -686,7 +686,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .admin-list-controls{width:min(100%,36rem);display:grid;grid-template-columns:minmax(0,1fr) 2.75rem auto;align-items:center}
 .admin-search{width:100%;min-width:0;border-color:var(--ac-border-strong)!important;background:var(--ac-surface)!important;color:var(--ac-text)!important}
 .admin-search::placeholder{color:var(--ac-text-muted)!important;opacity:.8}
-.admin-refresh{width:2.75rem;height:2.75rem;display:grid;place-items:center;padding:0;border-color:var(--ac-border-strong)!important;color:var(--ac-text-secondary)!important;background:var(--ac-surface)!important}
+.admin-refresh{width:2.75rem;height:2.75rem;display:grid;place-items:center;padding:0;border-color:var(--ac-border-strong)!important;color:var(--ac-text)!important;background:var(--ac-surface)!important}
+.admin-refresh svg{color:var(--ac-text)!important}
 .admin-refresh:hover:not(:disabled),.admin-action:hover:not(:disabled),.admin-secondary:hover:not(:disabled){background:var(--ac-surface-muted)!important}
 .admin-primary{border:1px solid var(--ac-primary)!important;background:var(--ac-primary)!important;color:var(--ac-on-primary)!important;box-shadow:var(--ac-shadow-sm);transition:background .16s ease,transform .16s ease}
 .admin-primary:hover:not(:disabled){background:var(--ac-primary-hover)!important;transform:translateY(-1px)}
@@ -694,6 +695,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .admin-error{border:1px solid var(--ac-danger)!important;border-radius:.75rem;background:var(--ac-danger-bg)!important;color:var(--ac-danger)!important;padding:.75rem 1rem}
 .admin-list-panel{overflow:hidden;border-color:var(--ac-border)!important;background:var(--ac-surface)!important;box-shadow:var(--ac-shadow-sm)}
 .admin-list-panel>div:first-child{border-color:var(--ac-border)!important;color:var(--ac-text-muted)!important}
+.admin-you-badge{border:1px solid var(--ac-border)!important;background:var(--ac-accent-soft)!important;color:var(--ac-text)!important}
 .admin-table{min-width:800px;border-collapse:separate;border-spacing:0;color:var(--ac-text-secondary)}
 .admin-table thead{background:var(--ac-surface-muted)!important}
 .admin-table th{padding:.85rem 1rem;color:var(--ac-text-muted)!important;font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
@@ -724,10 +726,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .admin-role-panel,.admin-preview{border-color:var(--ac-border)!important;background:var(--ac-surface-soft)!important;color:var(--ac-text)!important}
 .admin-role-select{border-color:var(--ac-border-strong)!important;background:var(--ac-surface)!important;color:var(--ac-text)!important}
 .admin-role-select:hover{border-color:var(--ac-accent)!important}
+.admin-role-select:focus{border-color:var(--ac-accent)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--ac-accent) 18%,transparent)}
 .admin-role-menu{border-color:var(--ac-border)!important;background:var(--ac-surface)!important;box-shadow:var(--ac-shadow-lg)}
 .admin-role-option{color:var(--ac-text-secondary)!important}
 .admin-role-option:hover{background:var(--ac-surface-muted)!important}
-.admin-role-option--selected{background:var(--ac-accent-soft)!important;color:var(--ac-text)!important}
+.admin-role-option--selected{border:1px solid var(--ac-border-strong)!important;background:var(--ac-accent-soft)!important;color:var(--ac-text)!important}
+.admin-role-option--selected .admin-role-option__description{color:var(--ac-text-secondary)!important}
+.admin-role-option__description{color:var(--ac-text-muted)!important}
+.admin-role-option__selected-label{color:var(--ac-text)!important;font-size:.72rem;font-weight:700}
+.admin-close{width:2.5rem;height:2.5rem;border:1px solid var(--ac-border)!important;background:var(--ac-surface-soft)!important;color:var(--ac-text-secondary)!important}
+.admin-close svg{width:1.1rem;height:1.1rem}
 .admin-permission{min-height:2.75rem;border-color:var(--ac-border)!important;background:var(--ac-surface)!important;color:var(--ac-text-secondary)!important}
 .admin-permission:hover{background:var(--ac-surface-muted)!important}
 .admin-permission input{flex:0 0 auto;accent-color:var(--ac-accent)}

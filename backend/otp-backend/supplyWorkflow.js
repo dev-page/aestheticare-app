@@ -326,6 +326,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           allow(ctx, 'inventory:create')
           const suppliedLines = Array.isArray(input.lines) && input.lines.length ? input.lines : [input]
           demand(suppliedLines.length <= 50, 'A request can include up to 50 items.', 400)
+          const requiredBy = dateKey(input.requiredDate)
+          demand(requiredBy > day(), 'Required by date must be at least tomorrow.', 400)
           const seenProducts = new Set()
           const lines = suppliedLines.map(raw => {
             demand(!raw.supplierId, 'Inventory requests describe the clinic need; Procurement selects a supplier.', 400)
@@ -339,7 +341,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           })
           const estimatedCost = lines.reduce((sum, line) => sum + line.subtotal, 0)
           const saveDraft = input.action === 'saveDraft'
-          result = create('request', { status: saveDraft ? 'Draft' : 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: 'Inventory', reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: dateKey(input.requiredDate), estimatedCost, submittedBy: ctx.uid, ...(saveDraft ? { savedAt: now } : { submittedAt: now }) })
+          result = create('request', { status: saveDraft ? 'Draft' : 'Sent to Procurement', supplierId: lines.length === 1 ? lines[0].supplierId : '', itemId: lines.length === 1 ? lines[0].itemId : '', lines, department: 'Inventory', reason: required(input.reason, 'Reason'), notes: String(input.notes || ''), priority: input.priority || 'Normal', requiredDate: requiredBy, estimatedCost, submittedBy: ctx.uid, ...(saveDraft ? { savedAt: now } : { submittedAt: now }) })
           if (!saveDraft) {
             const procurement = create('procurement', { status: 'Received', requestId: result.id, requesterId: ctx.uid, lines, department: result.department, requiredDate: result.requiredDate, reason: result.reason, priority: result.priority, estimatedProcurementValue: estimatedCost, links: [result.id] }, `proc-${result.id}`)
             set(result, { procurementId: procurement.id })

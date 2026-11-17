@@ -23,7 +23,7 @@
             <div class="form-field category-select-field"><ContractAppearanceSelect id="supply-request-category" label="Category *" v-model="draft.category" :options="[{ value: '', label: 'Select a category' }, ...inventoryCategories.map(value => ({ value, label: value }))]" /><small>Choose the closest supply group.</small></div>
             <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the amount of supply the clinic needs.</small></label>
             <label class="form-field"><span>Unit of measure <b>*</b></span><select v-model="draft.unit" required><option value="units">Units</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="bottles">Bottles</option><option value="pairs">Pairs</option><option value="pieces">Pieces</option><option value="rolls">Rolls</option><option value="tubes">Tubes</option><option value="grams">Grams</option><option value="kilograms">Kilograms</option><option value="milliliters">Milliliters</option><option value="liters">Liters</option></select><small>Choose how the requested quantity is measured.</small></label>
-            <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" required /><small>Choose the date when this supply is needed.</small></label>
+            <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" :min="minimumRequiredDate" required /><small>Choose a date at least one day from today.</small></label>
             <section class="delivery-location-panel md:col-span-2"><div><p class="form-field-label">Delivery location <b>*</b></p><p class="mt-1 text-sm text-slate-400">Choose where the supplies should arrive. The saved branch address will be attached to the request.</p></div><label class="form-field mt-4"><span>Clinic branch <b>*</b></span><select v-model="selectedDeliveryBranchId" required><option value="" disabled>Select delivery branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><p class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-300"><strong class="text-slate-100">Saved address:</strong> {{ branchAddress || 'No address is recorded for this branch.' }}</p></section>
             <label class="form-field"><span>Priority</span><select v-model="draft.priority"><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Normal is selected by default; raise it only if operations are affected.</small></label>
             <label class="form-field md:col-span-2"><span>Reason for request <b>*</b></span><textarea v-model.trim="draft.reason" placeholder="Explain why this supply is needed and how it will be used." required /><small>This helps Procurement and Finance assess the request.</small></label>
@@ -178,7 +178,7 @@
 <script setup>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
@@ -292,10 +292,23 @@ const load = trackPageLoad(async () => {
     if (!selectedDeliveryBranchId.value || !data.value.branches.some(branch => branch.id === selectedDeliveryBranchId.value)) selectedDeliveryBranchId.value = data.value.branches.find(branch => branch.id === data.value.branchId)?.id || data.value.branches[0]?.id || ''
   } catch (caught) { error.value = caught.message }
 })
-const draft = ref({ name: '', category: '', quantity: 1, unit: 'units', requiredDate: new Date().toISOString().slice(0, 10), location: 'Clinic branch', reason: '', priority: 'Normal' })
+const manilaDateOffset = offsetDays => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  const [year, month, date] = today.split('-').map(Number)
+  const target = new Date(Date.UTC(year, month - 1, date + offsetDays))
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, '0')}-${String(target.getUTCDate()).padStart(2, '0')}`
+}
+const minimumRequiredDate = ref(manilaDateOffset(1))
+let requiredDateClock = null
+const draft = ref({ name: '', category: '', quantity: 1, unit: 'units', requiredDate: minimumRequiredDate.value, location: 'Clinic branch', reason: '', priority: 'Normal' })
 const createRequest = async () => {
   if (!requestBranchId.value) {
     error.value = 'Your assigned clinic branch is unavailable. Refresh the page and try again.'
+    return
+  }
+  if (draft.value.requiredDate < manilaDateOffset(1)) {
+    error.value = 'Choose a required-by date starting tomorrow.'
+    toast.error(error.value)
     return
   }
   busy.value = true
@@ -303,7 +316,7 @@ const createRequest = async () => {
   try {
     const requestDraft = { ...draft.value, location: branchAddress.value }
     await api('/records', { kind: 'request', branchId: requestBranchId.value, department: 'Inventory', lines: [requestDraft], ...requestDraft })
-    draft.value = { ...draft.value, name: '', category: '', quantity: 1, reason: '' }
+    draft.value = { ...draft.value, name: '', category: '', quantity: 1, reason: '', requiredDate: minimumRequiredDate.value }
     await load()
     toast.success('Inventory request sent to Procurement.')
   } catch (caught) {
@@ -465,7 +478,11 @@ const downloadDocument = async document => {
   try { const result = await api(`/documents/${document.id}`); window.open(result.url, '_blank', 'noopener,noreferrer') }
   catch (caught) { error.value = caught.message; toast.error(error.value) }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  requiredDateClock = setInterval(() => { minimumRequiredDate.value = manilaDateOffset(1) }, 60_000)
+})
+onUnmounted(() => clearInterval(requiredDateClock))
 </script>
 
 <style scoped>
