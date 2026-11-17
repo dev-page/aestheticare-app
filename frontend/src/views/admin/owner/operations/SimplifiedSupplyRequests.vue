@@ -1,5 +1,5 @@
 <template>
-  <div class="module-theme flex min-h-screen bg-slate-900 text-slate-100" :class="{ 'finance-page': mode === 'finance', 'inventory-requests-page': mode === 'inventory' }">
+  <div class="module-theme supply-requests-page flex min-h-screen bg-slate-900 text-slate-100" :class="{ 'finance-page': mode === 'finance' }">
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, blocks: mode === 'inventory' ? [{ variant: 'form', fields: 4, sections: 2 }, { variant: 'table', columns: 6, rows: 4 }] : [{ variant: 'table', columns: 6, rows: 5 }] }" class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
       <div class="mx-auto max-w-6xl">
@@ -8,6 +8,7 @@
         <h1 class="mt-1 text-2xl font-bold text-white sm:text-3xl">{{ title }}</h1>
         <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{{ intro }}</p>
       </header>
+      <SupplyFlowGuide :department="mode" page="requests" />
       <p v-if="error" class="mt-5 rounded-xl border border-red-500/70 bg-red-950/40 p-4 text-sm text-red-100">{{ error }}</p>
 
       <section v-if="mode === 'inventory'" class="mt-6 rounded-2xl border border-slate-700 bg-slate-800/80 shadow-xl shadow-slate-950/20">
@@ -23,8 +24,8 @@
             <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the amount of supply the clinic needs.</small></label>
             <label class="form-field"><span>Unit of measure <b>*</b></span><select v-model="draft.unit" required><option value="units">Units</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="bottles">Bottles</option><option value="pairs">Pairs</option><option value="pieces">Pieces</option><option value="rolls">Rolls</option><option value="tubes">Tubes</option><option value="grams">Grams</option><option value="kilograms">Kilograms</option><option value="milliliters">Milliliters</option><option value="liters">Liters</option></select><small>Choose how the requested quantity is measured.</small></label>
             <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" required /><small>Choose the date when this supply is needed.</small></label>
-            <section class="delivery-location-panel md:col-span-2"><div><p class="form-field-label">Delivery location <b>*</b></p><p class="mt-1 text-sm text-slate-400">Choose the clinic branch that should receive the supplies. Its registered map pin and address are used automatically.</p></div><label class="form-field mt-4"><span>Clinic branch <b>*</b></span><select v-model="selectedDeliveryBranchId" required><option value="" disabled>Select delivery branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><LocationPicker v-if="branchCoordinates" class="mt-4" :initial-address="branchAddress" :initial-lat="activeBranch.latitude" :initial-lng="activeBranch.longitude" map-height="220px" theme="light" readonly :show-actions="false" pinned-address-label="Pinned branch location" /><div v-else class="mt-4 rounded-xl border border-amber-600/50 bg-amber-950/20 p-4 text-sm text-amber-100">This branch does not have a map pin yet. Ask the clinic owner to set the branch location in Clinic Profile.</div><div v-if="!branchCoordinates" class="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4"><p class="text-xs font-bold uppercase tracking-[.12em] text-amber-300">Full address</p><p class="mt-1 text-sm leading-6 text-slate-100">{{ branchAddress || 'No registered branch address.' }}</p></div></section>
-            <label class="form-field"><span>Priority <b>*</b></span><select v-model="draft.priority" required><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Use urgent only when operations would be affected without the supply.</small></label>
+            <section class="delivery-location-panel md:col-span-2"><div><p class="form-field-label">Delivery location <b>*</b></p><p class="mt-1 text-sm text-slate-400">Choose where the supplies should arrive. The saved branch address will be attached to the request.</p></div><label class="form-field mt-4"><span>Clinic branch <b>*</b></span><select v-model="selectedDeliveryBranchId" required><option value="" disabled>Select delivery branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><p class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-300"><strong class="text-slate-100">Saved address:</strong> {{ branchAddress || 'No address is recorded for this branch.' }}</p></section>
+            <label class="form-field"><span>Priority</span><select v-model="draft.priority"><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select><small>Normal is selected by default; raise it only if operations are affected.</small></label>
             <label class="form-field md:col-span-2"><span>Reason for request <b>*</b></span><textarea v-model.trim="draft.reason" placeholder="Explain why this supply is needed and how it will be used." required /><small>This helps Procurement and Finance assess the request.</small></label>
           </div>
           <div class="mt-6 flex flex-col gap-4 border-t border-slate-700 pt-5 sm:flex-row sm:items-center sm:justify-between"><p class="max-w-2xl text-sm leading-6 text-slate-400"><span class="font-semibold text-slate-200">Next step:</span> Procurement will be notified to contact clinic suppliers, record an external quotation, and prepare a purchase order.</p><button class="rounded-lg bg-amber-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60" :disabled="busy || !requestBranchId">{{ busy ? 'Sending request…' : 'Send to Procurement' }}</button></div>
@@ -54,7 +55,7 @@
           <p v-if="!inventoryRecords.length" class="px-5 py-8 text-center text-sm text-slate-400">No inventory requests have been created yet.</p>
         </div>
         <div v-if="mode === 'finance'" class="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/80">
-          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Assign budget</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Review'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose an Inventory budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Assign</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget assigned' : '—' }}</span><button v-if="record.status === 'Approved'" class="ml-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold" :disabled="busy" @click="goToProcurementOrders">Manage and issue PO</button></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
+          <div class="overflow-x-auto"><table class="min-w-full text-left text-sm"><thead class="border-b border-slate-700 bg-slate-900/70 text-xs font-bold uppercase tracking-[.1em] text-slate-300"><tr><th class="px-4 py-3">Purchase order</th><th class="px-4 py-3">Supplies</th><th class="px-4 py-3">Department</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Date created</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Budget decision</th><th class="px-4 py-3 text-right">Details</th></tr></thead><tbody class="divide-y divide-slate-700"><tr v-for="record in pagedTableRecords" :key="record.id" class="transition hover:bg-slate-700/40"><td class="whitespace-nowrap px-4 py-4 font-semibold text-white">{{ record.number }}</td><td class="px-4 py-4 text-slate-300">{{ record.lines?.map(line => `${line.name} × ${line.quantity}`).join(', ') || '—' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ record.department || 'Inventory' }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-100">{{ currency(record.total) }}</td><td class="whitespace-nowrap px-4 py-4 text-slate-300">{{ formatDateCreated(record.createdAt) }}</td><td class="whitespace-nowrap px-4 py-4"><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ record.status }}</span></td><td class="min-w-64 px-4 py-4"><div v-if="record.status === 'For Review'" class="flex gap-2"><select v-model="budgetByRecord[record.id]" class="min-w-0 flex-1"><option value="">Choose a budget</option><option v-for="budget in eligibleBudgetsFor(record)" :key="budget.id" :value="budget.id">{{ budget.category }} · {{ currency(budgetAvailable(budget)) }} available</option></select><button class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-60" :disabled="!budgetByRecord[record.id] || busy" @click="approve(record)">Approve &amp; reserve</button></div><span v-else class="text-xs text-slate-400">{{ record.status === 'Approved' ? 'Budget reserved' : '—' }}</span><button v-if="record.status === 'Approved'" class="ml-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold" :disabled="busy" @click="goToProcurementOrders">Open in Procurement</button></td><td class="whitespace-nowrap px-4 py-4 text-right"><button class="rounded-lg border border-amber-400/60 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500 hover:text-slate-950" @click="openFinanceOrderDetails(record)">Details</button></td></tr></tbody></table></div><p v-if="!financePurchaseOrders.length" class="px-5 py-8 text-center text-sm text-slate-400">No purchase orders currently need your action.</p></div>
         <TablePagination v-model:page="tablePage" v-model:page-size="rowsPerPage" :total-items="filteredTableRecords.length" part="bottom" item-label="records" />
       </section>
       </div>
@@ -64,49 +65,50 @@
       <template #body>
         <div v-if="selectedProcurementRecord" class="space-y-5">
           <section class="rounded-xl border border-slate-700 bg-slate-900/70 p-4"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold text-white">Inventory request details</h3><p class="mt-1 text-sm text-slate-400">The original supply request sent by Inventory.</p></div><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ relatedInventoryRequest(selectedProcurementRecord)?.number || 'Linked request' }}</span></div><dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt>Requested supplies</dt><dd>{{ requestLines(selectedProcurementRecord).map(line => `${line.name} × ${line.quantity} ${line.unit || 'units'}`).join(', ') || '—' }}</dd></div><div><dt>Category</dt><dd>{{ requestValue(selectedProcurementRecord, 'category') }}</dd></div><div><dt>Priority</dt><dd>{{ requestValue(selectedProcurementRecord, 'priority') }}</dd></div><div><dt>Required by</dt><dd>{{ requestValue(selectedProcurementRecord, 'requiredDate') }}</dd></div><div class="sm:col-span-2"><dt>Delivery location</dt><dd>{{ requestValue(selectedProcurementRecord, 'location') }}</dd></div><div class="sm:col-span-2"><dt>Reason for request</dt><dd>{{ requestValue(selectedProcurementRecord, 'reason') }}</dd></div></dl></section>
-          <section v-if="selectedProcurementRecord.status === 'Received'" class="space-y-4 rounded-xl border border-amber-500/35 bg-amber-950/15 p-4">
-            <div><h3 class="font-semibold text-white">Record supplier quotation</h3><p class="mt-1 text-sm text-slate-400">Enter the prices from the supplier’s quote and attach a copy. The supplier does not need an AesthetiCare account.</p></div>
-            <label class="form-field">Clinic supplier <b>*</b><select v-model="supplierByRecord[selectedProcurementRecord.id]" class="mt-1 w-full"><option value="">Choose a clinic supplier</option><option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.businessName || supplier.name }}</option></select></label>
+          <section v-if="selectedProcurementRecord.status === 'Received'" class="supply-quote-form space-y-4 rounded-xl border border-amber-500/35 bg-amber-950/15 p-4">
+            <div><p class="supply-form-step">NEXT STEP · PROCUREMENT</p><h3 class="mt-1 font-semibold text-white">Add supplier quote</h3><p class="mt-1 text-sm text-slate-400">Choose a supplier, enter prices, and attach the quote. This creates the purchase order for Finance to approve.</p></div>
+            <label class="form-field">Supplier <b>*</b><select v-model="supplierByRecord[selectedProcurementRecord.id]" class="mt-1 w-full"><option value="">Choose a clinic supplier</option><option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.businessName || supplier.name }}</option></select></label>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="form-field">External quote reference<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].quoteReference" maxlength="200" /></label>
-              <label class="form-field">Quotation date<input v-model="quoteDraftByRecord[selectedProcurementRecord.id].quoteDate" type="date" required /></label>
-              <label class="form-field">Budget category<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].category" required /></label>
-              <label class="form-field">Expected delivery date<input v-model="quoteDraftByRecord[selectedProcurementRecord.id].deliveryDate" type="date" required /></label>
-              <label class="form-field">Delivery location<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].deliveryLocation" required /></label>
-              <label class="form-field">Payment terms<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].paymentTerms" /></label>
-              <label class="form-field">Warranty<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].warranty" /></label>
-              <label class="form-field sm:col-span-2">Purchase terms<textarea v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].terms" rows="2" /></label>
+              <label class="form-field">Expected delivery date <b>*</b><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].deliveryDate" type="date" required /></label>
+              <label class="form-field">Delivery location <b>*</b><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].deliveryLocation" required /></label>
             </div>
-            <div v-for="(line, index) in quoteDraftByRecord[selectedProcurementRecord.id].lines" :key="line.itemId" class="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
-              <p class="text-sm font-medium text-white">{{ line.name }} · {{ line.quantity }} {{ line.unit || 'units' }}</p>
-              <label class="form-field mt-3">Quoted unit price (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].lines[index].unitPrice" type="number" min="0.01" step="0.01" required /></label>
+            <div class="space-y-3"><div><h4 class="font-semibold text-white">Quoted item prices</h4><p class="mt-1 text-xs text-slate-400">Enter the unit price shown for each requested item.</p></div>
+              <div v-for="(line, index) in quoteDraftByRecord[selectedProcurementRecord.id].lines" :key="line.itemId" class="supply-quote-line rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-medium text-white">{{ line.name }}</p><span class="text-xs text-slate-400">{{ line.quantity }} {{ line.unit || 'units' }}</span></div>
+                <label class="form-field mt-3">Unit price (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].lines[index].unitPrice" type="number" min="0.01" step="0.01" required /></label>
+              </div>
             </div>
-            <section class="space-y-4 rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-              <div><h4 class="font-semibold text-white">Quote pricing</h4><p class="mt-1 text-sm text-slate-400">Copy the amounts from the supplier’s quotation. The system checks the total; it does not calculate tax rates.</p></div>
-              <label class="form-field">How does the supplier show tax?<select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Tax is already included in item prices</option><option value="separate">Tax is listed as a separate amount</option><option value="not-applicable">No tax applies to this quote</option></select></label>
-              <p class="text-xs text-slate-400">If tax is included in item prices, do not add another tax amount below. If tax is separate, add the exact amount shown on the quote.</p>
-              <div class="space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><div><h5 class="text-sm font-semibold text-white">Other charges or discounts <span class="font-normal text-slate-400">(optional)</span></h5><p class="text-xs text-slate-400">Examples: VAT, delivery, handling, or a supplier discount.</p></div><button type="button" class="rounded border border-slate-600 px-3 py-2 text-sm text-white" @click="addQuoteAdjustment(selectedProcurementRecord)">Add a charge or discount</button></div>
-              <p v-if="!quoteDraftByRecord[selectedProcurementRecord.id].adjustments.length" class="rounded border border-dashed border-slate-700 px-3 py-2 text-sm text-slate-400">No extra charges or discounts added.</p>
-              <div v-for="(adjustment, index) in quoteDraftByRecord[selectedProcurementRecord.id].adjustments" :key="adjustment.id" class="grid gap-2 rounded border border-slate-700 p-3 sm:grid-cols-[1fr_1.5fr_1fr_auto]">
-                <label class="form-field">Charge type<select v-model="adjustment.type"><option value="tax">Tax</option><option value="fee">Fee</option><option value="discount">Discount</option></select></label>
-                <label class="form-field">Description<input v-model.trim="adjustment.label" maxlength="120" :placeholder="adjustment.type === 'tax' ? 'e.g. VAT' : adjustment.type === 'discount' ? 'e.g. Promotional discount' : 'e.g. Delivery or handling'" /></label>
-                <label class="form-field">Amount (PHP)<input v-model.number="adjustment.amount" type="number" min="0" step="0.01" /></label>
-                <button type="button" class="self-end rounded border border-slate-600 px-3 py-2 text-sm" aria-label="Remove charge or discount" @click="removeQuoteAdjustment(selectedProcurementRecord, index)">Remove</button>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="form-field">Tax on the quote<select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Included in item prices</option><option value="separate">Listed separately</option><option value="not-applicable">No tax applies</option></select></label>
+              <label class="form-field">Total shown on quote (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /></label>
+            </div>
+            <p v-if="quoteTotalMatches(selectedProcurementRecord)" role="status" class="supply-quote-status is-ready">The entered total matches the item prices and any listed charges.</p>
+            <p v-else role="status" class="supply-quote-status is-warning">{{ quotePricingMessage(selectedProcurementRecord) }}</p>
+            <details class="supply-quote-options rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <summary class="cursor-pointer text-sm font-semibold text-slate-200">Optional quote details and extra charges</summary>
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                <label class="form-field">Quote reference<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].quoteReference" maxlength="200" /></label>
+                <label class="form-field">Quote date<input v-model="quoteDraftByRecord[selectedProcurementRecord.id].quoteDate" type="date" /></label>
+                <label class="form-field">Budget category<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].category" /></label>
+                <label class="form-field">Payment terms<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].paymentTerms" /></label>
+                <label class="form-field">Warranty<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].warranty" /></label>
+                <label class="form-field sm:col-span-2">Purchase terms<textarea v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].terms" rows="2" /></label>
               </div>
+              <div class="mt-4 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold text-slate-200">Charges or discounts <span class="font-normal text-slate-400">(only if shown on the quote)</span></p><button type="button" class="rounded border border-slate-600 px-3 py-2 text-sm text-white" @click="addQuoteAdjustment(selectedProcurementRecord)">Add amount</button></div>
+                <div v-for="(adjustment, index) in quoteDraftByRecord[selectedProcurementRecord.id].adjustments" :key="adjustment.id" class="grid gap-2 rounded border border-slate-700 p-3 sm:grid-cols-[1fr_1.5fr_1fr_auto]">
+                  <label class="form-field">Type<select v-model="adjustment.type"><option value="tax">Tax</option><option value="fee">Fee</option><option value="discount">Discount</option></select></label>
+                  <label class="form-field">Description<input v-model.trim="adjustment.label" maxlength="120" :placeholder="adjustment.type === 'tax' ? 'VAT' : adjustment.type === 'discount' ? 'Discount' : 'Delivery or handling'" /></label>
+                  <label class="form-field">Amount (PHP)<input v-model.number="adjustment.amount" type="number" min="0" step="0.01" /></label>
+                  <button type="button" class="self-end rounded border border-slate-600 px-3 py-2 text-sm" aria-label="Remove charge or discount" @click="removeQuoteAdjustment(selectedProcurementRecord, index)">Remove</button>
+                </div>
               </div>
-              <div class="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                <dl class="space-y-2 text-sm"><div class="flex justify-between gap-3"><dt class="text-slate-400">Items subtotal</dt><dd>{{ currency(Math.round(quoteItemsSubtotal(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-400">Tax and fees</dt><dd>{{ currency(Math.round(quotePositiveAdjustments(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-400">Discounts</dt><dd>-{{ currency(Math.round(quoteDiscounts(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3 border-t border-slate-700 pt-2 text-base font-bold text-white"><dt>Calculated total</dt><dd>{{ currency(Math.round(quoteTotal(selectedProcurementRecord) * 100)) }}</dd></div></dl>
-              </div>
-              <label class="form-field">Total on the supplier’s quote (PHP)<input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /><span class="text-xs font-normal text-slate-400">Enter the final total exactly as shown by the supplier.</span></label>
-              <p v-if="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment !== 'separate' && quoteDraftByRecord[selectedProcurementRecord.id].adjustments.some(row => row.type === 'tax' && Number(row.amount || 0) > 0)" role="status" class="rounded border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-200">A separate tax amount is entered, but tax is not set to “listed separately.” Update the tax choice or remove the tax amount.</p>
-              <p v-else-if="quoteTotalMatches(selectedProcurementRecord)" role="status" class="rounded border border-emerald-500/40 bg-emerald-950/30 p-3 text-sm text-emerald-200">The calculated total matches the supplier’s quote.</p>
-              <p v-else role="status" class="rounded border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-200">{{ quotePricingMessage(selectedProcurementRecord) }}</p>
-            </section>
-            <fieldset class="rounded-lg border border-slate-700 bg-slate-900/60 p-3"><legend class="px-1 text-sm font-semibold text-white">Check the quote against the request</legend><p class="text-xs text-slate-400">Confirm each item before sending the purchase order to Finance.</p><label v-for="check in procurementChecklist" :key="check.key" class="mt-2 flex items-start gap-2 text-sm text-slate-300"><input v-model="procurementChecksByRecord[selectedProcurementRecord.id][check.key]" type="checkbox" class="mt-1" /><span>{{ check.label }}</span></label></fieldset>
-            <div class="rounded-lg border border-slate-700 bg-slate-900/60 p-3"><label class="form-field">Supplier quotation file <b>*</b><span class="text-xs font-normal text-slate-400">PDF, PNG, or JPEG; up to 5 MB.</span><input type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" /></label><p class="mt-1 text-xs text-slate-400">Stored as an internal clinic record.</p><ul v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="mt-3 space-y-2"><li v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id"><button type="button" class="text-left text-sm text-amber-200 underline" @click="downloadDocument(document)">{{ document.name }}</button></li></ul></div>
-            <div v-if="financeReadinessItems(selectedProcurementRecord).length" role="status" class="rounded-lg border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-100"><p class="font-semibold">Complete these steps to send to Finance:</p><ul class="mt-2 list-disc space-y-1 pl-5"><li v-for="item in financeReadinessItems(selectedProcurementRecord)" :key="item">{{ item }}</li></ul></div>
-            <div v-else role="status" class="rounded-lg border border-emerald-500/40 bg-emerald-950/30 p-3 text-sm text-emerald-100">Ready to send to Finance. Finance will review the order and assign a budget.</div>
-            <button class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!readyForFinance(selectedProcurementRecord) || busy" @click="sendForApproval(selectedProcurementRecord)">{{ busy ? 'Sending to Finance…' : 'Send purchase order to Finance' }}</button>
+              <dl class="mt-3 space-y-1 border-t border-slate-700 pt-3 text-sm"><div class="flex justify-between gap-3"><dt>Items subtotal</dt><dd>{{ currency(Math.round(quoteItemsSubtotal(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Tax and fees</dt><dd>{{ currency(Math.round(quotePositiveAdjustments(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Discounts</dt><dd>-{{ currency(Math.round(quoteDiscounts(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3 border-t border-slate-700 pt-2 font-bold"><dt>Calculated total</dt><dd>{{ currency(Math.round(quoteTotal(selectedProcurementRecord) * 100)) }}</dd></div></dl>
+            </details>
+            <label class="supply-quote-evidence form-field"><span>Supplier quote document <b>*</b><small>PDF, PNG, or JPEG up to 5 MB. Kept as an internal clinic record.</small></span><input type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" /><span v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="supply-evidence-list"><button v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id" type="button" @click="downloadDocument(document)">{{ document.name }}</button></span></label>
+            <label class="supply-quote-check rounded-lg border border-slate-700 bg-slate-900/60 p-3"><input type="checkbox" :checked="procurementQuoteVerified(selectedProcurementRecord.id)" :disabled="busy" @change="setProcurementQuoteVerified(selectedProcurementRecord.id, $event.target.checked)" /><span><strong>I checked the items, quantities, supplier availability, and prices against this quote.</strong><small>This one confirmation records the four procurement checks together.</small></span></label>
+            <div v-if="financeReadinessItems(selectedProcurementRecord).length" role="status" class="supply-quote-status is-warning"><strong>Still needed</strong><ul class="mt-1 list-disc pl-5"><li v-for="item in financeReadinessItems(selectedProcurementRecord)" :key="item">{{ item }}</li></ul></div>
+            <div v-else role="status" class="supply-quote-status is-ready">Ready for Finance to review and assign a budget.</div>
+            <button class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!readyForFinance(selectedProcurementRecord) || busy" @click="sendForApproval(selectedProcurementRecord)">{{ busy ? 'Sending to Finance…' : 'Create order and send to Finance' }}</button>
           </section>
           <p v-else class="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm text-slate-300">This request has already been sent to the next workflow step and can no longer be edited here.</p>
         </div>
@@ -164,7 +166,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
-import LocationPicker from '@/components/common/LocationPicker.vue'
+import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 import Modal from '@/components/common/Modal.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
@@ -196,13 +198,12 @@ const recordSearch = ref('')
 const tablePage = ref(1)
 const rowsPerPage = ref(10)
 const mode = computed(() => route.path.startsWith('/inventory') ? 'inventory' : route.path.startsWith('/procurement') ? 'procurement' : 'finance')
-const title = computed(() => mode.value === 'inventory' ? 'Inventory Requests' : mode.value === 'procurement' ? 'Inventory Request Review' : 'Purchase Order Approvals')
-const intro = computed(() => mode.value === 'inventory' ? 'Create and track clinic supply needs. Procurement records external quotations and prepares purchase orders.' : mode.value === 'procurement' ? 'Review clinic needs, record external supplier quotations, and prepare purchase orders for Finance approval.' : 'Review and approve purchase orders prepared by Procurement.')
+const title = computed(() => mode.value === 'inventory' ? 'Request Supplies' : mode.value === 'procurement' ? 'Review Supply Requests' : 'Approve Purchase Orders')
+const intro = computed(() => mode.value === 'inventory' ? 'Send one clear request. Procurement will add the supplier quote, and Finance will review the order.' : mode.value === 'procurement' ? 'Add the supplier and quoted prices, then send the order to Finance for approval.' : 'Check the order total, choose its budget, and approve or return it to Procurement.')
 const branchId = computed(() => data.value.branchId || data.value.branches?.[0]?.id || '')
 const activeBranch = computed(() => data.value.branches.find(branch => branch.id === selectedDeliveryBranchId.value) || {})
 const requestBranchId = computed(() => String(activeBranch.value?.id || '').trim())
 const branchAddress = computed(() => String(activeBranch.value.address || activeBranch.value.name || '').trim())
-const branchCoordinates = computed(() => Number.isFinite(Number(activeBranch.value.latitude)) && Number.isFinite(Number(activeBranch.value.longitude)) && Number(activeBranch.value.latitude) !== 0 && Number(activeBranch.value.longitude) !== 0)
 const suppliers = computed(() => data.value.suppliers.filter(supplier => supplier.status === 'Active' && supplier.associationStatus === 'Active'))
 const budgets = computed(() => data.value.records.filter(record => record.kind === 'budget' && record.status === 'Active'))
 const records = computed(() => data.value.records.filter(record => mode.value === 'inventory' ? record.kind === 'request' : mode.value === 'procurement' ? ['procurement', 'po'].includes(record.kind) : record.kind === 'po'))
@@ -285,12 +286,11 @@ const orderLineTotal = line => hasRecordedMoney(line.total) ? line.total : hasRe
 const currency = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(cents || 0) / 100)
 const budgetAvailable = budget => Math.max(0, Number(budget?.total || 0) - Number(budget?.committed || 0) - Number(budget?.spent || 0))
 const eligibleBudgetsFor = record => budgets.value.filter(budget => String(budget.department || '') === String(record?.department || 'Inventory'))
-const procurementChecklist = [
-  { key: 'productsCorrect', label: 'The quoted products match the Inventory request.' },
-  { key: 'quantitiesVerified', label: 'The supplier quoted the requested quantities.' },
-  { key: 'availabilityConfirmed', label: 'The supplier confirmed product availability.' },
-  { key: 'pricesVerified', label: 'The entered prices and charges match the attached quotation.' },
-]
+const procurementCheckKeys = ['productsCorrect', 'quantitiesVerified', 'availabilityConfirmed', 'pricesVerified']
+const procurementQuoteVerified = recordId => procurementCheckKeys.every(key => procurementChecksByRecord.value[recordId]?.[key])
+const setProcurementQuoteVerified = (recordId, checked) => {
+  procurementChecksByRecord.value[recordId] = Object.fromEntries(procurementCheckKeys.map(key => [key, Boolean(checked)]))
+}
 const openProcurementDetails = async record => {
   selectedProcurementRecord.value = record
   if (!procurementChecksByRecord.value[record.id]) procurementChecksByRecord.value[record.id] = { productsCorrect: false, quantitiesVerified: false, availabilityConfirmed: false, pricesVerified: false }
@@ -346,7 +346,7 @@ const financeReadinessItems = record => {
   if (!quote?.quoteDate || !String(quote.category || '').trim() || !quote.deliveryDate || !String(quote.deliveryLocation || '').trim()) items.push('Complete the quotation date, budget category, expected delivery date, and delivery location.')
   if (!quoteTotalMatches(record)) items.push('Complete the quote prices and make the calculated total match the supplier’s total.')
   if (!evidenceByRecord.value[record?.id]?.length) items.push('Attach the supplier quotation file.')
-  if (!checks || procurementChecklist.some(check => !checks[check.key])) items.push('Complete all quote verification checks.')
+  if (!checks || procurementCheckKeys.some(key => !checks[key])) items.push('Confirm that the quote matches the requested items and quantities.')
   return items
 }
 const readyForFinance = record => {
@@ -419,39 +419,57 @@ onMounted(load)
 </script>
 
 <style scoped>
-.form-field { display: flex; flex-direction: column; gap: .42rem; color: rgb(226 232 240); font-size: .875rem; font-weight: 600; }
-.form-field b { color: rgb(251 191 36); }
-.form-field-label { color: rgb(226 232 240); font-size: .875rem; font-weight: 600; }
-.form-field small { color: rgb(148 163 184); font-size: .75rem; font-weight: 400; line-height: 1.25rem; }
-.delivery-location-panel { border: 1px solid rgb(71 85 105); border-radius: .75rem; background: rgb(15 23 42 / .5); padding: 1rem; }
-input, select, textarea { width: 100%; border: 1px solid rgb(71 85 105); border-radius: .5rem; background: rgb(15 23 42); padding: .7rem .8rem; color: white; font-weight: 400; }
-input:focus, select:focus, textarea:focus { border-color: rgb(245 158 11); box-shadow: 0 0 0 3px rgb(245 158 11 / .15); outline: none; }
-textarea { min-height: 6.5rem; resize: vertical; }
-select:disabled { cursor: not-allowed; opacity: .55; }
-:global(.procurement-modal-body) dt { color: rgb(148 163 184); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-:global(.procurement-modal-body) dd { margin-top: .3rem; color: rgb(241 245 249); line-height: 1.45; }
-:global(.procurement-modal-panel) { border-color: rgb(180 83 9 / .7) !important; background: rgb(36 22 15) !important; color: rgb(241 245 249); }
-:global(.procurement-modal-body) { background: rgb(36 22 15) !important; }
-.inventory-requests-page, .inventory-requests-page.bg-slate-900 { background: #f8f3ea; color: #3d281d; }
-.inventory-requests-page main { background: #f8f3ea; }
-.inventory-requests-page header { border-color: #ead8c2; }
-.inventory-requests-page header h1, .inventory-requests-page h2 { color: #3d281d; }
-.inventory-requests-page header p.text-slate-400, .inventory-requests-page p.text-slate-400 { color: #806b5a; }
-.inventory-requests-page section.rounded-2xl { border-color: #ead8c2; background: #fffdf9; box-shadow: 0 12px 32px rgb(75 49 30 / .07); }
-.inventory-requests-page section.rounded-2xl > div:first-child { border-color: #ead8c2; }
-.inventory-requests-page .form-field, .inventory-requests-page .form-field-label { color: #503727; }
-.inventory-requests-page .form-field b { color: #a24d32; }
-.inventory-requests-page .form-field small, .inventory-requests-page .delivery-location-panel .text-slate-400 { color: #806b5a; }
-.inventory-requests-page .delivery-location-panel { border-color: #ead8c2; background: #fffaf3; }
-.inventory-requests-page input, .inventory-requests-page select, .inventory-requests-page textarea { border-color: #dec7aa; background: #fff; color: #3d281d; }
-.inventory-requests-page input::placeholder, .inventory-requests-page textarea::placeholder { color: #9a8877; }
-.inventory-requests-page input:focus, .inventory-requests-page select:focus, .inventory-requests-page textarea:focus { border-color: #a86f44; box-shadow: 0 0 0 3px rgb(168 111 68 / .15); }
-.inventory-requests-page [class*="bg-slate-"] { background-color: #fffdf9; }
-.inventory-requests-page [class*="border-slate-"] { border-color: #ead8c2; }
-.inventory-requests-page [class~="text-slate-100"], .inventory-requests-page [class~="text-slate-200"], .inventory-requests-page [class~="text-slate-300"] { color: #503727; }
-.inventory-requests-page [class~="text-slate-400"], .inventory-requests-page [class~="text-slate-500"] { color: #806b5a; }
-.inventory-requests-page [class~="text-amber-200"], .inventory-requests-page [class~="text-amber-300"], .inventory-requests-page [class~="text-amber-400"] { color: #8a552b; }
-.inventory-requests-page table thead { background: #f4e8d8; color: #684c37; }
-.inventory-requests-page table tbody tr:hover { background: #fff7ed; }
-.inventory-requests-page button:focus-visible, .inventory-requests-page a:focus-visible, .inventory-requests-page input:focus-visible, .inventory-requests-page select:focus-visible, .inventory-requests-page textarea:focus-visible { outline: 3px solid rgb(168 111 68 / .35); outline-offset: 2px; }
+.supply-requests-page { background: var(--ac-bg); color: var(--ac-text); }
+.supply-requests-page main { background: var(--ac-bg); }
+.supply-requests-page header { border-color: var(--ac-border); }
+.supply-requests-page header h1, .supply-requests-page h2, .supply-requests-page h3, .supply-requests-page h4 { color: var(--ac-text); }
+.supply-requests-page p.text-slate-400, .supply-requests-page small.text-slate-400 { color: var(--ac-text-muted); }
+.supply-requests-page section.rounded-2xl, .supply-requests-page .rounded-xl.border { border-color: var(--ac-border); background: var(--ac-surface); box-shadow: var(--ac-shadow-sm); }
+.supply-requests-page section.rounded-2xl > div:first-child { border-color: var(--ac-border); }
+.supply-requests-page .form-field, .supply-requests-page .form-field-label { display:flex; flex-direction:column; gap:.42rem; color:var(--ac-text-secondary); font-size:.875rem; font-weight:600; }
+.supply-requests-page .form-field b { color:var(--ac-danger); }
+.supply-requests-page .form-field small { color:var(--ac-text-muted); font-size:.75rem; font-weight:400; line-height:1.25rem; }
+.supply-requests-page .delivery-location-panel { border:1px solid var(--ac-border); border-radius:.75rem; background:var(--ac-surface-soft); padding:1rem; }
+.supply-requests-page input:not([type="checkbox"]), .supply-requests-page select, .supply-requests-page textarea { width:100%; border:1px solid var(--ac-border-strong); border-radius:.5rem; background:var(--ac-surface); padding:.7rem .8rem; color:var(--ac-text); font-weight:400; }
+.supply-requests-page input::placeholder, .supply-requests-page textarea::placeholder { color:var(--ac-text-muted); }
+.supply-requests-page input:focus, .supply-requests-page select:focus, .supply-requests-page textarea:focus { border-color:var(--ac-accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--ac-accent) 18%, transparent); outline:none; }
+.supply-requests-page textarea { min-height:6.5rem; resize:vertical; }
+.supply-requests-page select:disabled { cursor:not-allowed; opacity:.55; }
+.supply-requests-page [class*="bg-slate-"] { background-color:var(--ac-surface-soft); }
+.supply-requests-page [class*="border-slate-"] { border-color:var(--ac-border); }
+.supply-requests-page [class~="text-white"], .supply-requests-page [class~="text-slate-100"], .supply-requests-page [class~="text-slate-200"], .supply-requests-page [class~="text-slate-300"] { color:var(--ac-text-secondary); }
+.supply-requests-page [class~="text-slate-400"], .supply-requests-page [class~="text-slate-500"] { color:var(--ac-text-muted); }
+.supply-requests-page [class~="text-amber-200"], .supply-requests-page [class~="text-amber-300"], .supply-requests-page [class~="text-amber-400"] { color:var(--ac-warning); }
+.supply-requests-page button.bg-amber-500 { border-color:var(--ac-primary); background:var(--ac-primary); color:var(--ac-on-primary); }
+.supply-requests-page button.bg-amber-500:hover:not(:disabled) { background:var(--ac-primary-hover); }
+.supply-form-step { color:var(--ac-text-muted); font-size:.68rem; font-weight:800; letter-spacing:.14em; }
+.supply-quote-status { border:1px solid var(--ac-border); border-radius:.7rem; padding:.7rem .85rem; color:var(--ac-text-secondary); font-size:.82rem; line-height:1.5; }
+.supply-quote-status.is-ready { border-color:color-mix(in srgb, var(--ac-success) 42%, var(--ac-border)); background:var(--ac-success-bg); }
+.supply-quote-status.is-warning { border-color:color-mix(in srgb, var(--ac-warning) 42%, var(--ac-border)); background:var(--ac-warning-bg); }
+.supply-quote-options { border-color:var(--ac-border); background:var(--ac-surface-soft); }
+.supply-quote-options summary { color:var(--ac-text-secondary); }
+.supply-quote-evidence { border:1px solid var(--ac-border); border-radius:.7rem; background:var(--ac-surface-soft); padding:.8rem; }
+.supply-quote-evidence > span:first-child small { display:block; margin-top:.2rem; }
+.supply-evidence-list { display:flex; flex-wrap:wrap; gap:.5rem; }
+.supply-evidence-list button { color:var(--ac-primary); text-decoration:underline; text-align:left; }
+.supply-quote-check { display:flex; align-items:flex-start; gap:.65rem; border-color:var(--ac-border); background:var(--ac-surface-soft); }
+.supply-quote-check input { width:1rem; height:1rem; flex:0 0 auto; margin-top:.2rem; padding:0; accent-color:var(--ac-primary); }
+.supply-quote-check span { display:block; }
+.supply-quote-check strong,.supply-quote-check small { display:block; }
+.supply-quote-check strong { color:var(--ac-text-secondary); font-size:.82rem; line-height:1.45; }
+.supply-quote-check small { margin-top:.2rem; color:var(--ac-text-muted); font-size:.72rem; }
+.supply-requests-page table thead { background:var(--ac-surface-muted); color:var(--ac-text-secondary); }
+.supply-requests-page table tbody tr:hover { background:var(--ac-surface-soft); }
+.supply-requests-page button:focus-visible, .supply-requests-page a:focus-visible, .supply-requests-page input:focus-visible, .supply-requests-page select:focus-visible, .supply-requests-page textarea:focus-visible { outline:3px solid color-mix(in srgb, var(--ac-accent) 40%, transparent); outline-offset:2px; }
+:global(.procurement-modal-panel) { border-color:var(--ac-border-strong) !important; background:var(--ac-surface) !important; color:var(--ac-text) !important; }
+:global(.procurement-modal-body) { background:var(--ac-surface) !important; color:var(--ac-text); }
+:global(.procurement-modal-body) dt { color:var(--ac-text-muted); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+:global(.procurement-modal-body) dd { margin-top:.3rem; color:var(--ac-text); line-height:1.45; }
+:global(.procurement-modal-body) [class*="bg-slate-"] { background-color:var(--ac-surface-soft); }
+:global(.procurement-modal-body) [class*="border-slate-"] { border-color:var(--ac-border); }
+:global(.procurement-modal-body) [class~="text-white"], :global(.procurement-modal-body) [class~="text-slate-100"], :global(.procurement-modal-body) [class~="text-slate-200"], :global(.procurement-modal-body) [class~="text-slate-300"] { color:var(--ac-text-secondary); }
+:global(.procurement-modal-body) [class~="text-slate-400"], :global(.procurement-modal-body) [class~="text-slate-500"] { color:var(--ac-text-muted); }
+:global(.procurement-modal-body) [class~="text-amber-200"], :global(.procurement-modal-body) [class~="text-amber-300"] { color:var(--ac-warning); }
+:global(.procurement-modal-body) input, :global(.procurement-modal-body) select, :global(.procurement-modal-body) textarea { border-color:var(--ac-border-strong); background:var(--ac-surface); color:var(--ac-text); }
+:global(.procurement-modal-body) input:focus, :global(.procurement-modal-body) select:focus, :global(.procurement-modal-body) textarea:focus { border-color:var(--ac-accent); }
 </style>

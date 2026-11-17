@@ -3,6 +3,7 @@
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: page === 'suppliers' ? 'cards' : 'table', columns: isClinicPurchaseOrders ? 8 : 6, rows: 5 }" class="min-w-0 flex-1 p-4 md:p-8">
       <header class="flex flex-wrap justify-between gap-4 mb-6"><div><p class="text-xs uppercase tracking-widest text-amber-300">{{ departmentLabel }}</p><h1 class="text-2xl font-bold">{{ pageTitle }}</h1><p class="mt-2 text-sm text-slate-400">{{ intro }}</p></div><div class="workspace-header-controls"><select aria-label="Branch" v-model="branchId" @change="load"><option v-if="data.branches.length > 1" value="all">All Assigned Branches</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select><button type="button" class="workspace-refresh" aria-label="Refresh records" title="Refresh records" @click="load" :disabled="busy"><svg aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': busy }" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5m-5 2a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" /></svg><span class="sr-only">Refresh</span></button></div></header>
+      <SupplyFlowGuide v-if="department !== 'management'" :department="department" :page="page" />
       <p v-if="error" role="alert" class="mb-4 rounded border border-red-500 bg-red-900/30 p-4">{{ error }}</p>
       <p v-if="notice" role="status" class="mb-4 rounded border border-emerald-600 p-4">{{ notice }}</p>
       <p v-if="loading">Loading department records…</p>
@@ -157,7 +158,7 @@
 </section>
         <section v-if="formKind === 'returnInventory'" class="mt-4 space-y-5"><p class="text-sm text-slate-400">Explain what Inventory needs to correct before Procurement can proceed.</p><div class="border-y border-slate-800 py-4"><h3 class="font-semibold text-white">Reason for return <span class="text-red-300">*</span></h3><div class="return-reason-list"><label v-for="reason in returnReasons" :key="reason" class="return-reason"><input v-model="form.returnReason" type="radio" :value="reason" /><span>{{ reason }}</span></label></div><label v-if="form.returnReason === 'Other'" class="other-return-reason">Other reason <span class="text-red-300">*</span><input v-model.trim="form.otherReturnReason" type="text" required maxlength="4000" placeholder="Describe the reason for return" /></label></div><label class="block text-sm text-slate-300">Affected item<select v-model="form.itemId"><option value="">Select an item (optional)</option><option v-for="line in formTarget.lines" :key="line.itemId" :value="line.itemId">{{ line.name }}</option></select></label><label class="block text-sm text-slate-300">Revision instructions <span class="text-red-300">*</span><textarea v-model="form.instructions" rows="4" required placeholder="Example: Please verify the requested quantity. Current stock is sufficient for the next two weeks."></textarea><span class="mt-1 block text-xs text-slate-400">Clearly explain what needs to be changed.</span></label><aside class="rounded-lg bg-slate-800 p-4 text-sm"><h4 class="font-semibold text-white">ⓘ What happens next?</h4><p class="mt-2 text-slate-300">Inventory will receive the revision instructions. The request will be temporarily unavailable for further purchasing actions until it is resubmitted.</p></aside></section>
         <p v-if="formKind === 'pay'" class="mt-4 text-sm text-amber-200">This records a payment already made through your bank or external provider. It does not transfer money.</p>
-        <div class="mt-6 flex justify-end gap-3"><button type="button" @click="formKind = ''" :disabled="busy">Cancel</button><template v-if="formKind === 'request'"><button type="submit" :disabled="busy" @click="requestSubmission = 'draft'">{{ busy ? 'Saving…' : 'Save as draft' }}</button><button class="bg-amber-800" type="submit" :disabled="busy" @click="requestSubmission = 'send'">{{ busy ? 'Sending…' : 'Send to Procurement' }}</button></template><button v-else class="bg-amber-800" type="submit" :disabled="busy || (isQuotePricingForm && !formPricingValid)">{{ busy ? 'Saving…' : 'Save and continue' }}</button></div></template>
+        <div class="mt-6 flex justify-end gap-3"><button type="button" @click="formKind = ''" :disabled="busy">Cancel</button><template v-if="formKind === 'request'"><button type="submit" :disabled="busy" @click="requestSubmission = 'draft'">{{ busy ? 'Saving…' : 'Save as draft' }}</button><button class="bg-amber-800" type="submit" :disabled="busy" @click="requestSubmission = 'send'">{{ busy ? 'Sending…' : 'Send to Procurement' }}</button></template><button v-else class="bg-amber-800" type="submit" :disabled="busy || (isQuotePricingForm && !formPricingValid)">{{ busy ? (formKind === 'receiving' ? 'Saving delivery…' : 'Saving…') : formKind === 'receiving' ? 'Inspect & add accepted stock' : 'Save and continue' }}</button></div></template>
       </form></div>
     </main>
   </div>
@@ -238,6 +239,7 @@ import { toast } from 'vue3-toastify'
 import { dashboardCharts, reportDefinitions } from '@/utils/supplyReporting'
 import { createReportFile, downloadReport } from '@/utils/reportExport'
 import { quoteAdjustmentDrafts, quoteAdjustmentRows, quoteDraftIsValid, quoteDraftTotal, quoteTaxTreatment, quoteTaxTreatmentLabel } from '@/utils/supplyQuotePricing'
+import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 const exportFormat = ref('csv'), exporting = ref(false)
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -249,11 +251,11 @@ const department = computed(() => route.meta.supplyDepartment || route.params.de
 const page = computed(() => route.params.page || 'dashboard')
 const isClinicPurchaseOrders = computed(() => department.value === 'procurement' && page.value === 'orders')
 const departmentLabel = computed(() => ({ inventory: 'Inventory Management', procurement: 'Procurement Management', finance: 'Procurement Finance', management: 'Management Overview' })[department.value])
-const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: 'Inventory List · DSS', requests: department.value === 'procurement' ? 'Inventory Request Review' : 'Inventory Requests', receiving: 'Receiving & Inspection', discrepancies: 'Discrepancies', orders: 'Purchase Orders', suppliers: 'Supplier Directory', reports: 'Reports & Traceability', budgets: 'Budget Allocations', invoices: 'Invoices & Payments' })[page.value] || 'Supply Management')
-const intro = computed(() => ({ inventory: page.value === 'receiving' ? 'Receive and inspect confirmed purchase orders. Only accepted quantities enter usable stock.' : 'Monitor stock and submit item needs to Procurement.', procurement: isClinicPurchaseOrders.value ? 'Track purchase orders and record supplier responses received outside the platform.' : 'Manage clinic supplier contacts and product/material references, record external quotes, and prepare purchase orders for Finance approval.', finance: page.value === 'budgets' ? 'Allocate branch purchasing budgets and track available, committed, and spent amounts.' : 'Review supplier invoices, match accepted deliveries, and record payments.' })[department.value])
+const pageTitle = computed(() => ({ dashboard: 'Dashboard', items: 'Inventory & Stock · DSS', requests: department.value === 'procurement' ? 'Review Supply Requests' : 'Request Supplies', receiving: 'Receive Supplies', discrepancies: 'Discrepancies', orders: 'Purchase Orders', suppliers: 'Supplier Directory', reports: 'Reports & Traceability', budgets: 'Budget Allocations', invoices: 'Invoices & Payments' })[page.value] || 'Supply Management')
+const intro = computed(() => ({ inventory: page.value === 'receiving' ? 'Record a delivery and inspect it once. Accepted quantities are added to stock when you save.' : 'Monitor stock and submit item needs to Procurement.', procurement: isClinicPurchaseOrders.value ? 'Track purchase orders and record supplier responses received outside the platform.' : 'Manage clinic supplier contacts and product/material references, record external quotes, and prepare purchase orders for Finance approval.', finance: page.value === 'budgets' ? 'Allocate branch purchasing budgets and track available, committed, and spent amounts.' : 'Review supplier invoices, match accepted deliveries, and record payments.' })[department.value])
 const tabMap = { management: ['dashboard','reports'], inventory: ['items','requests','receiving'], procurement: ['requests','orders','suppliers'], finance: ['budgets','requests','invoices'] }
 const clinicSupplyPath = (module, targetPage) => ({ finance: `/finance/procurement/${targetPage}`, management: `/management/supply/${targetPage}` })[module] || `/${module}/${targetPage}`
-const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ budgets: 'Budget Allocations', requests: department.value === 'finance' ? 'Purchase Order Approvals' : department.value === 'procurement' ? 'Inventory Request Review' : 'Inventory Requests', receiving: 'Receiving & Inspection', discrepancies: 'Discrepancies', income: 'Sales & Revenue', invoices: 'Invoices & Payments', reports: department.value === 'finance' ? 'Financial Reports' : 'Reports', items: 'Inventory List' })[key] || label(key), to: key === 'income' && department.value === 'finance' ? '/finance/sales' : clinicSupplyPath(department.value, key) })))
+const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, label: ({ budgets: 'Budget Allocations', requests: department.value === 'finance' ? 'Approve Purchase Orders' : department.value === 'procurement' ? 'Review Supply Requests' : 'Request Supplies', receiving: 'Receive Supplies', discrepancies: 'Discrepancies', income: 'Sales & Revenue', invoices: 'Invoices & Payments', reports: department.value === 'finance' ? 'Financial Reports' : 'Reports', items: 'Inventory & Stock' })[key] || label(key), to: key === 'income' && department.value === 'finance' ? '/finance/sales' : clinicSupplyPath(department.value, key) })))
 const data = ref({ records: [], items: [], suppliers: [], branches: [], movements: [], permissions: [], stockReconciliation: [] }), branchId = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('')
 const selected = ref(null), history = ref({ history: [], documents: [] })
 const search = ref(''), status = ref(''), type = ref(''), departmentFilter = ref(''), supplierFilter = ref(''), categoryFilter = ref(''), fromDate = ref(''), toDate = ref(''), sort = ref('newest'), currentPage = ref(1)
@@ -284,7 +286,7 @@ const workflowToastMessage = (action, record = {}) => ({
   issue: 'Purchase order issue recorded. Inventory can receive the delivery after supplier confirmation.',
   confirm: record.kind === 'po' ? 'Supplier confirmation recorded. Inventory has been notified.' : 'Supply workflow updated.',
   message: 'External supplier communication recorded for clinic use.',
-  receiving: 'Delivery inspection recorded. Inventory can now onboard accepted supplies.',
+  receiving: 'Delivery inspected and accepted quantities added to inventory.',
   onboard: 'Accepted supplies were added to inventory.',
   invoice: 'Supplier invoice submitted to Finance.',
   startVerification: 'Invoice verification started.',
@@ -347,7 +349,7 @@ const priorityRank = value => ({ Urgent: 0, High: 1, Normal: 2, Low: 3 })[value]
 const shortDate = value => timestamp(value) ? new Date(timestamp(value)).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 watch([search,status,type,departmentFilter,supplierFilter,categoryFilter,fromDate,toDate,sort,page,reportKey], () => { currentPage.value = 1 })
 watch([department, page], () => { status.value = ''; type.value = ''; departmentFilter.value = ''; categoryFilter.value = ''; selected.value = null; formKind.value = '' })
-const nextAction = r => ({ Draft: 'Procurement: finish the PO and submit it for review', 'For Review': 'Finance/Owner: review and approve or reject the PO', Approved: r.kind === 'payment' ? 'Finance: begin external processing' : 'Procurement: send the approved PO externally', Rejected: 'Procurement: revise and resubmit the PO', Receiving: r.kind === 'po' ? r.confirmedAt ? 'Inventory: receive and inspect the delivery' : 'Procurement: record supplier confirmation' : 'Finance: record invoice and payment', Completed: 'Completed', 'Sent to Procurement': 'Procurement: select a clinic supplier and record an external quotation', Received: 'Procurement: select a clinic supplier and record an external quotation', Inspected: 'Inventory: onboard accepted quantities', Matched: 'Finance: approve invoice', Disputed: 'Finance: restart verification after correction', 'Approved for Payment': paymentForInvoice(r) ? 'Finance: advance the payment record' : 'Finance: prepare payment record', Pending: r.kind === 'payment' ? 'Finance: review payment' : 'Review record', 'Under Verification': r.kind === 'payment' ? 'Finance: approve or reject payment' : 'Finance: complete three-way matching', Processing: 'Finance: complete the external payment and record settlement', Paid: 'Payment recorded', Returned: 'Inventory: revise and resubmit' })[r.status] || (r.signals?.includes('For Restocking') ? 'Inventory: review replenishment recommendation' : 'View details')
+const nextAction = r => ({ Draft: 'Procurement: finish the PO and submit it for review', 'For Review': 'Finance/Owner: review and approve or reject the PO', Approved: r.kind === 'payment' ? 'Finance: begin external processing' : 'Procurement: send the approved PO externally', Rejected: 'Procurement: revise and resubmit the PO', Receiving: r.kind === 'po' ? r.confirmedAt ? 'Inventory: receive and inspect the delivery' : 'Procurement: record supplier confirmation' : 'Finance: record invoice and payment', Completed: 'Completed', 'Sent to Procurement': 'Procurement: add a supplier quote', Received: 'Procurement: add a supplier quote', Inspected: 'Retry adding accepted quantities to Inventory', Matched: 'Finance: approve invoice', Disputed: 'Finance: restart verification after correction', 'Approved for Payment': paymentForInvoice(r) ? 'Finance: advance the payment record' : 'Finance: prepare payment record', Pending: r.kind === 'payment' ? 'Finance: review payment' : 'Review record', 'Under Verification': r.kind === 'payment' ? 'Finance: approve or reject payment' : 'Finance: complete three-way matching', Processing: 'Finance: complete the external payment and record settlement', Paid: 'Payment recorded', Returned: 'Inventory: revise and resubmit' })[r.status] || (r.signals?.includes('For Restocking') ? 'Inventory: review replenishment recommendation' : 'View details')
 const cards = computed(() => {
   const rs = data.value.records, count = (kind, states) => rs.filter(r => r.kind === kind && (!states || states.includes(r.status))).length
   if (department.value === 'inventory') return [{ label:'Total Items',value:data.value.items.length },{label:'Total Quantity',value:data.value.items.reduce((s,i)=>s+Number(i.currentStock||0),0)},...['For Restocking','Overstocked','Expiring Soon','Expired','Needs Attention'].map(flag=>({label:flag==='For Restocking'?'Low Stock':flag==='Needs Attention'?'Equipment Needing Attention':flag,value:data.value.items.filter(i=>i.signals?.includes(flag)).length})),{label:'Draft / Returned Requests',value:count('request',['Draft','Returned'])},{label:'Confirmed Deliveries Awaiting Receipt',value:rs.filter(r=>r.kind==='po'&&r.status==='Receiving'&&r.confirmedAt).length},{label:'Inspected Deliveries Awaiting Stock',value:count('receiving',['Inspected'])},{label:'Open Delivery Discrepancies',value:count('discrepancy',['Open'])}]
@@ -443,7 +445,7 @@ const actions = r => {
   if(r.kind==='procurement'){add('prepareFunding','Create purchase order for Finance',can('procurement:review')&&state('Received'));add('returnInventory','Return to Inventory',can('procurement:review')&&state('Received'));add('resource','Restart procurement',can('procurement:review')&&!state('Completed'))}
   if(r.kind==='budgetRequest'){for(const k of ['approve','return','reject'])add(k,label(k),can('finance:payables:approve')&&r.createdBy!==data.value.uid&&state('Submitted'));add('resubmit','Revise & resubmit',can('procurement:review')&&state('Returned','Rejected'))}
   if(r.kind==='po'){for(const k of ['approve','reject'])add(k,label(k)+' purchase order',can('finance:payables:approve')&&r.createdBy!==data.value.uid&&state('For Review'));add('issue','Mark PO issued externally',can('procurement:review')&&state('Approved'));add('confirm','Record supplier confirmation',can('procurement:review')&&state('Receiving')&&!r.confirmedAt);add('resend','Revise and resubmit',can('procurement:review')&&state('Rejected'));add('receiving','Record delivery inspection',can('inventory:create')&&state('Receiving')&&!!r.confirmedAt);add('invoice','Submit invoice',can('finance:payables:approve')&&state('Receiving'))}
-  if(r.kind==='receiving')add('onboard','Onboard accepted supplies into inventory',can('inventory:create')&&state('Inspected'))
+  if(r.kind==='receiving')add('onboard','Retry stock update',can('inventory:create')&&state('Inspected'))
   if(r.kind==='discrepancy')add('resolve','Resolve discrepancy',can('inventory:create')&&state('Open'))
   if(r.kind==='invoice'){const payment=paymentForInvoice(r);add('reviseInvoice','Correct invoice',state('Submitted','Disputed')&&r.mode==='Manual'&&can('finance:payables:approve'));add('startVerification','Start invoice verification',can('finance:payables:approve')&&state('Submitted','Disputed'));add('verify','Run three-way match',can('finance:payables:approve')&&state('Under Verification'));add('approve','Approve for payment',can('finance:payables:approve')&&r.createdBy!==data.value.uid&&r.verifiedBy!==data.value.uid&&state('Matched'));add('preparePayment','Prepare payment record',can('finance:payables:approve')&&state('Approved for Payment')&&!payment)}
   if(r.kind==='payment'){add('reviewPayment','Start payment verification',can('finance:payables:approve')&&state('Pending'));add('approvePayment','Approve payment',can('finance:payables:approve')&&r.createdBy!==data.value.uid&&state('Under Verification'));add('rejectPayment','Reject payment',can('finance:payables:approve')&&state('Pending','Under Verification'));add('resubmitPayment','Revise and resubmit payment',can('finance:payables:approve')&&state('Rejected'));add('startPayment','Start external processing',can('finance:payables:settle')&&state('Approved'));add('settlePayment','Record completed external payment',can('finance:payables:settle')&&state('Processing')&&invoiceForPayment(r)?.status==='Approved for Payment')}
@@ -559,7 +561,72 @@ const runAction=async(action,target)=>{
   if(!answer.isConfirmed)return
   busy.value=true;try{await api(`/records/${target.id}/actions`,{action});notice.value=workflowToastMessage(action,target);toast.success(notice.value);await load(true);if(selected.value)await view(selected.value)}catch(e){error.value=e.message;toast.error(error.value)}finally{busy.value=false}
 }
-const saveForm=async()=>{if(formKind.value==='request'&&!form.value.lines?.length){formError.value='Add at least one supply before submitting.';toast.error(formError.value);return}busy.value=true;formError.value='';try{const kind=formKind.value,target=formTarget.value;let path='/records',body={...form.value,kind,branchId:kind==='budget' ? form.value.branchId : target?.branchId||branchId.value};if(kind==='request')body.action=requestSubmission.value==='draft'?'saveDraft':'create';if(kind==='returnInventory'&&form.value.returnReason==='Other')body.returnReason=form.value.otherReturnReason;if(kind==='message'){path='/records/'+target.id+'/messages';body={...form.value}}else if(kind==='supplier'){path='/suppliers'}else if(kind==='item'){path='/items';body={...form.value,branchId:branchId.value,...(target?{id:target.id}:{})}}else if(['rfq','quotation','receiving','invoice'].includes(kind)){body[kind==='rfq'?'procurementId':kind==='quotation'?'rfqId':'poId']=target.id}else if(!['request','budget'].includes(kind)){path=`/records/${target.id}/actions`;body={...form.value,action:['verifyRequest','prepareFunding'].includes(kind)?'confirm':kind==='returnInventory'?'return':kind}}await api(path,body);formKind.value='';notice.value=kind==='request'?(requestSubmission.value==='draft'?'Request saved as a private draft.':'Request sent to Procurement.'):kind==='receiving'?'Delivery inspected. Inventory must onboard the accepted quantities before stock changes.':workflowToastMessage(kind,target);toast.success(notice.value);await load(true);if(selected.value)await view(selected.value)}catch(e){formError.value=e.message;toast.error(formError.value)}finally{busy.value=false}}
+const saveForm = async () => {
+  if (formKind.value === 'request' && !form.value.lines?.length) {
+    formError.value = 'Add at least one supply before submitting.'
+    toast.error(formError.value)
+    return
+  }
+  busy.value = true
+  formError.value = ''
+  try {
+    const kind = formKind.value
+    const target = formTarget.value
+    let path = '/records'
+    let body = { ...form.value, kind, branchId: kind === 'budget' ? form.value.branchId : target?.branchId || branchId.value }
+    if (kind === 'request') body.action = requestSubmission.value === 'draft' ? 'saveDraft' : 'create'
+    if (kind === 'receiving') body.onboardAcceptedStock = true
+    if (kind === 'returnInventory' && form.value.returnReason === 'Other') body.returnReason = form.value.otherReturnReason
+    if (kind === 'message') { path = `/records/${target.id}/messages`; body = { ...form.value } }
+    else if (kind === 'supplier') path = '/suppliers'
+    else if (kind === 'item') { path = '/items'; body = { ...form.value, branchId: branchId.value, ...(target ? { id: target.id } : {}) }
+    } else if (['rfq', 'quotation', 'receiving', 'invoice'].includes(kind)) {
+      body[kind === 'rfq' ? 'procurementId' : kind === 'quotation' ? 'rfqId' : 'poId'] = target.id
+    } else if (!['request', 'budget'].includes(kind)) {
+      path = `/records/${target.id}/actions`
+      body = { ...form.value, action: ['verifyRequest', 'prepareFunding'].includes(kind) ? 'confirm' : kind === 'returnInventory' ? 'return' : kind }
+    }
+
+    const savedRecord = await api(path, body)
+    formKind.value = ''
+    if (kind === 'receiving') {
+      if (!savedRecord?.id) {
+        notice.value = 'Delivery inspection was saved. Refresh the receipt to update accepted stock.'
+        toast.error(notice.value)
+        await load(true)
+        return
+      }
+      try {
+        if (savedRecord.status === 'Inspected') {
+          await api(`/records/${savedRecord.id}/actions`, { action: 'onboard' })
+        } else if (savedRecord.status !== 'Onboarded') {
+          throw Error('The delivery was recorded, but its inventory update could not be confirmed. Refresh the receipt and review its status.')
+        }
+        notice.value = 'Delivery inspected and accepted quantities added to inventory.'
+        toast.success(notice.value)
+      } catch (stockError) {
+        notice.value = 'Delivery inspection was saved, but the stock update needs a retry from the receipt details.'
+        toast.error(`${notice.value} ${stockError.message}`)
+        await load(true)
+        const pendingReceipt = data.value.records.find(record => record.id === savedRecord.id)
+        if (pendingReceipt) await view(pendingReceipt)
+        return
+      }
+    } else {
+      notice.value = kind === 'request'
+        ? requestSubmission.value === 'draft' ? 'Request saved as a private draft.' : 'Request sent to Procurement.'
+        : workflowToastMessage(kind, target)
+      toast.success(notice.value)
+    }
+    await load(true)
+    if (selected.value) await view(selected.value)
+  } catch (e) {
+    formError.value = e.message
+    toast.error(formError.value)
+  } finally {
+    busy.value = false
+  }
+}
 const upload=async event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>5*1024*1024){error.value='File must be 5 MB or smaller.';return}busy.value=true;try{const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});await api(`/records/${selected.value.id}/documents`,{name:file.name,contentType:file.type,data:base64,visibility:'internal'});await view(selected.value)}catch(e){error.value=e.message}finally{busy.value=false;event.target.value=''}}
 const download=async document=>{try{const result=await api('/documents/'+document.id);window.open(result.url,'_blank','noopener,noreferrer')}catch(e){error.value=e.message}}
 const downloadPurchaseOrderPdf = async record => {

@@ -1,6 +1,7 @@
 <template>
   <div :class="embedded ? 'directory module-theme supplier-theme' : 'directory module-theme supplier-theme flex min-h-screen'"><OwnerSidebar v-if="!embedded" /><main class="content" :class="{ 'flex-1': !embedded }">
     <header><div><small>PROCUREMENT</small><h1>Supplier Directory</h1><p>Clinic-managed business contacts. Suppliers do not sign in or receive orders in AesthetiCare.</p></div><button v-if="canCreate" @click="openCreate">Add supplier</button></header>
+    <SupplyFlowGuide v-if="!embedded" department="procurement" page="suppliers" />
     <p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="notice" role="status" class="success">{{ notice }}</p><section class="summary"><article><b>{{ associations.length }}</b>My clinic suppliers</article><article><b>{{ activeCount }}</b>Active for procurement</article><article><b>{{ reviewCount }}</b>FDA checks to review</article></section>
     <section class="toolbar"><input v-model="search" placeholder="Search business, contact, or category" /><select v-model="status"><option value="">All statuses</option><option>Active</option><option>Inactive</option><option>For review</option></select><label><input v-model="showDirectory" type="checkbox" @change="loadDirectory" /> Include shared directory</label></section>
     <p v-if="loading">Loading supplier directory…</p><section v-else-if="visible.length" class="grid"><article v-for="s in visible" :key="s.key" class="card"><div class="top"><div><h2>{{ s.businessName }}</h2><p>{{ s.category || 'Uncategorized supplier' }}</p></div><b>{{ s.associationStatus }}</b></div><dl><div><dt>Contact</dt><dd>{{ s.contactPerson || '—' }}</dd></div><div><dt>Email</dt><dd>{{ s.email || '—' }}</dd></div><div><dt>Phone</dt><dd>{{ s.contactNumber || '—' }}</dd></div><div><dt>FDA LTO</dt><dd>{{ s.regulatory?.ltoNumber || 'Not recorded' }}</dd></div><div><dt>Check</dt><dd>{{ label(s.regulatory?.verificationStatus) }}</dd></div></dl><p v-if="s.notes">Internal note: {{ s.notes }}</p><div class="actions"><button v-if="s.directoryOnly && canCreate" @click="associate(s)">Add to my clinic</button><button v-else-if="canManage" @click="edit(s)">Edit relationship</button><a href="https://verification.fda.gov.ph/" target="_blank" rel="noopener noreferrer">Verify on FDA ↗</a></div></article></section><section v-else class="empty"><h2>No supplier contacts found</h2><p>Add a clinic contact, or include the shared directory.</p></section>
@@ -12,6 +13,7 @@ import { computed, onMounted, ref } from 'vue'
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 import { auth, db } from '@/config/firebaseConfig'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { usePermissions } from '@/composables/usePermissions'

@@ -276,6 +276,35 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     }
     const evidence = (r, message) => demand(documents.some(d => d.recordId === r.id), message || 'Upload supporting documents before continuing.')
     const supplier = id => { const s = suppliers.find(s => s.id === id); demand(s && s.status === 'Active' && (!s.associationStatus || s.associationStatus === 'Active'), 'Select an active supplier associated with this clinic branch.'); return s }
+    const onboardReceiving = (receiving, createdInThisAction = false) => {
+      allow(ctx, 'inventory:create')
+      if (receiving.status === 'Onboarded') return receiving
+      demand(receiving.status === 'Inspected', 'Inspection is required.')
+      const po = get(receiving.poId, 'po')
+      const accepted = { ...po.accepted }
+      for (const line of receiving.lines) {
+        if (!line.accepted) continue
+        let item = items.find(i => i.id === line.itemId)
+        const ordered = po.lines.find(l => l.itemId === line.itemId)
+        demand(ordered, 'The ordered item is unavailable.')
+        const isFirstReceipt = !item
+        if (isFirstReceipt) item = { id: line.itemId, branchId, name: ordered.name, category: ordered.category || '', description: ordered.specifications || '', unit: ordered.unit || 'units', minStock: Number(ordered.minStock || 0), targetStock: Number(ordered.targetStock || ordered.quantity), maxStock: Number(ordered.maxStock || ordered.quantity), itemType: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Equipment' : 'Material', consumability: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Non-consumable' : 'Consumable', currentStock: 0, supplierCatalogItemId: ordered.supplierCatalogItemId || '' }
+        accepted[line.itemId] = Number(accepted[line.itemId] || 0) + line.accepted
+        demand(accepted[line.itemId] <= ordered.quantity, 'Receipt exceeds ordered quantity.')
+        if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
+        writes.push([db.collection('supplyLots').doc(`${receiving.id}-${item.id}`), { branchId, itemId: item.id, receivingId: receiving.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
+        writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
+        writes.push([db.collection('inventoryMovements').doc(`${receiving.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: receiving.id, inspectionId: receiving.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
+      }
+      set(po, { accepted, status: 'Receiving' })
+      const onboarded = { status: 'Onboarded', onboardedBy: ctx.uid, onboardedAt: now }
+      if (!createdInThisAction) return set(receiving, onboarded)
+      const createIndex = writes.findIndex(([ref, , merge]) => ref.id === receiving.id && ref.parent.id === 'supplyRecords' && !merge)
+      demand(createIndex >= 0, 'The delivery record could not be completed.')
+      const [ref, value, merge] = writes[createIndex]
+      writes[createIndex] = [ref, { ...value, ...onboarded }, merge]
+      return { ...receiving, ...onboarded }
+    }
     const manualOrSupplier = (r, permission = 'procurement:create') => {
       allow(ctx, permission)
       demand(r.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
@@ -331,7 +360,12 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
           demand(lines.length && new Set(lines.map(l => l.itemId)).size === lines.length && lines.some(l => l.delivered > 0), 'Enter unique delivered items.')
           result = create('receiving', { status: 'Inspected', poId: po.id, supplierId: po.supplierId, links: [...linksOf(po), po.id], lines, reference: required(input.reference, 'Delivery reference'), deliveryDate: dateKey(input.deliveryDate), receivedBy: ctx.uid, notes: String(input.notes || '') })
           const inspection = create('inspection', { status: 'Completed', poId: po.id, receivingId: result.id, supplierId: po.supplierId, links: [...linksOf(result), result.id], lines, quantityResult: lines.some(l => l.delivered !== l.ordered) ? 'Discrepancy' : 'Verified', qualityResult: lines.some(l => l.rejected > 0) ? 'Discrepancy' : 'Accepted', inspectedBy: ctx.uid, inspectedAt: now }, `inspection-${result.id}`)
-          set(result, { inspectionId: inspection.id })
+          const receivingIndex = writes.findIndex(([ref, , merge]) => ref.id === result.id && ref.parent.id === 'supplyRecords' && !merge)
+          demand(receivingIndex >= 0, 'The delivery inspection could not be linked.')
+          const [receivingRef, receivingData, receivingMerge] = writes[receivingIndex]
+          writes[receivingIndex] = [receivingRef, { ...receivingData, inspectionId: inspection.id }, receivingMerge]
+          result = { ...result, inspectionId: inspection.id }
+          if (input.onboardAcceptedStock === true) result = onboardReceiving(result, true)
           if (lines.some(l => l.rejected > 0)) create('discrepancy', { status: 'Open', poId: po.id, receivingId: result.id, supplierId: po.supplierId, links: [po.id, result.id], lines: lines.filter(l => l.rejected), reason: 'Rejected delivery items require resolution' })
           break
         }
@@ -499,23 +533,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         }
         else demand(false, 'Invalid PO action.')
       } else if (r.kind === 'receiving' && action === 'onboard') {
-        allow(ctx, 'inventory:create'); if (r.status === 'Onboarded') return { id: r.id, alreadyRecorded: true }
-        demand(r.status === 'Inspected', 'Inspection is required.'); const po = get(r.poId, 'po'); const accepted = { ...po.accepted }
-        for (const line of r.lines) {
-          if (!line.accepted) continue
-          let item = items.find(i => i.id === line.itemId)
-          const ordered = po.lines.find(l => l.itemId === line.itemId); demand(ordered, 'The ordered item is unavailable.')
-          const isFirstReceipt = !item
-          if (isFirstReceipt) item = { id: line.itemId, branchId, name: ordered.name, category: ordered.category || '', description: ordered.specifications || '', unit: ordered.unit || 'units', minStock: Number(ordered.minStock || 0), targetStock: Number(ordered.targetStock || ordered.quantity), maxStock: Number(ordered.maxStock || ordered.quantity), itemType: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Equipment' : 'Material', consumability: String(ordered.category || '').toLowerCase() === 'equipment' ? 'Non-consumable' : 'Consumable', currentStock: 0, supplierCatalogItemId: ordered.supplierCatalogItemId || '' }
-          accepted[line.itemId] = Number(accepted[line.itemId] || 0) + line.accepted
-          demand(accepted[line.itemId] <= ordered.quantity, 'Receipt exceeds ordered quantity.')
-          if (line.serialNumber) { demand(line.accepted === 1, 'Receive serialized equipment one unit per receiving record.'); demand(!docs(lotSnap).some(l => l.serialNumber === line.serialNumber && l.itemId === item.id), 'This equipment serial number has already been received.') }
-          writes.push([db.collection('supplyLots').doc(`${r.id}-${item.id}`), { branchId, itemId: item.id, receivingId: r.id, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', receivedQuantity: line.accepted, remainingQuantity: line.accepted, lot: line.lot || '', manufacturingDate: line.manufacturingDate || '', expiryDate: line.expiryDate || '', serialNumber: line.serialNumber || '', modelNumber: line.modelNumber || '', warranty: line.warranty || '', condition: line.condition, location: po.deliveryLocation, unitCost: ordered.unitPrice, receivedAt: now }, false])
-          writes.push([db.collection('inventoryItems').doc(item.id), { ...item, currentStock: Number(item.currentStock || 0) + line.accepted, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || item.supplierCatalogItemId || '', receivedAt: now, updatedAt: now, createdAt: isFirstReceipt ? now : item.createdAt || now, manufacturingDate: line.manufacturingDate || item.manufacturingDate || '', expiryDate: Number(item.currentStock || 0) > 0 && item.expiryDate ? [item.expiryDate, line.expiryDate].filter(Boolean).sort()[0] : line.expiryDate || '', serialNumber: line.serialNumber || item.serialNumber || '', modelNumber: line.modelNumber || item.modelNumber || '', warranty: line.warranty || item.warranty || '', condition: line.condition, location: ordered.location || po.deliveryLocation, costPrice: ordered.unitPrice / 100 }, true])
-          writes.push([db.collection('inventoryMovements').doc(`${r.id}-${item.id}`), { branchId, inventoryItemId: item.id, receivingId: r.id, inspectionId: r.inspectionId, poId: po.id, supplierId: po.supplierId, supplierCatalogItemId: ordered.supplierCatalogItemId || '', quantity: line.accepted, type: 'purchase_receipt', createdBy: ctx.uid, createdAt: now, lot: line.lot, expiryDate: line.expiryDate }, false])
-        }
-        const complete = po.lines.every(l => Number(accepted[l.itemId] || 0) === l.quantity)
-        set(po, { accepted, status: 'Receiving' }); result = set(r, { status: 'Onboarded', onboardedBy: ctx.uid, onboardedAt: now })
+        result = onboardReceiving(r)
       } else if (r.kind === 'discrepancy' && action === 'resolve') { allow(ctx, 'inventory:create'); demand(r.status === 'Open', 'Discrepancy is already resolved.'); demand(['Return to supplier', 'Replacement', 'Credit', 'Refund', 'Other resolution'].includes(input.resolutionType), 'Select a resolution type.', 400); result = set(r, { status: 'Resolved', resolutionType: input.resolutionType, resolution: required(input.remarks, 'Resolution'), resolvedBy: ctx.uid, resolvedAt: now }) }
       else if (r.kind === 'invoice' && action === 'reviseInvoice') {
         const po = get(r.poId, 'po'); manualOrSupplier(po, 'finance:payables:approve')
@@ -583,7 +601,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         recipients = staffWith('finance:payables:approve'); title = 'Purchase order awaiting Finance approval'; message = `${changed.number} is ready for budget and financial approval.`; link = '/finance/procurement/requests'
       } else if (changed.kind === 'po' && changed.status === 'Approved') {
         recipients = staffWith('procurement:review'); title = 'Purchase order approved'; message = `${changed.number} is approved and ready for Procurement to send externally.`; link = '/procurement/orders'
-      } else if (changed.kind === 'po' && changed.status === 'Receiving' && changed.confirmedAt) {
+      } else if (changed.kind === 'po' && changed.status === 'Receiving' && changed.confirmedAt && previous?.status !== 'Receiving') {
         recipients = staffWith('inventory:create'); title = 'Supplier confirmation recorded'; message = `${changed.number} is confirmed and ready for delivery receiving.`; link = '/inventory/receiving'
       } else if (changed.kind === 'po' && ['Returned to Procurement', 'Rejected', 'Clarification Requested'].includes(changed.status)) {
         recipients = staffWith('procurement:review'); title = 'Purchase order needs Procurement action'; message = `${changed.number}: ${changed.status}. Review the external supplier or Finance response.`; link = '/procurement/orders'
