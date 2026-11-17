@@ -302,7 +302,7 @@
                     <button
                       v-if="!selectedRole.isBuiltIn"
                       type="button"
-                      class="danger-action"
+                      class="danger-action role-delete-action"
                       @click="removeRole(selectedRole.id)"
                     >
                       <Icon icon="mdi:trash-can-outline" class="h-4 w-4" aria-hidden="true" />
@@ -325,27 +325,6 @@
                         <textarea v-model.trim="selectedRoleDraft.description" rows="5" class="discord-input discord-textarea"></textarea>
                       </label>
 
-                      <div class="flex flex-wrap justify-end gap-3">
-                        <button type="button" class="ghost-action" @click="resetSelectedDraft">Discard Changes</button>
-                        <button
-                          v-if="selectedRole.isBuiltIn"
-                          type="button"
-                          class="ghost-action"
-                          :disabled="saving"
-                          @click="resetBuiltInRole"
-                        >
-                          Reset to Default
-                        </button>
-                        <button
-                          type="button"
-                          class="inline-flex items-center gap-2 rounded-2xl bg-[#8d5a3b] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60"
-                          :disabled="saving"
-                          @click="saveRoleDetails"
-                        >
-                          <Icon icon="mdi:content-save-outline" class="h-4 w-4" />
-                          Save Details
-                        </button>
-                      </div>
                     </div>
 
                     <div class="space-y-5">
@@ -384,6 +363,28 @@
                           </p>
                         </div>
                       </div>
+                    </div>
+
+                    <div class="role-details-actions">
+                      <button type="button" class="ghost-action" @click="resetSelectedDraft">Discard Changes</button>
+                      <button
+                        v-if="selectedRole.isBuiltIn"
+                        type="button"
+                        class="ghost-action"
+                        :disabled="saving"
+                        @click="resetBuiltInRole"
+                      >
+                        Reset to Default
+                      </button>
+                      <button
+                        type="button"
+                        class="role-save-action"
+                        :disabled="saving"
+                        @click="saveRoleDetails"
+                      >
+                        <Icon icon="mdi:content-save-outline" class="h-4 w-4" />
+                        Save Details
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1715,6 +1716,60 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   font-size: 0.875rem;
   font-weight: 600;
   transition: all 0.2s ease;
+}
+
+.role-delete-action {
+  flex: 0 0 auto;
+  min-width: 9.25rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+  white-space: nowrap;
+}
+
+.role-details-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--ac-border);
+}
+
+.role-save-action {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--ac-primary);
+  border-radius: 0.95rem;
+  background: var(--ac-primary);
+  color: var(--ac-on-primary);
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.role-save-action:hover:not(:disabled) {
+  border-color: var(--ac-primary-hover);
+  background: var(--ac-primary-hover);
+}
+
+.role-save-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.role-save-action:focus-visible,
+.role-delete-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ac-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .role-details-actions > button { flex: 1 1 100%; }
 }
 
 .ghost-action {

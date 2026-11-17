@@ -48,13 +48,14 @@ onUnmounted(() => { document.removeEventListener('pointerdown', closeOutside); d
 <style scoped>
 .appearance-select { position: relative; min-width: 0; margin: 20px 0 8px; color: var(--ac-text-secondary); }
 .appearance-select label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
-.appearance-select .appearance-select-trigger { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
-.appearance-select-trigger:hover:not(:disabled), .appearance-select-trigger[aria-expanded=true] { border-color: var(--ac-accent); background: var(--ac-surface-soft); }
+.appearance-select .appearance-select-trigger { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1.25; text-align: left; cursor: pointer; }
+.appearance-select-trigger:hover:not(:disabled), .appearance-select-trigger[aria-expanded=true] { border-color: var(--ac-accent); background: var(--ac-surface-muted); }
 .appearance-select-trigger:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 2px; }
 .appearance-select-trigger:disabled { opacity: .5; cursor: not-allowed; }
-.appearance-select svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--ac-accent); }
-.appearance-select .appearance-select-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin: 6px 0 0; padding: 5px; list-style: none; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); box-shadow: var(--ac-shadow-md); max-height: 240px; overflow-y: auto; }
-.appearance-select-menu li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; border-radius: 6px; font-size: 13px; line-height: 1.5; cursor: pointer; }
-.appearance-select-menu li.is-selected { background: var(--ac-accent-soft); color: var(--ac-text); font-weight: 600; }
-.appearance-select-menu li.is-highlighted { background: var(--ac-surface-muted); color: var(--ac-text); }
+.appearance-select svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--ac-text-secondary); }
+.appearance-select .appearance-select-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin: 4px 0 0; padding: 6px; list-style: none; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); box-shadow: var(--ac-shadow-md); max-height: 240px; overflow-y: auto; }
+.appearance-select-menu li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 10px 12px; border-radius: calc(var(--ac-radius-sm) - 2px); font-size: 14px; line-height: 1.25; cursor: pointer; }
+.appearance-select-menu li.is-selected { background: var(--ac-primary); color: var(--ac-on-primary); font-weight: 600; }
+.appearance-select-menu li.is-selected svg { color: var(--ac-on-primary); }
+.appearance-select-menu li.is-highlighted:not(.is-selected) { background: var(--ac-surface-muted); color: var(--ac-text); }
 </style>

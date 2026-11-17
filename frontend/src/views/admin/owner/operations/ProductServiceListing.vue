@@ -21,9 +21,16 @@
       </details>
 
       <section v-if="activeListingTab === 'listings' && canViewListings" class="listing-client-contract">
-        <h2>Client Contract</h2>
-        <p v-if="hasClientContract">Your clinic's saved Client Contract applies automatically to services, consultations, and packages booked online or as walk-ins. Each booking includes the applicable branch policies, additional clinic terms, and saved appearance. You do not need to create a separate contract for each listing.</p>
-        <p v-else>Save a Client Contract in Policy &amp; Contract Management to apply it automatically to online and walk-in bookings for your listings.</p>
+        <div class="listing-client-contract-heading">
+          <div>
+            <h2>Client Contract</h2>
+            <p v-if="hasClientContract">Your clinic's saved Client Contract applies automatically to services, consultations, and packages booked online or as walk-ins. Each booking includes the applicable branch policies, additional clinic terms, and saved appearance. You do not need to create a separate contract for each listing.</p>
+            <p v-else>Save a Client Contract in Policy &amp; Contract Management to apply it automatically to online and walk-in bookings for your listings.</p>
+          </div>
+          <button v-if="hasClientContract" type="button" class="listing-contract-pdf-button" :disabled="contractPdfLoading" @click="openContractPdf">
+            {{ contractPdfLoading ? 'Preparing PDF...' : 'Open contract PDF' }}
+          </button>
+        </div>
         <details v-if="hasClientContract" class="listing-contract-disclosure"><summary class="listing-disclosure-trigger"><span>Preview applied contract</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary><div class="listing-contract-preview-body"><p class="listing-contract-preview-note">This preview uses this branch's linked policies. The Walk-In Policy applies to walk-ins. The booked service details are added to each customer's agreement. Existing agreements retain their saved content and design.</p><ClientContractDocument :document="listingContractPreview" /></div></details>
       </section>
 
@@ -68,15 +75,15 @@
               <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
               <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
               <div class="mb-3 flex flex-wrap gap-2">
-                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting…' : 'Submit to Finance' }}</button>
-                <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing…' : 'Publish' }}</button>
-                <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing…' : 'Unpublish' }}</button>
+                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting...' : 'Submit to Finance' }}</button>
+                <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing...' : 'Publish' }}</button>
+                <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing...' : 'Unpublish' }}</button>
               </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
-                Treatment course · {{ listingVisitCount(post) }} visits · {{ (post.treatmentCourseSteps || post.packageServiceIds || []).length }} ordered step(s).
+                Treatment course Â· {{ listingVisitCount(post) }} visits Â· {{ (post.treatmentCourseSteps || post.packageServiceIds || []).length }} ordered step(s).
               </p>
-              <ol v-if="post.postType === 'Package' && post.treatmentCourseSteps?.length" class="mb-2 list-inside list-decimal space-y-1 text-xs text-slate-400"><li v-for="(step, index) in post.treatmentCourseSteps" :key="`${step.serviceId}-${index}`">{{ posts.find(item => item.id === step.serviceId)?.title || posts.find(item => item.id === step.serviceId)?.serviceName || posts.find(item => item.id === step.serviceId)?.consultationName || 'Unavailable listing' }} · {{ step.visitCount }} visit(s)</li></ol>
+              <ol v-if="post.postType === 'Package' && post.treatmentCourseSteps?.length" class="mb-2 list-inside list-decimal space-y-1 text-xs text-slate-400"><li v-for="(step, index) in post.treatmentCourseSteps" :key="`${step.serviceId}-${index}`">{{ posts.find(item => item.id === step.serviceId)?.title || posts.find(item => item.id === step.serviceId)?.serviceName || posts.find(item => item.id === step.serviceId)?.consultationName || 'Unavailable listing' }} Â· {{ step.visitCount }} visit(s)</li></ol>
               <p class="listing-card-description text-sm text-slate-400 mb-2">{{ post.description }}</p>
               <div v-if="post.postType === 'Service' || post.postType === 'Consultation'" class="mb-2 flex flex-wrap gap-2">
                 <span
@@ -89,7 +96,7 @@
                   v-if="post.postType === 'Consultation' || (post.postType === 'Service' && post.requiresConsultationFirst)"
                   class="listing-detail-badge"
                 >
-                  Fee ₱{{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
+                  Fee â‚±{{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
                 </span>
                 <span
                   v-if="post.postType === 'Service' && post.followUpAllowed"
@@ -112,27 +119,27 @@
               </p>
               <p class="listing-card-price text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
               <p v-if="post.vatApplicable" class="mt-1 text-xs text-emerald-300">{{ post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout' }}</p>
-              <div class="listing-card-actions mt-3 flex flex-wrap gap-2">
+              <div class="listing-card-actions mt-3">
                 <button v-if="canUpdateListing"
                   @click="openEditPost(post)"
                   :disabled="actionLoadingId === post.id"
-                  class="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                  class="listing-action-button listing-action-edit"
                 >
-                  {{ actionLoadingId === post.id ? 'Processing…' : 'Edit' }}
+                  {{ actionLoadingId === post.id ? 'Processing...' : 'Edit' }}
                 </button>
                 <button v-if="canDisableListing"
                   @click="archivePost(post)"
                   :disabled="actionLoadingId === post.id"
-                  class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+                  class="listing-action-button listing-action-archive"
                 >
-                  {{ actionLoadingId === post.id ? 'Archiving…' : 'Archive' }}
+                  {{ actionLoadingId === post.id ? 'Archiving...' : 'Archive' }}
                 </button>
                 <button v-if="canDisableListing"
                   @click="deletePost(post)"
                   :disabled="actionLoadingId === post.id"
-                  class="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                  class="listing-action-button listing-action-delete"
                 >
-                  {{ actionLoadingId === post.id ? 'Deleting…' : 'Delete' }}
+                  {{ actionLoadingId === post.id ? 'Deleting...' : 'Delete' }}
                 </button>
               </div>
             </div>
@@ -165,7 +172,7 @@
                 :disabled="loading"
                 class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                {{ loading ? 'Saving changes…' : 'Save Changes' }}
+                {{ loading ? 'Saving changes...' : 'Save Changes' }}
               </button>
             </div>
           </div>
@@ -195,6 +202,7 @@ import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
 import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
 import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateTreatmentCourseComposition } from '../../../../../../shared/treatmentCourse.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
+import { createClientContractPdf } from '@/utils/clientContractPdf'
 
 export default {
   name: 'ProductServiceListing',
@@ -226,6 +234,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return ['vat_registered', 'non_vat', 'needs_clarification'].includes(profile.status) ? profile.status : 'needs_review'
     })
     const contractBranch = ref({})
+    const contractPdfLoading = ref(false)
     const hasClientContract = computed(() => clinicPolicies.value.clientContract?.configured === true)
     const listingContractPreview = computed(() => buildClientContractDocument(clinicPolicies.value, { branch: contractBranch.value }))
     const applicablePolicies = computed(() => clientContractPolicies(clinicPolicies.value, { branch: contractBranch.value })
@@ -1066,6 +1075,29 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
+    const openContractPdf = async () => {
+      const pdfTab = window.open('about:blank', '_blank')
+      if (!pdfTab) {
+        toast.error('Allow pop-ups to open the contract PDF.')
+        return
+      }
+
+      pdfTab.opener = null
+      contractPdfLoading.value = true
+      try {
+        const blob = await createClientContractPdf(listingContractPreview.value)
+        const pdfUrl = URL.createObjectURL(blob)
+        pdfTab.location.replace(pdfUrl)
+        window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000)
+      } catch (error) {
+        console.error('Unable to create client contract PDF:', error)
+        pdfTab.close()
+        toast.error('Unable to open the contract PDF right now.')
+      } finally {
+        contractPdfLoading.value = false
+      }
+    }
+
     let unsubscribeAuth = null
     let unsubscribePolicies = null
 
@@ -1132,6 +1164,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       applicablePolicies,
       hasClientContract,
       listingContractPreview,
+      contractPdfLoading,
+      openContractPdf,
       posts,
       activeListingTab,
       listingSearch,
@@ -1164,94 +1198,164 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <style scoped>
+.service-listings-page { background: var(--ac-bg) !important; color: var(--ac-text) !important; }
+.service-listings-page main { color: var(--ac-text) !important; }
 .listing-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
-.listing-eyebrow { margin-bottom: 8px; color: #b78055; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
-.service-listings-page .listing-primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; padding: 11px 18px; border: 1px solid #8d5a3b; border-radius: 10px; background: #8d5a3b; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 3px 8px #75482e1a; transition: background-color 150ms ease, box-shadow 150ms ease; }
+.listing-page-heading h1 { color: var(--ac-text) !important; }
+.listing-eyebrow { margin-bottom: 8px; color: var(--ac-accent) !important; font-size: 11px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
+
+.service-listings-page .listing-primary-button,
+.service-listings-page .listing-contract-pdf-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 44px; padding: 10px 16px; border: 1px solid var(--ac-primary);
+  border-radius: var(--ac-radius-md); background: var(--ac-primary); color: var(--ac-on-primary);
+  font-size: 13px; font-weight: 650; cursor: pointer; box-shadow: var(--ac-shadow-sm);
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
 .listing-primary-button svg { width: 18px; height: 18px; flex-shrink: 0; }
-.service-listings-page .listing-primary-button:hover { background: #75482e; box-shadow: 0 4px 12px #75482e26; }
-.service-listings-page .listing-primary-button:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
+.service-listings-page .listing-primary-button:hover:not(:disabled),
+.service-listings-page .listing-contract-pdf-button:hover:not(:disabled) {
+  border-color: var(--ac-primary-hover); background: var(--ac-primary-hover); transform: translateY(-1px);
+}
+.service-listings-page :is(.listing-primary-button, .listing-contract-pdf-button):focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 3px; }
+.service-listings-page :is(.listing-primary-button, .listing-contract-pdf-button):disabled { cursor: wait; opacity: .65; }
+
 .listing-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.listing-overview article { padding: 18px 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; }
-.listing-overview span { color: #8a725f; font-size: 12px; }
-.listing-overview strong { display: block; margin-top: 8px; color: #3d281d; font-size: 26px; }
-.listing-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #ead2b2; }
-.service-listings-page .listing-tabs button { padding: 12px 18px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: #a58a73; font-size: 14px; font-weight: 600; }
-.service-listings-page .listing-tabs button.is-active { color: #91643f; border-bottom-color: #b78055; }
-.listing-policy-panel { margin-bottom: 24px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffdf9; color: #3d281d; overflow: hidden; }
-.service-listings-page .listing-disclosure-trigger { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin: 0; padding: 16px 20px; list-style: none; background: #fffaf3; color: #543a29; font-size: 14px; font-weight: 600; cursor: pointer; }
+.listing-overview article { padding: 18px 20px; border: 1px solid var(--ac-border); border-radius: var(--ac-radius-md); background: var(--ac-surface) !important; color: var(--ac-text); }
+.listing-overview span { color: var(--ac-text-muted) !important; font-size: 12px; }
+.listing-overview strong { display: block; margin-top: 8px; color: var(--ac-text) !important; font-size: 26px; }
+.listing-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--ac-border); }
+.service-listings-page .listing-tabs button { min-height: 44px; padding: 12px 18px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--ac-text-muted); font-size: 14px; font-weight: 600; }
+.service-listings-page .listing-tabs button:hover { color: var(--ac-text) !important; background: var(--ac-surface-muted); }
+.service-listings-page .listing-tabs button.is-active { color: var(--ac-primary) !important; border-bottom-color: var(--ac-accent); }
+
+.listing-policy-panel,
+.listing-client-contract,
+.listing-create-panel,
+.listing-records-panel {
+  border: 1px solid var(--ac-border) !important; border-radius: var(--ac-radius-lg);
+  background: var(--ac-surface) !important; color: var(--ac-text) !important; box-shadow: var(--ac-shadow-sm);
+}
+.listing-policy-panel { margin-bottom: 24px; overflow: hidden; }
+.service-listings-page .listing-disclosure-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin: 0;
+  padding: 16px 20px; list-style: none; border: 0; background: var(--ac-surface-soft); color: var(--ac-text-secondary) !important;
+  font-size: 14px; font-weight: 650; text-align: left; cursor: pointer;
+}
 .listing-disclosure-trigger::-webkit-details-marker { display: none; }
 .listing-disclosure-trigger::marker { content: ''; }
-.listing-disclosure-trigger small { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 999px; background: #eee1d0; color: #62432d; font-size: 11px; font-weight: 500; }
-.listing-disclosure-trigger svg { width: 20px; height: 20px; flex-shrink: 0; color: #91643f; transition: transform 150ms ease; }
-details[open] > .listing-disclosure-trigger { border-bottom: 1px solid #ead2b2; }
+.listing-disclosure-trigger small { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 999px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: 11px; font-weight: 600; }
+.listing-disclosure-trigger svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--ac-accent); transition: transform 150ms ease; }
+details[open] > .listing-disclosure-trigger { border-bottom: 1px solid var(--ac-border); }
 details[open] > .listing-disclosure-trigger svg { transform: rotate(180deg); }
-.listing-disclosure-trigger:hover { background: #f7ead7; }
-.listing-disclosure-trigger:focus-visible { outline: 2px solid #b78055; outline-offset: -3px; }
+.listing-disclosure-trigger:hover { background: var(--ac-surface-muted); }
+.listing-disclosure-trigger:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: -3px; }
 .listing-policy-content { padding: 20px; }
-.listing-policy-description { color: #6b5342; font-size: 13px; line-height: 1.7; }
+.listing-policy-description { color: var(--ac-text-muted) !important; font-size: 13px; line-height: 1.7; }
 .listing-policy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-.listing-policy-grid article { padding: 16px; border: 1px solid #ead2b2; border-radius: 10px; background: #fffaf3; }
-.listing-policy-grid h3 { color: #543a29; font-size: 14px; font-weight: 600; }
-.listing-policy-grid p { margin-top: 8px; color: #6b5342; font-size: 13px; line-height: 1.7; }
-.listing-contract-disclosure { border: 1px solid #ead2b2; border-radius: 10px; background: #fffdf9; overflow: hidden; }
+.listing-policy-grid article { padding: 16px; border: 1px solid var(--ac-border); border-radius: var(--ac-radius-md); background: var(--ac-surface-soft) !important; }
+.listing-policy-grid h3 { color: var(--ac-text-secondary) !important; font-size: 14px; font-weight: 650; }
+.listing-policy-grid p { margin-top: 8px; color: var(--ac-text-muted) !important; font-size: 13px; line-height: 1.7; }
+
+.listing-client-contract { margin-bottom: 24px; padding: 20px; }
+.listing-client-contract-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.listing-client-contract h2 { color: var(--ac-text) !important; font-size: 18px; font-weight: 700; }
+.listing-client-contract p { margin-top: 8px; color: var(--ac-text-muted) !important; font-size: 13px; line-height: 1.7; }
+.listing-client-contract details { margin-top: 16px; border: 1px solid var(--ac-border); border-radius: var(--ac-radius-md); background: var(--ac-surface); overflow: hidden; }
 .listing-contract-preview-body { padding: 20px; }
-@media (max-width: 640px) { .listing-policy-grid { grid-template-columns: minmax(0, 1fr); }.listing-policy-content, .listing-contract-preview-body { padding: 16px; }.service-listings-page .listing-disclosure-trigger { padding: 16px; } }
-.listing-create-panel, .listing-records-panel { border-color: #ead2b2 !important; box-shadow: 0 4px 16px #3d281d05; }
-.listing-section-description { margin-bottom: 24px; color: #8a725f; font-size: 13px; line-height: 1.6; }
+.listing-client-contract .listing-contract-preview-note { margin: 0 0 16px; font-size: 12px; }
+
+.listing-create-panel, .listing-records-panel { padding: 20px; }
+.listing-section-description { margin-bottom: 24px; color: var(--ac-text-muted) !important; font-size: 13px; line-height: 1.6; }
+.listing-create-panel h2, .listing-records-panel h2 { color: var(--ac-text) !important; }
 .listing-create-panel label, .listing-edit-heading ~ div label { font-size: 13px; }
 .listing-post-type { margin: 0; }
-.listing-post-type :deep(label) { margin-bottom: 4px; color: #6b5342; font-weight: 400; }
-.service-listings-page main :is(input:not([type=checkbox]), select, textarea) { min-height: 44px; font-size: 13px; color-scheme: light; }
+.listing-post-type :deep(label) { margin-bottom: 4px; color: var(--ac-text-muted) !important; font-weight: 400; }
+.service-listings-page main :is(input:not([type="checkbox"]), select, textarea) {
+  min-height: 44px; border-color: var(--ac-border-strong) !important; background-color: var(--ac-surface) !important;
+  color: var(--ac-text) !important; font-size: 13px;
+}
 .service-listings-page main textarea { line-height: 1.7; resize: vertical; }
-.service-listings-page main select[multiple] { min-height: 130px; background: #fffdf9 !important; color: #3d281d !important; padding: 6px; }
-.service-listings-page main select option { padding: 8px 10px; background: #fffdf9; color: #3d281d; }
-.service-listings-page main input[type=checkbox] { accent-color: #97603c; }
-.service-listings-page main input[type=file] { padding: 8px; border-style: dashed; }
-.service-listings-page main input[type=file]::file-selector-button { padding: 7px 12px; border: 0; border-radius: 6px; background: #f4e7d5; color: #805432; cursor: pointer; }
-.service-listings-page main button[class*="bg-blue-"] { background: #8d5a3b !important; border-color: #8d5a3b !important; color: #fff !important; }
-.service-listings-page main button[class*="bg-blue-"]:hover:not(:disabled) { background: #75482e !important; }
-.service-listings-page main button[class*="bg-slate-"] { background: #fffaf3 !important; color: #73533d !important; border: 1px solid #dec19e; }
-.service-listings-page main button[class*="bg-amber-"] { background: #f4e7d5 !important; color: #805432 !important; border: 1px solid #dec19e; }
-.service-listings-page main button[class*="bg-red-"] { background: #fbe9e6 !important; color: #a12d22 !important; border: 1px solid #e8b9ae; }
-.service-listings-page main button[class*="bg-emerald-"] { background: #e4f2e9; color: #28765c; border: 1px solid #bbd8c6; }
+.service-listings-page main select[multiple] { min-height: 130px; padding: 6px; }
+.service-listings-page main select option { padding: 8px 10px; background: var(--ac-surface); color: var(--ac-text); }
+.service-listings-page main input[type="checkbox"] { accent-color: var(--ac-accent); }
+.service-listings-page main input[type="file"] { padding: 8px; border-style: dashed; }
+.service-listings-page main input[type="file"]::file-selector-button { padding: 7px 12px; border: 1px solid var(--ac-border); border-radius: 6px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); cursor: pointer; }
 .listing-records-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
-.listing-records-heading p { margin-top: 6px; color: #8a725f; font-size: 12px; }
-.listing-records-heading input { width: min(100%, 360px); padding: 10px 12px; border: 1px solid #dec19e; border-radius: 10px; }
-.listing-card { display: flex; flex-direction: column; border-color: #ead2b2 !important; border-radius: 14px; transition: box-shadow 150ms ease; }
-.listing-card:hover { box-shadow: 0 8px 24px #3d281d0d; }
+.listing-records-heading p { margin-top: 6px; color: var(--ac-text-muted) !important; font-size: 12px; }
+.listing-records-heading input { width: min(100%, 360px); padding: 10px 12px; border-radius: var(--ac-radius-md); }
+
+.listing-card { display: flex; flex-direction: column; border: 1px solid var(--ac-border) !important; border-radius: var(--ac-radius-lg); background: var(--ac-surface) !important; color: var(--ac-text) !important; overflow: hidden; transition: box-shadow 150ms ease, transform 150ms ease; }
+.listing-card:hover { box-shadow: var(--ac-shadow-md); transform: translateY(-1px); }
 .listing-card > img { height: 180px; }
-.listing-image-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; height: 180px; background: #f7ead7; color: #b78055; }
+.listing-image-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; height: 180px; background: var(--ac-surface-muted); color: var(--ac-accent); }
 .listing-image-placeholder svg { width: 40px; height: 40px; }
 .listing-image-placeholder span { font-size: 12px; }
 .listing-card-body { display: flex; flex-direction: column; flex: 1; padding: 20px; }
-.listing-card-body h3 { color: #3d281d; font-size: 18px; }
-.listing-detail-badge { display: inline-flex; align-items: center; padding: 5px 10px; border: 1px solid #dfc7a9; border-radius: 999px; background: #f7ead7; color: #62432d; font-size: 12px; font-weight: 600; line-height: 1.4; }
-.listing-type-badge { background: #eee1d0; color: #543a29; border-color: #d9bfa0; }
-.listing-follow-up-badge { background: #e4f2e9; color: #235b45; border-color: #b8d6c4; }
-.listing-card .listing-card-body :is(.text-slate-400, .text-slate-300) { color: #6b5342 !important; }
+.listing-card .listing-card-body h3 { color: var(--ac-text) !important; font-size: 18px; }
+.listing-detail-badge { display: inline-flex; align-items: center; padding: 5px 10px; border: 1px solid var(--ac-border); border-radius: 999px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.listing-type-badge { background: var(--ac-surface-muted); color: var(--ac-text-secondary); }
+.listing-follow-up-badge { background: var(--ac-success-bg); color: var(--ac-success); border-color: color-mix(in srgb, var(--ac-success) 40%, var(--ac-border)); }
+.listing-card .listing-card-body :is(.text-slate-400, .text-slate-300) { color: var(--ac-text-muted) !important; }
 .listing-card .listing-card-body p.text-sm { font-size: 14px; }
-.listing-card .listing-card-body p.listing-card-price { font-size: 20px; }
 .listing-card .listing-card-body span.text-xs { font-size: 12px; }
-.listing-card .listing-card-body p:is(.text-amber-200, .text-orange-200) { color: #765032 !important; line-height: 1.6; }
-.listing-card .listing-card-body .listing-publication-status { font-size: 12px; color: #684329; }
-.listing-card .listing-card-body .listing-publication-status.is-published { color: #235b45; }
-.listing-publication-status { width: fit-content; padding: 5px 9px; border-radius: 999px; background: #f4e7d5; color: #805432; font-size: 11px; }
-.listing-publication-status.is-published { background: #e4f2e9; color: #28765c; }
-.listing-card-description { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
-.listing-card .listing-card-price { color: #28765c !important; font-size: 20px; margin-top: auto; padding-top: 12px; }
-.listing-card-actions { padding-top: 16px; border-top: 1px solid #ead2b2; }
-.listing-card-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
-.listing-empty-state { padding: 48px 20px; border: 1px dashed #dec19e; border-radius: 12px; text-align: center; background: #fffaf3; }
-.listing-empty-state h3 { color: #3d281d; font-size: 18px; font-weight: 600; }
-.listing-empty-state p { margin: 8px 0 20px; color: #8a725f; font-size: 13px; }
-.listing-edit-heading { position: relative; padding-right: 64px; }
-.listing-edit-heading > button { position: absolute; top: 20px; right: 20px; padding: 8px; border-radius: 8px; color: #73533d; background: #fffaf3; border: 1px solid #dec19e; }
+.listing-card .listing-card-body p:is(.text-amber-200, .text-orange-200) { color: var(--ac-warning-text) !important; line-height: 1.6; }
+.listing-card .listing-publication-status { font-size: 12px; color: var(--ac-text-secondary) !important; }
+.listing-publication-status { width: fit-content; padding: 5px 9px; border-radius: 999px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: 11px; }
+.listing-publication-status.is-published { background: var(--ac-success-bg); color: var(--ac-success); }
+.listing-card .listing-card-price { color: var(--ac-success) !important; font-size: 20px; margin-top: auto; padding-top: 12px; }
+.listing-card-actions { display: flex; gap: 8px; width: 100%; padding-top: 16px; border-top: 1px solid var(--ac-border); }
+.listing-card-actions .listing-action-button {
+  display: inline-flex; flex: 1 1 0; min-width: 0; min-height: 40px; align-items: center; justify-content: center;
+  padding: 7px 6px; border: 1px solid var(--ac-border); border-radius: var(--ac-radius-sm); background: var(--ac-surface-muted);
+  color: var(--ac-text-secondary); font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+.listing-card-actions .listing-action-edit:hover:not(:disabled) { border-color: var(--ac-border-strong); background: var(--ac-surface-soft); color: var(--ac-text); }
+.listing-card-actions .listing-action-archive { border-color: color-mix(in srgb, var(--ac-warning) 45%, var(--ac-border)); background: var(--ac-warning-bg); color: var(--ac-warning-text); }
+.listing-card-actions .listing-action-archive:hover:not(:disabled) { border-color: var(--ac-warning); background: color-mix(in srgb, var(--ac-warning-bg) 82%, var(--ac-warning) 18%); }
+.listing-card-actions .listing-action-delete { border-color: color-mix(in srgb, var(--ac-danger) 48%, var(--ac-border)); background: var(--ac-danger-bg); color: var(--ac-danger); }
+.listing-card-actions .listing-action-delete:hover:not(:disabled) { border-color: var(--ac-danger); background: color-mix(in srgb, var(--ac-danger-bg) 82%, var(--ac-danger) 18%); }
+.listing-card-actions .listing-action-button:disabled { cursor: not-allowed; opacity: .55; }
+.listing-card-actions .listing-action-button:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 2px; }
+
+.listing-empty-state { padding: 48px 20px; border: 1px dashed var(--ac-border-strong); border-radius: var(--ac-radius-md); background: var(--ac-surface-soft) !important; color: var(--ac-text); text-align: center; }
+.listing-empty-state h3 { color: var(--ac-text) !important; font-size: 18px; font-weight: 650; }
+.listing-empty-state p { margin: 8px 0 20px; color: var(--ac-text-muted) !important; font-size: 13px; }
+.listing-edit-modal { background: var(--ac-surface) !important; border-color: var(--ac-border) !important; color: var(--ac-text) !important; }
+.listing-edit-heading { position: relative; padding-right: 64px; border-color: var(--ac-border) !important; }
+.listing-edit-heading h3 { color: var(--ac-text) !important; }
+.listing-edit-heading > button { position: absolute; top: 20px; right: 20px; padding: 8px; border-radius: 8px; color: var(--ac-text-secondary); background: var(--ac-surface-soft); border: 1px solid var(--ac-border); }
 .listing-edit-heading > button svg { width: 18px; height: 18px; }
-.listing-edit-heading > p { margin-top: 8px; color: #8a725f; font-size: 12px; line-height: 1.6; }
-@media (max-width: 640px) { .listing-overview { gap: 8px; }.listing-overview article { padding: 14px 10px; }.listing-overview strong { font-size: 22px; }.listing-records-heading input { width: 100%; }.listing-page-heading > button { width: 100%; }.listing-card-body { padding: 16px; } }
-.listing-client-contract { margin-bottom: 24px; padding: 20px; border: 1px solid #ead2b2; border-radius: 12px; background: #fffaf3; color: #3d281d; }
-.listing-client-contract h2 { font-size: 18px; font-weight: 700; }
-.listing-client-contract p { margin-top: 8px; color: #6b5342; font-size: 13px; line-height: 1.7; }
-.listing-client-contract details { margin-top: 16px; }
-.listing-client-contract .listing-contract-preview-note { margin-bottom: 16px; font-size: 12px; }
+.listing-edit-heading > p { margin-top: 8px; color: var(--ac-warning-text) !important; font-size: 12px; line-height: 1.6; }
+.listing-edit-modal > :last-child { border-color: var(--ac-border) !important; }
+
+:global(html[data-ac-theme="dark"] .aestheticare-app) .service-listings-page .listing-contract-disclosure :deep(.client-agreement) {
+  background: #fff !important; color: #352a24 !important;
+}
+:global(html[data-ac-theme="dark"] .aestheticare-app) .service-listings-page .listing-contract-disclosure :deep(.client-agreement :is(p, li, strong, em)) {
+  color: #352a24 !important;
+}
+:global(html[data-ac-theme="dark"] .aestheticare-app) .service-listings-page .listing-contract-disclosure :deep(.client-agreement :is(h2, h3)) {
+  color: var(--agreement-heading) !important;
+}
+
+@media (max-width: 640px) {
+  .listing-overview { gap: 8px; }
+  .listing-overview article { padding: 14px 10px; }
+  .listing-overview strong { font-size: 22px; }
+  .listing-records-heading input { width: 100%; }
+  .listing-page-heading > button { width: 100%; }
+  .listing-client-contract-heading { flex-direction: column; align-items: stretch; }
+  .listing-client-contract-heading .listing-contract-pdf-button { width: 100%; }
+  .listing-policy-grid { grid-template-columns: minmax(0, 1fr); }
+  .listing-policy-content, .listing-contract-preview-body { padding: 16px; }
+  .service-listings-page .listing-disclosure-trigger { padding: 16px; }
+  .listing-card-body, .listing-create-panel, .listing-records-panel { padding: 16px; }
+}
+
+@media (max-width: 360px) {
+  .listing-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .listing-card-actions .listing-action-button { width: 100%; }
+}
 </style>

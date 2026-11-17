@@ -590,6 +590,7 @@ onBeforeUnmount(() => {
   line-height: 1.02;
   letter-spacing: -0.03em;
   max-width: 14ch;
+  color: #fff3de;
 }
 
 .forgot-copy {
@@ -908,7 +909,7 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top left, rgba(185, 121, 79, 0.14), transparent 28%),
     radial-gradient(circle at bottom right, rgba(111, 74, 50, 0.24), transparent 32%),
-    linear-gradient(135deg, var(--ac-bg-deep), var(--ac-bg) 56%, #2b1a11);
+    linear-gradient(135deg, var(--ac-bg-deep), var(--ac-bg) 56%, #2b1a11) !important;
 }
 
 :global(html[data-ac-theme="dark"]) .forgot-glow-left {
@@ -959,7 +960,7 @@ onBeforeUnmount(() => {
 
 :global(html[data-ac-theme="dark"]) .forgot-card {
   border-color: var(--ac-border);
-  background: var(--ac-surface);
+  background: var(--ac-surface) !important;
   color: var(--ac-text);
   box-shadow: var(--ac-shadow-lg);
 }

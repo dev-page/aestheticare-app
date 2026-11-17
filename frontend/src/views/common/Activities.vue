@@ -2,32 +2,54 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <component :is="sidebarComponent" v-if="sidebarComponent" />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
-      <div class="mb-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 4, rows: 5 }" class="min-w-0 flex-1 p-4 md:p-8">
+      <div class="mb-6 md:mb-8">
         <h1 class="text-3xl font-bold text-white mb-2">Activities</h1>
         <p class="text-slate-400">Recent activity logs related to your account and clinic access.</p>
       </div>
 
-      <div class="space-y-4">
-        <div
-          v-for="activity in filteredActivities"
-          :key="activity.id"
-          class="bg-slate-800 rounded-xl border border-slate-700 p-5"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-white font-semibold">{{ activity.action || 'Activity' }}</p>
-            <p class="text-slate-400 text-xs">{{ formatDate(activity.createdAt) }}</p>
-          </div>
-          <p class="text-slate-300 text-sm mt-2">{{ activity.details || 'No details provided.' }}</p>
-          <p class="text-slate-500 text-xs mt-3">
-            {{ activity.actorName || 'Unknown user' }} - {{ formatActorRole(activity) }}
-          </p>
+      <section class="activities-table-panel overflow-hidden rounded-xl border border-slate-700 bg-slate-800" aria-label="Activity log">
+        <TablePagination
+          v-model:page="currentPage"
+          v-model:page-size="pageSize"
+          :total-items="filteredActivities.length"
+          part="top"
+          item-label="activities"
+        />
+        <div class="overflow-x-auto">
+          <table class="min-w-[720px] w-full border-collapse text-left">
+            <thead>
+              <tr>
+                <th scope="col" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider">Activity</th>
+                <th scope="col" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider">Details</th>
+                <th scope="col" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider">Performed by</th>
+                <th scope="col" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="activity in pagedActivities" :key="activity.id">
+                <td class="px-4 py-4 font-semibold">{{ activity.action || 'Activity' }}</td>
+                <td class="max-w-xl px-4 py-4 text-sm">{{ activity.details || 'No details provided.' }}</td>
+                <td class="px-4 py-4 text-sm">
+                  <span class="block font-medium">{{ activity.actorName || 'Unknown user' }}</span>
+                  <span class="mt-1 block text-xs text-slate-400">{{ formatActorRole(activity) }}</span>
+                </td>
+                <td class="whitespace-nowrap px-4 py-4 text-sm">{{ formatDate(activity.createdAt) }}</td>
+              </tr>
+              <tr v-if="filteredActivities.length === 0">
+                <td colspan="4" class="px-4 py-10 text-center text-slate-400">No activity logs available.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-
-        <div v-if="filteredActivities.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center text-slate-400">
-          No activity logs available.
-        </div>
-      </div>
+        <TablePagination
+          v-model:page="currentPage"
+          v-model:page-size="pageSize"
+          :total-items="filteredActivities.length"
+          part="bottom"
+          item-label="activities"
+        />
+      </section>
     </main>
   </div>
 </template>
@@ -35,7 +57,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -44,10 +66,11 @@ import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import TablePagination from '@/components/common/TablePagination.vue'
 
 export default {
   name: 'Activities',
-  components: { CustomerSidebar, EmployeeSidebar, OwnerSidebar },
+  components: { CustomerSidebar, EmployeeSidebar, OwnerSidebar, TablePagination },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -59,6 +82,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const role = ref('')
     const userType = ref('')
     const activities = ref([])
+    const currentPage = ref(1)
+    const pageSize = ref(10)
 
     const sidebarComponent = computed(() => {
       const roleValue = String(role.value || '').toLowerCase()
@@ -98,6 +123,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         })
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     )
+
+    const pagedActivities = computed(() => {
+      const start = (currentPage.value - 1) * pageSize.value
+      return filteredActivities.value.slice(start, start + pageSize.value)
+    })
+
+    watch(() => filteredActivities.value.length, () => {
+      const lastPage = Math.max(1, Math.ceil(filteredActivities.value.length / pageSize.value))
+      if (currentPage.value > lastPage) currentPage.value = lastPage
+    })
 
     const formatDate = (timestamp) => {
       if (!timestamp?.toDate) return '-'
@@ -166,6 +201,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     return {
       pageLoading,
       filteredActivities,
+      pagedActivities,
+      currentPage,
+      pageSize,
       formatDate,
       formatActorRole,
       sidebarComponent
@@ -173,3 +211,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   }
 }
 </script>
+
+<style scoped>
+.activities-table-panel table thead,
+.activities-table-panel table th {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+}
+
+.activities-table-panel table td {
+  color: var(--ac-text-secondary) !important;
+}
+
+.activities-table-panel table tbody tr:hover {
+  background: var(--ac-surface-soft) !important;
+}
+</style>

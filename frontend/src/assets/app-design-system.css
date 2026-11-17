@@ -1740,7 +1740,7 @@ html[data-ac-theme="dark"] .aestheticare-app .appearance-select :is(
 ) {
   background: var(--ac-surface) !important;
   border-color: var(--ac-border-strong) !important;
-  color: var(--ac-text-secondary) !important;
+  color: var(--ac-text) !important;
   color-scheme: dark;
 }
 
@@ -1750,20 +1750,25 @@ html[data-ac-theme="dark"] .aestheticare-app .appearance-select svg {
 
 html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li,
 html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li :is(span, svg) {
-  color: var(--ac-text-secondary) !important;
+  color: var(--ac-text) !important;
 }
 
-html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li:is(
-  .is-highlighted, .is-selected
-) {
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li.is-selected {
   background: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
 }
 
-html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li:is(
-  .is-highlighted, .is-selected
-) :is(span, svg) {
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li.is-selected :is(span, svg) {
   color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li.is-highlighted:not(.is-selected) {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .appearance-select-menu li.is-highlighted:not(.is-selected) :is(span, svg) {
+  color: var(--ac-text) !important;
 }
 
 html[data-ac-theme="dark"] .app-modal-panel .appearance-select :is(
@@ -1771,7 +1776,7 @@ html[data-ac-theme="dark"] .app-modal-panel .appearance-select :is(
 ) {
   background: var(--ac-surface) !important;
   border-color: var(--ac-border-strong) !important;
-  color: var(--ac-text-secondary) !important;
+  color: var(--ac-text) !important;
   color-scheme: dark;
 }
 
@@ -1779,17 +1784,22 @@ html[data-ac-theme="dark"] .app-modal-panel .appearance-select svg {
   color: var(--ac-accent) !important;
 }
 
-html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li:is(
-  .is-highlighted, .is-selected
-) {
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li.is-selected {
   background: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
 }
 
-html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li:is(
-  .is-highlighted, .is-selected
-) :is(span, svg) {
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li.is-selected :is(span, svg) {
   color: var(--ac-on-primary) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li.is-highlighted:not(.is-selected) {
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel .appearance-select-menu li.is-highlighted:not(.is-selected) :is(span, svg) {
+  color: var(--ac-text) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app :is(
@@ -2358,35 +2368,137 @@ html[data-ac-theme="dark"] .aestheticare-app .owner-theme main .dashboard-action
   color: var(--ac-on-primary) !important;
 }
 
-/* Keep native dropdowns consistent with the active app theme, including the
-   browser-rendered option list. */
+/* Shared dropdown control styling for every platform area and modal. */
 .aestheticare-app select:not([multiple]):not([size]),
-.aestheticare-app .app-modal-panel select:not([multiple]):not([size]) {
+.app-modal-panel select:not([multiple]):not([size]) {
   color-scheme: light;
+  appearance: auto !important;
   min-height: 2.75rem !important;
-  padding: .625rem .875rem !important;
+  max-width: 100%;
+  padding: .625rem .75rem !important;
   border: 1px solid var(--ac-border-strong) !important;
   border-radius: var(--ac-radius-sm) !important;
-  font: inherit !important;
+  font-family: inherit !important;
+  font-size: .875rem !important;
+  font-weight: 500 !important;
+  line-height: 1.25 !important;
   background-color: var(--ac-surface) !important;
   color: var(--ac-text) !important;
 }
 
+.aestheticare-app select:not([multiple]):not([size]):hover:not(:disabled),
+.app-modal-panel select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: var(--ac-accent) !important;
+}
+
+.aestheticare-app select:not([multiple]):not([size]):disabled,
+.app-modal-panel select:not([multiple]):not([size]):disabled {
+  background-color: var(--ac-surface-muted) !important;
+  color: var(--ac-text-muted) !important;
+  cursor: not-allowed;
+}
+
 .aestheticare-app select option,
-.aestheticare-app .app-modal-panel select option {
+.app-modal-panel select option,
+.aestheticare-app select optgroup,
+.app-modal-panel select optgroup {
   background-color: var(--ac-surface) !important;
   color: var(--ac-text) !important;
 }
 
 .aestheticare-app select option:checked,
-.aestheticare-app .app-modal-panel select option:checked {
+.app-modal-panel select option:checked {
   background-color: var(--ac-primary) !important;
   color: var(--ac-on-primary) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app select:not([multiple]):not([size]),
-html[data-ac-theme="dark"] .aestheticare-app .app-modal-panel select:not([multiple]):not([size]) {
+html[data-ac-theme="dark"] .app-modal-panel select:not([multiple]):not([size]) {
   color-scheme: dark;
+}
+
+/* Chrome and other supporting browsers can style the open picker itself.
+   Older browsers keep the native select behavior with the same themed field. */
+@supports (appearance: base-select) {
+  .aestheticare-app select:not([multiple]):not([size]),
+  .aestheticare-app select:not([multiple]):not([size])::picker(select),
+  .app-modal-panel select:not([multiple]):not([size]),
+  .app-modal-panel select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select !important;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]),
+  .app-modal-panel select:not([multiple]):not([size]) {
+    appearance: base-select !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]):open,
+  .app-modal-panel select:not([multiple]):not([size]):open {
+    border-color: var(--ac-accent) !important;
+    background-color: var(--ac-surface-muted) !important;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size])::picker-icon,
+  .app-modal-panel select:not([multiple]):not([size])::picker-icon {
+    content: "";
+    width: .5rem;
+    height: .5rem;
+    flex: 0 0 .5rem;
+    margin-top: -.25rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    color: var(--ac-text-secondary);
+    rotate: 45deg;
+    transition: rotate .16s ease;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]):open::picker-icon,
+  .app-modal-panel select:not([multiple]):not([size]):open::picker-icon {
+    margin-top: .25rem;
+    rotate: 225deg;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size])::picker(select),
+  .app-modal-panel select:not([multiple]):not([size])::picker(select) {
+    margin-block: .25rem;
+    padding: .375rem;
+    max-height: min(15rem, 50vh);
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid var(--ac-border-strong);
+    border-radius: var(--ac-radius-sm);
+    background-color: var(--ac-surface);
+    color: var(--ac-text);
+    box-shadow: 0 12px 28px rgba(45, 28, 18, .2);
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]) option,
+  .app-modal-panel select:not([multiple]):not([size]) option {
+    min-height: 2.5rem;
+    padding: .625rem .75rem;
+    border-radius: calc(var(--ac-radius-sm) - 2px);
+    background: transparent;
+    color: var(--ac-text);
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]) option:hover,
+  .aestheticare-app select:not([multiple]):not([size]) option:focus,
+  .app-modal-panel select:not([multiple]):not([size]) option:hover,
+  .app-modal-panel select:not([multiple]):not([size]) option:focus {
+    background-color: var(--ac-surface-muted) !important;
+    color: var(--ac-text) !important;
+  }
+
+  .aestheticare-app select:not([multiple]):not([size]) option:checked,
+  .app-modal-panel select:not([multiple]):not([size]) option:checked {
+    background-color: var(--ac-primary) !important;
+    color: var(--ac-on-primary) !important;
+    font-weight: 600;
+  }
 }
 
 /* Dark-theme alert compatibility for existing pages that predate .app-alert.

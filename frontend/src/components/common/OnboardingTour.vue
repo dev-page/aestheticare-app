@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div v-if="isOpen" class="onboarding-tour-layer fixed inset-0 z-[10000]" aria-live="polite">
       <div
-        v-if="highlightStyle"
+        v-if="highlightStyle && !isMobileViewport"
         class="onboarding-spotlight pointer-events-none absolute rounded-xl border-2 border-amber-300"
         :style="highlightStyle"
         aria-hidden="true"
@@ -11,6 +11,7 @@
       <section
         :class="[
           'onboarding-tooltip',
+          { 'onboarding-tooltip-mobile': isMobileViewport },
           { 'onboarding-tooltip-module': panelKey && panelKey !== 'customer' },
           { 'onboarding-tooltip-supplier': panelKey === 'supplier' },
         ]"
@@ -80,6 +81,7 @@ const tooltipElement = ref(null)
 const tooltipPosition = ref({ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' })
 const tooltipPlacement = ref('center')
 const positionReady = ref(false)
+const isMobileViewport = ref(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches === true)
 
 const TARGET_PADDING = 3
 const TOOLTIP_GAP = 16
@@ -119,7 +121,7 @@ const next = () => {
 const previous = () => emit('previous')
 
 const highlightStyle = computed(() => {
-  if (!targetRect.value) return null
+  if (isMobileViewport.value || !targetRect.value) return null
   const rect = targetRect.value
   return {
     top: `${rect.top - TARGET_PADDING}px`,
@@ -129,7 +131,20 @@ const highlightStyle = computed(() => {
   }
 })
 
-const tooltipStyle = computed(() => ({ ...tooltipPosition.value, visibility: positionReady.value ? 'visible' : 'hidden' }))
+const tooltipStyle = computed(() => {
+  const visibility = positionReady.value ? 'visible' : 'hidden'
+  if (isMobileViewport.value) {
+    return {
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: 'min(92vw, 28rem)',
+      maxHeight: 'calc(100dvh - 1.5rem)',
+      visibility,
+    }
+  }
+  return { ...tooltipPosition.value, visibility }
+})
 
 const readTargetRect = () => {
   if (!targetElement?.isConnected) return false
@@ -304,6 +319,15 @@ const syncTarget = async () => {
     return
   }
 
+  if (isMobileViewport.value) {
+    targetElement = null
+    targetRect.value = null
+    tooltipPlacement.value = 'center'
+    positionReady.value = true
+    lockTutorialScroll()
+    return
+  }
+
   const selector = String(props.step?.selector || '').trim()
   targetElement = await findTarget(selector, sequence)
   if (sequence !== syncSequence) return
@@ -330,6 +354,7 @@ const syncTarget = async () => {
 }
 
 const refreshPosition = () => {
+  if (isMobileViewport.value) return
   if (refreshFrame) return
   refreshFrame = window.requestAnimationFrame(() => {
     refreshFrame = 0
@@ -343,7 +368,10 @@ const refreshPosition = () => {
   })
 }
 
-const handleResize = () => syncTarget()
+const handleResize = () => {
+  isMobileViewport.value = window.matchMedia?.('(max-width: 767px)').matches === true
+  syncTarget()
+}
 
 watch(() => [props.isOpen, props.stepIndex, props.step?.selector], syncTarget, { immediate: true })
 
@@ -393,6 +421,10 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   box-shadow: 0 0 0 9999px rgba(16, 10, 7, .68), 0 0 0 3px rgba(252, 211, 77, .25), 0 0 24px rgba(252, 211, 77, .75);
   transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease;
+}
+
+.onboarding-tour-layer {
+  pointer-events: auto;
 }
 
 .onboarding-tooltip {
@@ -578,7 +610,22 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 767px) {
-  .onboarding-tooltip { border-radius: 1.2rem; }
+  .onboarding-tour-layer {
+    background: rgba(16, 10, 7, .68);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+  }
+
+  .onboarding-tooltip-mobile {
+    box-sizing: border-box;
+    border-radius: 1.25rem;
+    max-height: calc(100vh - 1.5rem);
+    max-height: calc(100dvh - 1.5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .onboarding-tooltip-mobile::after { display: none; }
 }
 
 @media (max-width: 767px) {

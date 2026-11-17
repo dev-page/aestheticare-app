@@ -75,42 +75,20 @@
                 <span class="mt-2 block text-xs text-slate-500">Email is read-only here so it stays in sync with your login account.</span>
               </label>
 
-              <div class="grid gap-5 md:grid-cols-2">
-                <label class="block">
-                  <span class="mb-2 block text-sm font-medium text-slate-300">Phone Number</span>
-                  <div class="flex overflow-hidden rounded-xl border border-slate-700 bg-slate-900 focus-within:border-cyan-400">
-                    <span class="inline-flex items-center border-r border-slate-700 px-4 text-sm font-semibold text-slate-300">+63</span>
-                    <input :value="profile.phoneNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent px-4 py-3 text-white outline-none" @input="handlePhoneInput" @blur="validatePhoneNumber" />
-                  </div>
-                  <span v-if="phoneNumberError" class="mt-2 block text-xs text-rose-400">{{ phoneNumberError }}</span>
-                </label>
-
-                <label class="block">
-                  <span class="mb-2 block text-sm font-medium text-slate-300">Staff Arrangement</span>
-                  <input
-                    :value="!profile.engagementType && profile.employmentType === 'Intern' ? 'Needs arrangement review' : profile.engagementType === 'student_intern' ? 'Student intern / OJT' : `Employee · ${profile.employmentType || 'Not specified'}`"
-                    type="text"
-                    readonly
-                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-400 outline-none"
-                  />
-                  <span class="mt-2 block text-xs text-slate-500">Agreed weekly hours: {{ profile.weeklyHoursTarget || 'Not set' }}</span>
-                </label>
-              </div>
-
               <label class="block">
-                <span class="mb-2 block text-sm font-medium text-slate-300">Address</span>
-                <textarea
-                  v-model.trim="profile.address"
-                  rows="4"
-                  class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-cyan-400"
-                ></textarea>
+                <span class="mb-2 block text-sm font-medium text-slate-300">Phone Number</span>
+                <div class="flex overflow-hidden rounded-xl border border-slate-700 bg-slate-900 focus-within:border-cyan-400">
+                  <span class="inline-flex items-center border-r border-slate-700 px-4 text-sm font-semibold text-slate-300">+63</span>
+                  <input :value="profile.phoneNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" class="min-w-0 flex-1 bg-transparent px-4 py-3 text-white outline-none" @input="handlePhoneInput" @blur="validatePhoneNumber" />
+                </div>
+                <span v-if="phoneNumberError" class="mt-2 block text-xs text-rose-400">{{ phoneNumberError }}</span>
               </label>
 
               <div class="flex justify-end">
                 <button
                   type="submit"
                   :disabled="saving"
-                  class="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="profile-save-button w-full sm:w-auto"
                 >
                   {{ saving ? 'Saving...' : 'Save Changes' }}
                 </button>
@@ -177,12 +155,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       lastName: '',
       email: '',
       phoneNumber: '',
-      address: '',
       role: '',
       customRoleName: '',
-      employmentType: '',
-      engagementType: 'employee',
-      weeklyHoursTarget: 0,
       branchId: '',
       branchLabel: '',
       status: '',
@@ -274,12 +248,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         lastName: String(userData.lastName || '').trim(),
         email: String(userData.email || email || '').trim(),
         phoneNumber: normalizePhilippineMobile(userData.phoneNumber),
-        address: String(userData.address || '').trim(),
         role: String(userData.role || '').trim(),
         customRoleName: String(userData.customRoleName || '').trim(),
-        employmentType: String(userData.employmentType || '').trim(),
-        engagementType: String(userData.engagementType || (String(userData.employmentType || '').toLowerCase().includes('intern') ? '' : 'employee')).trim(),
-        weeklyHoursTarget: Number(userData.weeklyHoursTarget || 0),
         branchId,
         branchLabel: profile.value.branchLabel || '-',
         status: String(userData.status || '').trim(),
@@ -332,7 +302,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           lastName: profile.value.lastName,
           fullName: `${profile.value.firstName} ${profile.value.lastName}`.trim(),
           phoneNumber: `+63${profile.value.phoneNumber}`,
-          address: profile.value.address || '',
           profilePicture,
           updatedAt: serverTimestamp(),
         })
@@ -460,3 +429,31 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   },
 }
 </script>
+
+<style scoped>
+.profile-save-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ac-primary);
+  border-radius: var(--ac-radius-md);
+  background: var(--ac-primary);
+  color: var(--ac-on-primary);
+  padding: 0.7rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.profile-save-button:hover:not(:disabled) {
+  border-color: var(--ac-primary-hover);
+  background: var(--ac-primary-hover);
+  transform: translateY(-1px);
+}
+
+.profile-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+</style>

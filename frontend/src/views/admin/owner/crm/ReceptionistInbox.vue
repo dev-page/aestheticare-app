@@ -157,6 +157,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .messenger-message-author { font-size: 10px; font-weight: 700; color: #8d5a3b; margin-bottom: 5px; }
 .messenger-message-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
 .messenger-message-bubble time, .messenger-notice time { display: block; color: #765d4c; font-size: 10px; margin-top: 7px; }
+/* The global dark theme gives every paragraph cream text. Message bubbles
+   intentionally stay pale, so pin their own foreground to a readable ink. */
+.inbox-page .messenger-chat .messenger-message-row .messenger-message-bubble .messenger-message-author,
+.inbox-page .messenger-chat .messenger-message-row .messenger-message-bubble .messenger-message-text,
+.inbox-page .messenger-chat .messenger-message-row .messenger-message-bubble time { color: #3d281d !important; }
 .messenger-compose { padding: 16px 22px; border-top: 1px solid #ecd6be; background: #fffdf9; }
 .messenger-compose-row { display: flex; align-items: flex-end; gap: 12px; }
 .messenger-compose textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 120px; padding: 12px 16px; border: 1px solid #dec19e !important; border-radius: 22px; background: #fffaf3 !important; color: #3d281d !important; font-size: 13px; resize: vertical; }

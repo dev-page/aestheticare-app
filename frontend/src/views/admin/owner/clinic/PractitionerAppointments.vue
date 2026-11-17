@@ -6,14 +6,10 @@
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Service Queue</h1>
         <p class="text-slate-400">Checked-in customers appear first. Start your assigned service, record notes, and finish when care is complete.</p>
-        <div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Service queue views">
-          <button type="button" :aria-pressed="!historyMode" :class="{ 'is-selected': !historyMode }" class="queue-mode-button" @click="setHistoryMode(false)">Live queue</button>
-          <button type="button" :aria-pressed="historyMode" :class="{ 'is-selected': historyMode }" class="queue-mode-button" @click="setHistoryMode(true)">History &amp; other appointments</button>
-        </div>
       </div>
 
       <div class="queue-filters bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <div class="grid grid-cols-1 gap-4" :class="historyMode ? 'md:grid-cols-3' : 'md:grid-cols-2'">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label for="practitioner-appointments-search" class="block text-slate-400 text-sm mb-2">Search</label>
             <input
@@ -23,13 +19,6 @@
               placeholder="Client or service..."
               class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-purple-500 focus:outline-none"
             />
-          </div>
-          <div v-if="historyMode">
-            <label for="practitioner-appointments-status" class="block text-slate-400 text-sm mb-2">Status</label>
-            <select id="practitioner-appointments-status" v-model="statusFilter" class="w-full">
-              <option v-for="filter in appointmentStatusFilters" :key="filter.value || 'all'" :value="filter.value">{{ filter.label }}</option>
-            </select>
-            <p class="mt-1 text-xs text-slate-400">Needs attention groups payment, approval, and customer follow-up states.</p>
           </div>
           <div>
             <label for="practitioner-appointments-date-mode" class="block text-slate-400 text-sm mb-2">Date</label>
@@ -62,7 +51,7 @@
         </div>
       </section>
 
-      <section v-if="!historyMode" class="grid grid-cols-1 gap-4 lg:grid-cols-3" aria-label="Service queue">
+      <section class="grid grid-cols-1 gap-4 lg:grid-cols-3" aria-label="Service queue">
         <div v-for="lane in [
           { key: 'waiting', title: 'Waiting', description: 'Ready for check-in or service', appointments: waitingAppointments },
           { key: 'in-service', title: 'In Service', description: 'Care currently in progress', appointments: inServiceAppointments },
@@ -115,68 +104,6 @@
         </div>
       </section>
 
-      <div v-else class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-slate-700">
-              <tr>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Client</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Schedule</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service Actions / Follow-up</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-700">
-              <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white"><p>{{ appointment.clientName || appointment.customerName || appointment.patientName || '-' }}</p><p v-if="appointment.isGroupRecipient" class="mt-1 text-xs text-violet-300">Group recipient {{ appointment.groupRecipientIndex }} of {{ appointment.groupRecipientCount }} · Paid by {{ appointment.groupOrganizerName || 'organizer' }}</p></td>
-                <td class="px-6 py-4 text-slate-300"><p>{{ appointment.service || appointment.type || '-' }}</p><p v-if="appointment.treatmentPlan?.totalSessions > 1" class="mt-1 text-xs text-amber-300">Treatment plan: {{ appointment.treatmentPlan.completedSessions || 0 }}/{{ appointment.treatmentPlan.totalSessions }} completed</p></td>
-                <td class="px-6 py-4 text-slate-300">{{ formatAppointmentDate(appointment.date) }} {{ formatClockTime(appointment.time) }}</td>
-                <td class="px-6 py-4">
-                  <span :class="statusClass(appointment.status)">
-                    {{ appointment.status || 'Status not set' }}
-                  </span>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="flex flex-wrap items-center gap-3">
-                    <AppointmentTeam :appointment="appointment" />
-                    <button v-if="appointment.source === 'walk_in' && appointment.paymentStatus === 'Paid'" @click="contractAppointment = appointment" class="rounded bg-indigo-700 px-3 py-2 text-white">{{ appointment.contract?.status === 'signed' ? 'View contract' : 'Client review & e-sign' }}</button>
-                    <button v-if="appointment.contract?.status === 'signed' && !appointment.workerKeyVerified && ['paid', 'scheduled'].includes(queueStatus(appointment))" :disabled="actionBusy" @click="manualCheckIn(appointment)" class="rounded bg-amber-700 px-3 py-2 text-white">Check in without reception</button>
-                    <button v-if="appointment.consultationMode !== 'online' && (['checked in', 'ready to start'].includes(queueStatus(appointment)) || (appointment.source === 'walk_in' && queueStatus(appointment) === 'paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed'))" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can start the service." @click="bookingAction(appointment, 'start')" class="rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Start Service</button>
-                    <button v-if="canMarkNoShow(appointment)" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded bg-rose-700 px-3 py-2 text-white">Mark No-show</button>
-                    <router-link v-if="appointment.type === 'Consultation' &amp;&amp; appointment.consultationMode === 'online'" :to="{ path: '/crm/appointments', query: { tab: 'queue', mode: 'online' } }" class="rounded border border-amber-300 px-3 py-2">Open Online Consultation</router-link>
-                    <button v-if="queueStatus(appointment) === 'ongoing' && appointment.consultationMode !== 'online'" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
-                    <template v-if="appointment.sameDayTreatmentAppointmentId && appointment.workerCompleted && !['cleared', 'not_cleared', 'booking_rejected'].includes(appointment.sameDayTreatmentStatus) && !['cancelled', 'cancellation requested'].includes(String(appointment.status || '').trim().toLowerCase())">
-                      <p class="w-full text-xs text-amber-200">Consultation complete. Decide whether {{ appointment.sameDayTreatmentName || 'the linked treatment' }} may proceed today.</p>
-                      <button type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can clear same-day treatment." @click="decideSameDayTreatment(appointment, 'clear')" class="rounded bg-emerald-700 px-3 py-2 text-white disabled:opacity-50">Clear treatment for today</button>
-                      <button type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can make this decision." @click="decideSameDayTreatment(appointment, 'do_not_clear')" class="rounded border border-rose-400 px-3 py-2 text-rose-200 disabled:opacity-50">Do not clear today</button>
-                    </template>
-                    <button
-                      v-if="canRecommendFollowUp(appointment)"
-                      type="button"
-                      class="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/30"
-                      :disabled="!isAssignedToPractitioner(appointment)"
-                      @click="recommendFollowUp(appointment)"
-                    >
-                      Recommend Follow-up
-                    </button>
-                    <span v-else-if="appointment.followUpRecommended" class="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300">
-                      Recommended
-                    </span>
-                    <span v-else class="text-xs text-slate-400">Not recommended</span>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="assignedAppointments.length === 0">
-                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No assigned appointments yet.</td>
-              </tr>
-              <tr v-else-if="filteredAppointments.length === 0">
-                <td colspan="5" class="px-6 py-8 text-center text-slate-400">No matching appointments.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </component>
     <BookingContractModal :visible="Boolean(contractAppointment)" :appointment="contractAppointment" @close="contractAppointment = null" @updated="contractSaved" />
     <ServiceKeyVerificationModal
@@ -207,7 +134,6 @@ import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModa
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { promptForPrescriptions } from '@/utils/prescriptions'
-import { APPOINTMENT_STATUS_FILTERS, appointmentStatusGroup } from '@/utils/appointmentStatusFilter'
 
 const localDateKey = (date = new Date()) => {
   const year = date.getFullYear()
@@ -239,10 +165,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentBranchId = ref('')
     const currentUserId = ref('')
     const searchQuery = ref('')
-    const statusFilter = ref('')
     const dateFilter = ref(localDateKey())
     const dateMode = ref('today')
-    const historyMode = ref(false)
     const appointments = ref([])
     const consultationClearances = ref([])
     const actionBusy = ref(false)
@@ -387,19 +311,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const finishedAppointments = computed(() => queueAppointments.value.filter((item) =>
       ['awaiting customer confirmation', 'balance due', 'completed'].includes(queueStatus(item))))
 
-    const filteredAppointments = computed(() => assignedAppointments.value.filter((item) => {
-      if (!matchesQueueSearchAndDate(item)) return false
-      return !statusFilter.value || appointmentStatusGroup(item.status) === statusFilter.value
-    }).sort((a, b) => String(a.date + a.time).localeCompare(String(b.date + b.time))))
-
     const setDateMode = (mode) => {
       dateMode.value = mode
       dateFilter.value = mode === 'today' ? localDateKey() : ''
-    }
-    const setHistoryMode = (enabled) => {
-      historyMode.value = enabled
-      statusFilter.value = ''
-      setDateMode(enabled ? 'all' : 'today')
     }
 
     const pendingConsultationClearances = computed(() =>
@@ -608,19 +522,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       canMarkNoShow, markNoShow,
       manualCheckIn,
       searchQuery,
-      statusFilter,
-      appointmentStatusFilters: APPOINTMENT_STATUS_FILTERS,
       dateFilter,
       dateMode,
-      historyMode,
       setDateMode,
-      setHistoryMode,
       assignedAppointments,
       queueStatus,
       waitingAppointments,
       inServiceAppointments,
       finishedAppointments,
-      filteredAppointments,
       statusClass,
       canRecommendFollowUp,
       recommendFollowUp,
@@ -633,31 +542,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <style scoped>
-.queue-mode-button {
-  min-height: 40px;
-  padding: .55rem 1rem;
-  border: 1px solid var(--ac-border);
-  border-radius: 999px;
-  background: var(--ac-surface);
-  color: var(--ac-text-secondary);
-  font-size: .875rem;
-  font-weight: 600;
-  transition: background-color .16s ease, border-color .16s ease, color .16s ease;
-}
-
-.queue-mode-button:hover:not(:disabled) {
-  border-color: var(--ac-accent);
-  background: var(--ac-surface-muted);
-  color: var(--ac-text);
-}
-
-.queue-mode-button.is-selected,
-.queue-mode-button.is-selected:hover:not(:disabled) {
-  border-color: var(--ac-primary);
-  background: var(--ac-primary);
-  color: var(--ac-on-primary);
-}
-
 .queue-filters label {
   color: var(--ac-text-secondary);
 }

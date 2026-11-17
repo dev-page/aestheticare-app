@@ -500,7 +500,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-shell-module {
-  background: #fff8eb;
+  background: var(--ac-bg);
 }
 
 .notifications-main {
@@ -514,7 +514,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-main-module {
   padding: 2rem;
-  background: linear-gradient(180deg, #fffdf9 0%, #fff8eb 100%);
+  background: var(--ac-bg) !important;
+  color: var(--ac-text);
 }
 
 .notifications-content {
@@ -537,8 +538,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-header-module,
 .notifications-panel-module {
   border-radius: 1.5rem;
-  border: 1px solid #ead2b2;
-  background: #fffdf9;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
   box-shadow: 0 12px 30px rgba(72, 42, 23, 0.08);
 }
 
@@ -568,8 +569,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-title-module,
 .notifications-modal-heading-module {
-  color: #342419;
+  color: var(--ac-text);
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+}
+
+.notifications-shell-module .notifications-header-module .notifications-title-module,
+.notifications-shell-module .notifications-header-module .notifications-subtitle-module,
+.notifications-shell-module .notifications-panel-module .notifications-toolbar-module,
+.notifications-shell-module .notifications-panel-module .notifications-item-title-module,
+.notifications-shell-module .notifications-panel-module .notifications-item-message-module,
+.notifications-shell-module .notifications-panel-module .notifications-item-date-module,
+.notifications-shell-module .notifications-panel-module .notifications-empty-module {
+  color: var(--ac-text) !important;
+}
+
+.notifications-shell-module .notifications-header-module .notifications-subtitle-module,
+.notifications-shell-module .notifications-panel-module .notifications-toolbar-module,
+.notifications-shell-module .notifications-panel-module .notifications-item-message-module,
+.notifications-shell-module .notifications-panel-module .notifications-item-date-module,
+.notifications-shell-module .notifications-panel-module .notifications-empty-module {
+  color: var(--ac-text-muted) !important;
 }
 
 .notifications-subtitle,
@@ -592,7 +611,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-item-date-module,
 .notifications-empty-module,
 .notifications-modal-label-module {
-  color: #795f4b;
+  color: var(--ac-text-muted);
 }
 
 .notifications-error {
@@ -601,7 +620,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-error-module {
-  color: #a13f38;
+  color: var(--ac-danger);
 }
 
 .notifications-toolbar,
@@ -620,7 +639,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .notifications-toolbar-module {
   padding: 0.95rem 1rem;
-  border-bottom: 1px solid #ead2b2;
+  border-bottom: 1px solid var(--ac-border);
 }
 
 .notifications-delete-button,
@@ -643,16 +662,39 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   font-weight: 700;
 }
 
-.notifications-toolbar-module .notifications-delete-button,
-.notifications-toolbar-module .notifications-view-button {
-  border-color: #ead2b2;
-  background: #f8e3df;
-  color: #842f2a;
+.notifications-toolbar-module .notifications-delete-button {
+  border-color: color-mix(in srgb, var(--ac-danger) 48%, var(--ac-border));
+  background: var(--ac-danger-bg);
+  color: var(--ac-danger);
+}
+
+.notifications-toolbar-module .notifications-delete-button:hover:not(:disabled) {
+  border-color: var(--ac-danger);
+  background: color-mix(in srgb, var(--ac-danger-bg) 82%, var(--ac-danger) 18%);
+}
+
+.notifications-item-module .notifications-view-button {
+  border-color: var(--ac-primary);
+  background: var(--ac-primary);
+  color: var(--ac-on-primary);
+}
+
+.notifications-item-module .notifications-view-button:hover:not(:disabled) {
+  border-color: var(--ac-primary-hover);
+  background: var(--ac-primary-hover);
+  color: var(--ac-on-primary);
 }
 
 .notifications-delete-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.notifications-toolbar-module .notifications-delete-button:disabled {
+  border-color: var(--ac-border);
+  background: var(--ac-surface-muted);
+  color: var(--ac-text-muted);
+  opacity: 1;
 }
 
 .notifications-icon-button {
@@ -664,13 +706,25 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-toolbar-module .notifications-icon-button {
-  border-color: #ead2b2;
-  background: #fff7ec;
-  color: #795235;
+  border-color: var(--ac-border);
+  background: var(--ac-surface-soft);
+  color: var(--ac-text-secondary);
+}
+
+.notifications-item-module .notifications-icon-button-new {
+  border-color: var(--ac-border-strong);
+  background: var(--ac-surface-soft);
+  color: var(--ac-primary);
 }
 
 .notifications-icon-button-read {
   opacity: 0.55;
+}
+
+.notifications-item-module .notifications-icon-button-read {
+  background: var(--ac-surface-muted);
+  color: var(--ac-text-muted);
+  opacity: 1;
 }
 
 .notifications-icon-button-new {
@@ -707,8 +761,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-select-all-module,
 .notifications-item-module {
   padding: 1rem;
-  border-top: 1px solid #f0e1cf;
-  color: #624733;
+  border-top: 1px solid var(--ac-border);
+  color: var(--ac-text-secondary);
 }
 
 .notifications-checkbox {
@@ -727,7 +781,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-item-title-module {
-  color: #342419;
+  color: var(--ac-text);
 }
 
 .notifications-item-message {
@@ -741,7 +795,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-item-date-module {
-  color: #876e59;
+  color: var(--ac-text-muted);
 }
 
 .notifications-item-actions {
@@ -763,9 +817,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-panel-module .notifications-new-badge {
-  background: #fbefcf;
-  color: #8a5b18;
-  border-color: #f1d5a3;
+  background: var(--ac-warning-bg);
+  color: var(--ac-warning-text);
+  border-color: color-mix(in srgb, var(--ac-warning) 35%, var(--ac-border));
 }
 
 :deep(.notifications-modal-panel) {
@@ -784,9 +838,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   width: 100%;
   max-width: 40rem;
   border-radius: 1.5rem;
-  border: 1px solid #ead2b2;
-  background: #fffdf9;
-  color: #342419;
+  border: 1px solid var(--ac-border);
+  background: var(--ac-surface);
+  color: var(--ac-text);
   box-shadow: 0 24px 60px rgba(72, 42, 23, 0.18);
 }
 
@@ -795,7 +849,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-modal-text-module {
-  color: #342419;
+  color: var(--ac-text);
 }
 
 .notifications-modal-body {
@@ -812,8 +866,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 :deep(.notifications-modal-body-shell-module) {
-  background: #fffdf9;
-  color: #342419;
+  background: var(--ac-surface);
+  color: var(--ac-text);
 }
 
 .notifications-modal-label {
@@ -824,7 +878,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 }
 
 .notifications-modal-label-module {
-  color: #795f4b;
+  color: var(--ac-text-muted);
 }
 
 .notifications-modal-text {

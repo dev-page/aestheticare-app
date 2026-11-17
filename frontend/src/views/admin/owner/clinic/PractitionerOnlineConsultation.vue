@@ -5,12 +5,7 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
-        <p class="text-slate-400">Customers check in with their service code. Create a room in Google Meet, add its link here, and AesthetiCare will notify the customer in the app and by email.</p>
-      </div>
-
-      <div class="mb-6 rounded-xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
-        <strong class="text-white">No Google connection needed in AesthetiCare.</strong>
-        <span> Open Google Meet, create a room, then paste its link into the checked-in customer's appointment.</span>
+        <p class="text-slate-400">Customers check in with their service code. Add the meeting link to the checked-in appointment, and AesthetiCare will notify the customer in the app and by email.</p>
       </div>
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
