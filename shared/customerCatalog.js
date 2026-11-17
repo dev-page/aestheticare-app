@@ -9,6 +9,23 @@ export const isCustomerCareListing = post => Boolean(post
   && post.isPublished === true
   && post.archived !== true)
 
+// Keep the name shown in discovery, clinic details, and booking aligned with
+// the fields each listing type actually owns.
+export const getCustomerCareListingName = post => {
+  if (!post || typeof post !== 'object') return ''
+  const fieldsByType = {
+    Service: ['serviceName', 'title', 'productName', 'consultationName', 'packageName'],
+    Consultation: ['consultationName', 'title', 'serviceName', 'productName', 'packageName'],
+    Package: ['packageName', 'title', 'serviceName', 'consultationName', 'productName'],
+  }
+  const fields = fieldsByType[post.postType] || ['title', 'serviceName', 'consultationName', 'packageName', 'productName']
+  for (const field of fields) {
+    const value = String(post[field] || '').trim()
+    if (value) return value
+  }
+  return ''
+}
+
 export const isClinicCustomerDiscoverable = (clinic, now = new Date()) => Boolean(clinic
   && clinic.isPublished === true
   && String(clinic.status || '').trim().toLowerCase() !== 'inactive'

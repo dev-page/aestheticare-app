@@ -630,7 +630,7 @@
 </template>
 
 <script setup>
-import { isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../../shared/customerCatalog.js'
+import { getCustomerCareListingName, isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../../shared/customerCatalog.js'
 import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
 import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions, filterCategorizedServices } from '../../../../shared/serviceCategories.js'
 import { usePageLoading } from '@/composables/usePageLoading'
@@ -1552,7 +1552,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       .filter((post) => post && typeof post === 'object' && !Array.isArray(post))
       .map((post) => ({
         ...post,
-        postType: post.postType || (post.consultationName ? 'Consultation' : 'Service'),
+        postType: post.postType || (post.packageName || post.packageServiceIds?.length ? 'Package' : post.consultationName ? 'Consultation' : 'Service'),
         // This is a public catalog endpoint: alternate response envelopes may
         // omit the visibility flags, but the API has already applied them.
         financeStatus: post.financeStatus || 'approved',
@@ -1571,7 +1571,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       id: post.id,
       type: post.postType || 'Service',
       serviceCategory: normalizeServiceCategory(post.serviceCategory),
-      name: post.productName || post.serviceName || post.consultationName || post.title || 'Unnamed',
+      name: getCustomerCareListingName(post) || 'Unnamed',
       title: post.title || '',
       description: post.description || '',
       price: Number(post.price || 0),
@@ -1621,11 +1621,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
     })
     consultationModeSelection.value = Object.fromEntries(items.value.filter(item => item.type === 'Consultation').map(item => [item.id, item.consultationModes[0]]))
 
-    const catalogServiceNames = catalogRows
-      .map((post) => typeof post === 'string'
-        ? post.trim()
-        : String(post?.productName || post?.serviceName || post?.consultationName || post?.packageName || post?.title || '').trim())
-      .filter(Boolean)
+    const catalogServiceNames = items.value.map((item) => item.name).filter(Boolean)
     center.value.services = [...new Set(catalogServiceNames)]
   } catch (error) {
     items.value = []

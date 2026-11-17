@@ -7,14 +7,14 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const APP_BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
-function appBuildVersion() {
+function appBuildVersion(buildMode) {
   return {
     name: 'app-build-version',
     generateBundle() {
       this.emitFile({
         type: 'asset',
         fileName: 'app-version.json',
-        source: JSON.stringify({ buildId: APP_BUILD_ID }),
+        source: JSON.stringify({ buildId: APP_BUILD_ID, buildMode }),
       })
     },
   }
@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
   return {
   root: __dirname,
   envDir: path.resolve(__dirname, '..'),
-  plugins: [vue(), appBuildVersion(), ...(customerAppBuild ? [{
+  plugins: [vue(), appBuildVersion(customerAppBuild ? 'customer-app' : 'website'), ...(customerAppBuild ? [{
     name: 'customer-app-manifest',
     transformIndexHtml(html) {
       return {

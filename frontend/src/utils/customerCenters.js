@@ -1,4 +1,4 @@
-import { isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
+import { getCustomerCareListingName, isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
@@ -34,7 +34,10 @@ const buildBranches = (clinics, serviceMap) =>
         ? clinic.services.map((entry) => toText(entry)).filter(Boolean)
         : []
       const postedServices = Array.from(serviceMap.get(clinic.id) || [])
-      const services = clinicServices.length ? clinicServices : postedServices
+      // Published and approved listings are the current customer catalog. The
+      // legacy clinic.services field is only a fallback for older clinics
+      // that have not published listings yet.
+      const services = postedServices.length ? postedServices : clinicServices
       const location = toText(clinic.clinicLocation)
       return {
         id: clinic.id,
@@ -99,7 +102,7 @@ const buildServiceMap = async (clinicIds) => {
       const branchId = toText(post.branchId)
       if (!branchId) return
 
-      const serviceLabel = toText(post.serviceName || post.consultationName || post.packageName || post.title)
+      const serviceLabel = getCustomerCareListingName(post)
       if (!serviceLabel) return
 
       if (!serviceMap.has(branchId)) {
@@ -136,7 +139,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
       posts.filter(isCustomerCareListing).forEach((post) => {
         const branchId = toText(post.branchId)
         if (!branchId) return
-        const serviceLabel = toText(post.serviceName || post.productName || post.title)
+        const serviceLabel = getCustomerCareListingName(post)
         if (!serviceLabel) return
         if (!serviceMap.has(branchId)) {
           serviceMap.set(branchId, new Set())

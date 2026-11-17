@@ -120,6 +120,7 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import OnboardingTour from '@/components/common/OnboardingTour.vue'
 import AppLoadingScreen from '@/components/common/AppLoadingScreen.vue'
 import ThemeSelector from '@/components/common/ThemeSelector.vue'
+import { isCustomerAppContext } from '@/utils/customerApp'
 
 // Initialize auth state globally
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()
@@ -141,6 +142,7 @@ const {
 } = useOnboardingTour({ route, user })
 const { initSubscription, isReadOnly, isExpired, isSuspended, graceEndsAt, activePlan } = useSubscription()
 const isCustomerAppBuild = String(import.meta.env.VITE_MOBILE_APP || '').trim().toLowerCase() === 'true'
+const isCustomerAppExperience = isCustomerAppContext('', isCustomerAppBuild)
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isPoorConnection = ref(false)
 
@@ -302,7 +304,7 @@ const isInGracePeriod = computed(() => {
 
 onMounted(() => {
   initAuth()
-  if (!isCustomerAppBuild) initSubscription()
+  if (!isCustomerAppExperience) initSubscription()
   updateConnectionStatus()
   window.addEventListener('online', updateConnectionStatus)
   window.addEventListener('offline', updateConnectionStatus)
@@ -330,7 +332,7 @@ onMounted(() => {
 watch(
   () => user.value?.uid || null,
   (nextUserId, prevUserId) => {
-    if (!isCustomerAppBuild && nextUserId !== prevUserId) {
+    if (!isCustomerAppExperience && nextUserId !== prevUserId) {
       initSubscription()
     }
   }

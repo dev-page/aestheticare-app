@@ -1,3 +1,5 @@
+import { isCustomerAppContext } from './customerApp.js'
+
 const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '')
 
 const isBrowser = typeof window !== 'undefined'
@@ -5,6 +7,9 @@ const browserHostname = isBrowser ? String(window.location.hostname || '').trim(
 const appOrigin = isBrowser ? trimTrailingSlash(window.location.origin) : ''
 const isLocalBrowser = browserHostname === 'localhost' || browserHostname === '127.0.0.1'
 const isCustomerAppBuild = import.meta.env.MODE === 'customer-app'
+// Keep the app's API same-origin even if a deployment accidentally uses the
+// website bundle. The customer route is already the app's entry point.
+const isCustomerAppRuntime = isCustomerAppBuild || isCustomerAppContext()
 const hostedApiBase = appOrigin ? `${appOrigin}/api` : '/api'
 
 const normalizeHostedApiUrl = (configured) => {
@@ -44,23 +49,23 @@ export const APP_ORIGIN = appOrigin
 // Vercel origin. Ignore a clinic website's legacy API URL in this build so
 // mobile sign-in does not make a cross-origin request that can fail preflight.
 export const OTP_API_BASE = resolveRuntimeUrl(
-  isCustomerAppBuild ? hostedApiBase : import.meta.env.VITE_OTP_API_BASE_URL,
+  isCustomerAppRuntime ? hostedApiBase : import.meta.env.VITE_OTP_API_BASE_URL,
   'http://localhost:3000'
 )
 // The Express OTP backend defaults to port 3000. Keep the frontend default
 // aligned with it so admin actions do not first target an unused port.
 export const OTP_BACKEND_URL = resolveRuntimeUrl(
-  isCustomerAppBuild ? hostedApiBase : import.meta.env.VITE_OTP_BACKEND_URL,
+  isCustomerAppRuntime ? hostedApiBase : import.meta.env.VITE_OTP_BACKEND_URL,
   'http://localhost:3000'
 )
 export const OTP_API_BASE_CANDIDATES = uniqueUrls([
   OTP_API_BASE,
-  isCustomerAppBuild ? '' : hostedApiBase,
+  isCustomerAppRuntime ? '' : hostedApiBase,
 ])
 // In local development, the Vite origin is only the frontend and cannot serve
 // backend routes. Avoid trying localhost:5173/api before showing the real error.
 export const OTP_BACKEND_CANDIDATES = uniqueUrls([
   OTP_BACKEND_URL,
   OTP_API_BASE,
-  isCustomerAppBuild || isLocalBrowser ? '' : hostedApiBase,
+  isCustomerAppRuntime || isLocalBrowser ? '' : hostedApiBase,
 ])

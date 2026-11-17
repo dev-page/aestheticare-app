@@ -8,6 +8,12 @@ Build the website with `npm run build`; its output stays in `dist/`, with the or
 
 Build the APK frontend with `npm run build:customer-app`; its output goes to `dist-customer-app/`. Deploy that folder to a separate HTTPS host or subdomain configured to serve `index.html` for SPA routes. Do not replace the website deployment with this folder. Authorize the app host in Firebase Authentication and the backend's allowed origins before testing login and API requests.
 
+### Vercel customer-app project
+
+The customer app and clinic/admin website are separate Vercel projects even when they use the same repository. In the **customer app project's** Settings → Build & Development Settings, set the Build Command to `npm run build:customer-app` and the Output Directory to `dist-customer-app`. Keep the website project's existing `npm run build` command and `dist` output. The shared root `vercel.json` intentionally does not override either project's build command; it keeps the API adapter and scheduled jobs available to both deployments.
+
+After deployment, open `/app-version.json`: it must report `"buildMode":"customer-app"`. The customer app's `index.html` must reference `/customer-app/manifest.json`, and its API calls should go to the same host's `/api` route. If the build mode reports `website`, the customer project is still publishing the clinic/admin bundle. Rebuild and redeploy it with the customer app settings above.
+
 Enter the separate app host in PWABuilder. Use these Android package settings, substituting your actual app host:
 
 - Host: the separate HTTPS app host
