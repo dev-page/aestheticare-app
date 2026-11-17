@@ -115,7 +115,7 @@ watch([() => props.totalItems, totalPages], () => {
 }
 
 .table-pagination-summary,
-.table-pagination-page-label { margin: 0; }
+.table-pagination-page-label { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .table-pagination-summary strong { color: var(--ac-text, #342419); font-weight: 700; }
 .table-pagination-size { display: inline-flex; align-items: center; gap: .65rem; }
 .table-pagination select,
@@ -147,6 +147,9 @@ watch([() => props.totalItems, totalPages], () => {
 .table-pagination-ellipsis { padding: 0 .15rem; }
 
 @media (max-width: 640px) {
+  .table-pagination-top { align-items: stretch; }
+  .table-pagination-summary { flex: 1 1 100%; }
+  .table-pagination-size { width: 100%; justify-content: space-between; }
   .table-pagination-bottom { align-items: flex-start; }
   .table-pagination-controls { width: 100%; }
   .table-pagination-controls button { flex: 1 1 auto; }

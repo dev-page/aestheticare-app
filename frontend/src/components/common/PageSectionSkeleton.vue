@@ -63,25 +63,27 @@
     </template>
 
     <template v-else>
-      <div class="skeleton-table-head">
-        <div
-          v-for="item in columns"
-          :key="`head-${item}`"
-          class="skeleton-line short"
-        ></div>
-      </div>
-      <div class="skeleton-table-body">
-        <div
-          v-for="item in resolvedCount"
-          :key="`row-${item}`"
-          class="skeleton-table-row"
-        >
+      <div class="skeleton-table-scroll">
+        <div class="skeleton-table-head">
           <div
-            v-for="col in columns"
-            :key="`cell-${item}-${col}`"
-            class="skeleton-line"
-            :class="col % 3 === 0 ? 'short' : col % 2 === 0 ? 'medium' : 'long'"
+            v-for="item in columns"
+            :key="`head-${item}`"
+            class="skeleton-line short"
           ></div>
+        </div>
+        <div class="skeleton-table-body">
+          <div
+            v-for="item in resolvedCount"
+            :key="`row-${item}`"
+            class="skeleton-table-row"
+          >
+            <div
+              v-for="col in columns"
+              :key="`cell-${item}-${col}`"
+              class="skeleton-line"
+              :class="col % 3 === 0 ? 'short' : col % 2 === 0 ? 'medium' : 'long'"
+            ></div>
+          </div>
         </div>
       </div>
     </template>
@@ -126,8 +128,17 @@ export default {
 .page-section-skeleton {
   display: grid;
   gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
 }
 .skeleton-content { display: grid; gap: 1rem; }
+.skeleton-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
 
 .skeleton-line,
 .skeleton-pill,
@@ -300,6 +311,8 @@ export default {
 
 @media (max-width: 560px) {
   .skeleton-card-grid { grid-template-columns: 1fr; }
+  .skeleton-table-head,
+  .skeleton-table-body { min-width: 34rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line, .skeleton-pill, .skeleton-check, .skeleton-panel, .skeleton-detail-card, .skeleton-card-media { animation: none; }

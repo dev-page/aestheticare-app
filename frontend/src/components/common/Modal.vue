@@ -1,12 +1,12 @@
 <template>
   <teleport to="body">
-    <div v-if="isOpen" class="fixed inset-0 z-[80] flex items-start justify-center overflow-hidden px-4 pb-4 pt-20 sm:items-center sm:p-6">
+    <div v-if="isOpen" class="app-modal-overlay fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto">
       <div :class="['absolute inset-0 bg-black/70 backdrop-blur-sm', backdropClass]" @click="handleBackdropClick"></div>
       <div
-        :class="['app-modal-panel relative z-[81] flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-lg shadow-lg sm:max-h-[calc(100vh-3rem)]', panelClass]"
+        :class="['app-modal-panel relative z-[81] flex w-full max-w-4xl flex-col overflow-hidden rounded-lg shadow-lg', panelClass]"
         :style="panelStyle"
       >
-        <div class="flex items-center justify-between gap-4 border-b p-4">
+        <div class="app-modal-header flex items-center justify-between gap-4 border-b p-4">
           <slot name="header">
             <h3 v-if="title" class="text-lg font-semibold">{{ title }}</h3>
           </slot>
@@ -17,13 +17,13 @@
           </button>
         </div>
 
-        <div :class="['flex-1 min-h-0 overflow-y-auto p-4', bodyClass]">
+        <div :class="['app-modal-body flex-1 min-h-0 overflow-y-auto p-4', bodyClass]">
           <slot name="body">
             <slot />
           </slot>
         </div>
 
-        <div v-if="$slots.footer || showConfirm" class="p-4 border-t">
+        <div v-if="$slots.footer || showConfirm" class="app-modal-footer p-4 border-t">
           <slot name="footer">
             <div v-if="showConfirm" class="flex justify-end">
               <Button @click="$emit('confirm')">Confirm</Button>
@@ -102,3 +102,50 @@ onBeforeUnmount(() => {
   unlockPageScroll()
 })
 </script>
+
+<style>
+.app-modal-overlay {
+  box-sizing: border-box;
+  padding: 0.75rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+
+.app-modal-panel {
+  min-width: 0;
+  max-height: calc(100vh - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
+}
+
+.app-modal-header,
+.app-modal-footer {
+  flex: 0 0 auto;
+}
+
+.app-modal-body {
+  min-width: 0;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .app-modal-overlay {
+    padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+
+  .app-modal-panel {
+    border-radius: 0.9rem;
+  }
+
+  .app-modal-overlay .app-modal-header,
+  .app-modal-overlay .app-modal-footer,
+  .app-modal-overlay .app-modal-body {
+    padding: 0.85rem;
+  }
+}
+
+@media (min-width: 641px) {
+  .app-modal-overlay { padding: 1.5rem; }
+}
+</style>

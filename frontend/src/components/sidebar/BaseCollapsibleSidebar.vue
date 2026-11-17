@@ -407,8 +407,8 @@ export default {
             left: '0',
             top: '0',
             width: 'min(18rem, calc(100vw - 1rem))',
-            height: '100dvh',
-            minHeight: '100dvh',
+            height: '100vh',
+            minHeight: '0px',
             maxHeight: '100dvh',
             zIndex: 60
           }
@@ -435,7 +435,8 @@ export default {
           top: '0',
           width: collapsed.value ? '5rem' : '17rem',
           height: '100vh',
-          minHeight: '100vh',
+          minHeight: '0px',
+          maxHeight: '100dvh',
           zIndex: 20
         }
       }

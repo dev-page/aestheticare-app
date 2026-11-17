@@ -95,9 +95,9 @@
           v-if="isMobileMenuOpen"
           id="home-mobile-menu"
           aria-label="Mobile navigation"
-          class="lg:hidden fixed top-0 right-0 h-screen w-[84%] max-w-[340px] z-[70] bg-gradient-to-b from-gold-50 via-cream-100 to-gold-100 border-l border-gold-300/40 shadow-2xl flex flex-col"
+          class="home-mobile-menu lg:hidden fixed inset-y-0 right-0 h-screen w-[84%] max-w-[340px] z-[70] bg-gradient-to-b from-gold-50 via-cream-100 to-gold-100 border-l border-gold-300/40 shadow-2xl flex min-h-0 flex-col overflow-hidden"
         >
-          <div class="h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
+          <div class="home-mobile-menu-header h-16 px-4 flex items-center justify-between border-b border-gold-300/40">
             <span class="text-xs tracking-[0.24em] uppercase text-charcoal-700">Menu</span>
             <div class="flex items-center gap-2">
               <button
@@ -112,7 +112,7 @@
             </div>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
+          <div class="home-mobile-menu-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
             <div class="flex flex-col gap-2">
               <button @click="scrollToSection('features'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">Features</button>
               <button @click="scrollToSection('solutions'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">Solutions</button>
@@ -893,6 +893,21 @@ export default {
 </script>
 
 <style scoped>
+.home-mobile-menu {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+.home-mobile-menu-header { flex: 0 0 auto; }
+.home-mobile-menu-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
 .public-glass-nav :is(a, button):not(.public-brand-cluster) { font-family: inherit; }
 .home-page .public-glass-nav .home-nav-text-link { color: #493225; text-decoration: none; font-weight: 600; }
 .home-page .public-glass-nav .home-nav-text-link::before { background: #85553a; }

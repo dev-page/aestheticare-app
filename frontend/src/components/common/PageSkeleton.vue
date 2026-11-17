@@ -186,21 +186,23 @@ defineProps({
 </template>
 
 <style scoped>
-.page-skeleton { width: 100%; color: var(--ac-text-muted); }
-.skeleton-layout { display: grid; gap: 24px; }
+.page-skeleton { width: 100%; min-width: 0; max-width: 100%; color: var(--ac-text-muted); }
+.skeleton-layout { display: grid; gap: 24px; min-width: 0; max-width: 100%; }
+.skeleton-layout > * { min-width: 0; }
 .skeleton-heading, .skeleton-copy { display: grid; gap: 12px; }
 .bone { height: 12px; max-width: 100%; border-radius: 6px; background: linear-gradient(100deg, var(--ac-surface-muted) 20%, var(--ac-border) 45%, var(--ac-surface-muted) 70%); background-size: 240% 100%; animation: skeleton-shimmer 1.7s ease-in-out infinite; }
 .title { height: 28px; width: 260px; }
-.subtitle { width: 380px; }
+.subtitle { width: min(380px, 100%); }
 .short { width: 72px; }
 .medium { width: 160px; }
 .value { height: 30px; width: 90px; }
 .skeleton-surface { padding: 24px; border-radius: 16px; border: 1px solid var(--ac-border); background: var(--ac-surface); min-width: 0; }
-.skeleton-cards { display: grid; grid-template-columns: repeat(var(--cards), minmax(0, 1fr)); gap: 16px; }
+.skeleton-cards { display: grid; grid-template-columns: repeat(var(--cards), minmax(0, 1fr)); gap: 16px; min-width: 0; }
 .stat { display: grid; gap: 18px; }
 .card-image { height: 140px; width: 100%; border-radius: 10px; }
-.skeleton-panels { display: grid; grid-template-columns: repeat(var(--panels), minmax(0, 1fr)); gap: 20px; }
-.chart-placeholder { display: flex; gap: 16px; align-items: flex-end; height: 190px; padding-top: 32px; border-bottom: 1px solid var(--ac-border); }
+.skeleton-panels { display: grid; grid-template-columns: repeat(var(--panels), minmax(0, 1fr)); gap: 20px; min-width: 0; }
+.skeleton-panels > * { min-width: 0; }
+.chart-placeholder { display: flex; gap: 16px; align-items: flex-end; height: 190px; min-width: 0; max-width: 100%; padding-top: 32px; border-bottom: 1px solid var(--ac-border); }
 .chart-bar { flex: 1; border-radius: 6px 6px 0 0; }
 .skeleton-form { width: 100%; max-width: 900px; margin: 0 auto; display: grid; gap: 28px; }
 .skeleton-form-section { display: grid; gap: 20px; }
@@ -212,9 +214,9 @@ defineProps({
 .avatar.small { width: 36px; height: 36px; }
 .button { width: 120px; height: 38px; border-radius: 10px; }
 .button.small { width: 70px; height: 28px; }
-.skeleton-toolbar { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.skeleton-toolbar { display: flex; justify-content: space-between; gap: 24px; min-width: 0; margin-bottom: 24px; }
 .search { width: 320px; height: 42px; border-radius: 10px; }
-.skeleton-table-scroll { overflow-x: auto; }
+.skeleton-table-scroll { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
 .skeleton-table { min-width: calc(var(--columns) * 95px); }
 .skeleton-table-row { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); gap: 20px; padding: 20px 0; border-bottom: 1px solid var(--ac-border); }
 .skeleton-table-row:first-child { padding-top: 4px; }
@@ -314,9 +316,9 @@ defineProps({
 .checkout-skeleton-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .8fr); gap: 20px; align-items: start; }
 .checkout-summary-skeleton { display: grid; gap: 12px; }
 @keyframes skeleton-shimmer { to { background-position: -140% 0; } }
-@media (max-width: 900px) { .skeleton-cards, .skeleton-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .skeleton-cards, .skeleton-panels, .skeleton-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .discovery-filter-grid, .discovery-filter-grid.secondary, .refunds-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .discovery-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .calendar-dashboard-grid, .pharmacy-pos-grid, .refunds-layout, .employee-profile-skeleton, .checkout-skeleton-grid, .shift-assignment-grid { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .skeleton-fields, .skeleton-panels, .skeleton-split, .payslip-columns, .subscription-plan-skeleton { grid-template-columns: 1fr; } .skeleton-surface { padding: 18px; } .skeleton-toolbar { gap: 12px; } .discovery-filter-grid, .discovery-filter-grid.secondary, .discovery-cards, .refunds-filters, .superadmin-summary-grid, .payslip-totals, .appointment-detail-grid, .center-profile-panels { grid-template-columns: 1fr; } .superadmin-summary-grid > :nth-child(5) { grid-column: auto; } .weekly-schedule-row { grid-template-columns: minmax(80px, 1fr) 24px repeat(2, minmax(0, 1fr)); gap: 8px; } .calendar-month-grid { grid-auto-rows: minmax(46px, auto); gap: 4px; } .calendar-day { padding: 5px; } .prescription-filter, .role-editor-grid { grid-template-columns: 1fr; } .payslip-heading { flex-direction: column; } .payslip-meta { justify-items: start; } .owner-dashboard-hero { align-items: flex-start; flex-direction: column; } .clinic-branch-banner { align-items: flex-start; flex-direction: column; padding-top: 80px; } .clinic-avatar, .center-profile-avatar { width: 82px; height: 82px; } .clinic-brand-row { align-items: flex-start; flex-wrap: wrap; margin-top: -25px; padding-inline: 4px; } .clinic-banner-placeholder { height: 130px; } .center-profile-banner { min-height: 220px; align-items: flex-start; flex-direction: column; } }
+@media (max-width: 640px) { .skeleton-fields, .skeleton-panels, .skeleton-split, .payslip-columns, .subscription-plan-skeleton, .skeleton-summary-grid { grid-template-columns: 1fr; } .skeleton-surface { padding: 18px; } .skeleton-toolbar { flex-wrap: wrap; gap: 12px; } .skeleton-toolbar .search, .skeleton-toolbar .input { width: 100%; } .chart-placeholder { height: 160px; gap: 8px; } .discovery-filter-grid, .discovery-filter-grid.secondary, .discovery-cards, .refunds-filters, .superadmin-summary-grid, .payslip-totals, .appointment-detail-grid, .center-profile-panels { grid-template-columns: 1fr; } .superadmin-summary-grid > :nth-child(5) { grid-column: auto; } .weekly-schedule-row { grid-template-columns: minmax(80px, 1fr) 24px repeat(2, minmax(0, 1fr)); gap: 8px; } .calendar-month-grid { grid-auto-rows: minmax(46px, auto); gap: 4px; } .calendar-day { padding: 5px; } .prescription-filter, .role-editor-grid { grid-template-columns: 1fr; } .payslip-heading { flex-direction: column; } .payslip-meta { justify-items: start; } .owner-dashboard-hero { align-items: flex-start; flex-direction: column; } .clinic-branch-banner { align-items: flex-start; flex-direction: column; padding-top: 80px; } .clinic-avatar, .center-profile-avatar { width: 82px; height: 82px; } .clinic-brand-row { align-items: flex-start; flex-wrap: wrap; margin-top: -25px; padding-inline: 4px; } .clinic-banner-placeholder { height: 130px; } .center-profile-banner { min-height: 220px; align-items: flex-start; flex-direction: column; } }
 @media (max-width: 767px) {
   .appointment-loading-table { overflow: visible; }
   .appointment-loading-table .skeleton-table { min-width: 0; }

@@ -1,5 +1,5 @@
 <template>
-  <div class="app-table-wrap overflow-x-auto">
+  <div class="app-table-wrap overflow-x-auto" role="region" aria-label="Scrollable table" tabindex="0">
     <table class="app-table min-w-full">
       <thead>
         <tr>
@@ -39,3 +39,21 @@ defineProps({
   }
 })
 </script>
+
+<style scoped>
+.app-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-table-wrap:focus-visible {
+  outline: 2px solid var(--ac-accent, #b9794f);
+  outline-offset: 2px;
+}
+
+.app-table {
+  max-width: 100%;
+}
+</style>
