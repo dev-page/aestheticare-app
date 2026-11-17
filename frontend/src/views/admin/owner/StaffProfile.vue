@@ -17,6 +17,8 @@ import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { storage } from '@/config/firebaseConfig'
+import { usePermissions } from '@/composables/usePermissions'
+import { defaultClinicRolePermissions } from '@/config/clinicPermissionRegistry'
 
 export default {
   name: 'OwnerStaff',
@@ -27,6 +29,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
+    const { hasPermission } = usePermissions()
+    const canUpdateStaff = computed(() => hasPermission('staff:update'))
+    const canDisableStaff = computed(() => hasPermission('staff:disable'))
+    const canManageRoles = computed(() => hasPermission('roles:manage'))
     const staffList = ref([])
     const branches = ref([])
     const customRoles = ref([])
@@ -65,6 +71,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       userType: 'Staff',
       status: 'Active'
     })
+    const originalStaffStatus = ref('')
 
     const chunkArray = (items, size = 10) => {
       const chunks = []
@@ -193,6 +200,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     )
 
     const openEditModal = async (staff) => {
+      if (!canUpdateStaff.value) return
       editErrors.value = {}
       licenseFile.value = null
       licenseOcrResult.value = null
@@ -212,6 +220,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         customRoleName: String(staff.customRoleName || '').trim(),
         branchIds: Array.isArray(staff.branchIds) && staff.branchIds.length ? staff.branchIds : [staff.branchId].filter(Boolean),
       }
+      originalStaffStatus.value = String(staff.status || 'Active')
       showEditModal.value = true
       loadingSpecialty.value = true
       specialtyError.value = ''
@@ -342,6 +351,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const deactivateStaff = async (staff) => {
+      if (!canDisableStaff.value) return
       const fullName = `${staff.firstName} ${staff.lastName}`
       if (staff.status === 'Active') {
         const result = await Swal.fire({
@@ -383,6 +393,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const saveStaff = async () => {
       if (savingEmployee.value || loadingSpecialty.value || licenseOcrBusy.value || specialtyError.value) return
+      if (!canUpdateStaff.value) {
+        toast.error('You do not have permission to update employee profiles.')
+        return
+      }
+      if (String(currentStaff.value.status || '') !== originalStaffStatus.value && !canDisableStaff.value) {
+        toast.error('You do not have permission to change employee access status.')
+        return
+      }
       const { firstName, lastName, email, phoneNumber, clinicBranch, clinicLocation } = currentStaff.value
       const fullName = `${firstName} ${lastName}`
       const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
@@ -436,26 +454,33 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
           const nextStatus = currentStaff.value.status
           const shouldArchive = String(nextStatus || '').trim().toLowerCase() === 'inactive'
-          await updateDoc(staffRef, { 
+          const staffUpdates = {
             firstName: currentStaff.value.firstName.trim(),
             lastName: currentStaff.value.lastName.trim(),
             fullName: `${currentStaff.value.firstName.trim()} ${currentStaff.value.lastName.trim()}`.trim(),
             email: currentStaff.value.email.trim(),
             phoneNumber: normalizedPhoneNumber,
-            role: selectedRoleNames.join(', ') || currentStaff.value.role || null,
-            customRoleId: selectedRoleIds[0] || null,
-            customRoleIds: selectedRoleIds,
-            customRoleName: selectedRoleNames.join(', ') || null,
-            effectivePermissions: [...new Set(customRoles.value
-              .filter((entry) => selectedRoleIds.includes(entry.id))
-              .flatMap((entry) => entry.permissions || []))],
             engagementType: currentStaff.value.engagementType,
             employmentType: currentStaff.value.employmentType,
             weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
+          }
+          if (canDisableStaff.value) Object.assign(staffUpdates, {
             status: nextStatus,
             archived: shouldArchive,
-            archivedAt: shouldArchive ? serverTimestamp() : null
+            archivedAt: shouldArchive ? serverTimestamp() : null,
           })
+          if (canManageRoles.value) {
+            Object.assign(staffUpdates, {
+              role: selectedRoleNames.join(', ') || currentStaff.value.role || null,
+              customRoleId: selectedRoleIds[0] || null,
+              customRoleIds: selectedRoleIds,
+              customRoleName: selectedRoleNames.join(', ') || null,
+              effectivePermissions: [...new Set([...defaultClinicRolePermissions, ...customRoles.value
+                .filter((entry) => selectedRoleIds.includes(entry.id))
+                .flatMap((entry) => entry.permissions || [])])],
+            })
+          }
+          await updateDoc(staffRef, staffUpdates)
           toast.success(`${fullName}'s information updated successfully!`)
           showEditModal.value = false
         }
@@ -494,6 +519,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       openEditModal,
       updateCurrentStaffLocation,
       deactivateStaff,
+      canUpdateStaff,
+      canDisableStaff,
+      canManageRoles,
       saveStaff,
       searchQuery,
       filteredStaffList,
@@ -581,10 +609,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               </td>
               <td class="py-2 px-2 sm:py-3 sm:px-4">
                 <div class="flex flex-wrap gap-2">
-                <button type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
+                <button v-if="canUpdateStaff" type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m16.475 5.408l2.117 2.117m-.756-3.982L12.109 9.27a2.1 2.1 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621"/><path d="M19 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/></g></svg>
                 </button>
-                <button type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
+                <button v-if="canDisableStaff" type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h32v32H0z" fill="none"/><path fill="currentColor" d="M2.293 2.293a1 1 0 0 1 1.414 0l26 26a1 1 0 1 1-1.414 1.414l-3.127-3.127A13.94 13.94 0 0 1 16 30C8.268 30 2 23.732 2 16c0-3.506 1.288-6.712 3.418-9.168L2.293 3.707a1 1 0 0 1 0-1.414m4.545 5.959A11.95 11.95 0 0 0 4 16c0 6.627 5.373 12 12 12c2.954 0 5.656-1.07 7.746-2.84l-2.554-2.554C19.912 23.805 18.062 24.5 16 24.5c-3.866 0-7-2.428-7-6.071A2.43 2.43 0 0 1 11.429 16h3.157zM16 2c7.732 0 14 6.268 14 14c0 2.962-.921 5.708-2.491 7.97l-1.444-1.442A11.94 11.94 0 0 0 28 16c0-6.627-5.373-12-12-12c-2.409 0-4.65.712-6.53 1.934L8.028 4.49A13.94 13.94 0 0 1 16 2m4.571 14A2.43 2.43 0 0 1 23 18.429q-.002.494-.077.957L19.538 16zM16 7a3.75 3.75 0 0 1 1.653 7.115l-5.02-5.02A3.75 3.75 0 0 1 16 7"/></svg>
                 </button>
                 </div>
@@ -620,10 +648,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <div><dt>Phone</dt><dd>{{ staff.phoneNumber || '-' }}</dd></div>
             </dl>
             <div class="flex gap-2 border-t border-slate-700/80 pt-3">
-              <button type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
+              <button v-if="canUpdateStaff" type="button" @click="openEditModal(staff)" :aria-label="`Edit ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Edit employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500 text-white transition hover:bg-yellow-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-600">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m16.475 5.408l2.117 2.117m-.756-3.982L12.109 9.27a2.1 2.1 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621"/><path d="M19 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/></g></svg>
               </button>
-              <button type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
+              <button v-if="canDisableStaff" type="button" @click="deactivateStaff(staff)" :aria-label="`Disable ${staff.fullName || `${staff.firstName} ${staff.lastName}`}`" title="Disable employee" class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" class="h-5 w-5" fill="none" aria-hidden="true"><path d="M0 0h32v32H0z" fill="none"/><path fill="currentColor" d="M2.293 2.293a1 1 0 0 1 1.414 0l26 26a1 1 0 1 1-1.414 1.414l-3.127-3.127A13.94 13.94 0 0 1 16 30C8.268 30 2 23.732 2 16c0-3.506 1.288-6.712 3.418-9.168L2.293 3.707a1 1 0 0 1 0-1.414m4.545 5.959A11.95 11.95 0 0 0 4 16c0 6.627 5.373 12 12 12c2.954 0 5.656-1.07 7.746-2.84l-2.554-2.554C19.912 23.805 18.062 24.5 16 24.5c-3.866 0-7-2.428-7-6.071A2.43 2.43 0 0 1 11.429 16h3.157zM16 2c7.732 0 14 6.268 14 14c0 2.962-.921 5.708-2.491 7.97l-1.444-1.442A11.94 11.94 0 0 0 28 16c0-6.627-5.373-12-12-12c-2.409 0-4.65.712-6.53 1.934L8.028 4.49A13.94 13.94 0 0 1 16 2m4.571 14A2.43 2.43 0 0 1 23 18.429q-.002.494-.077.957L19.538 16zM16 7a3.75 3.75 0 0 1 1.653 7.115l-5.02-5.02A3.75 3.75 0 0 1 16 7"/></svg>
               </button>
             </div>
@@ -691,7 +719,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
             <div>
               <label class="block text-slate-400 mb-1">Custom Role</label>
-              <div class="employee-edit-choices"><label v-for="role in customRoles" :key="role.id"><input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" /><span>{{ role.name }}</span></label><p v-if="!customRoles.length">No custom roles available.</p></div>
+              <div class="employee-edit-choices"><label v-for="role in customRoles" :key="role.id"><input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" :disabled="!canManageRoles" /><span>{{ role.name }}</span></label><p v-if="!customRoles.length">No custom roles available.</p></div>
               <p class="mt-1 text-xs text-slate-400">Select all roles this employee needs.</p>
             </div>
 
@@ -710,7 +738,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </div>
 
             <div>
-              <ContractAppearanceSelect id="employee-edit-status" v-model="currentStaff.status" label="Status" :options="currentStaff.status === 'Pending Activation' ? [{ value: 'Pending Activation', label: 'Pending Activation' }, { value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] : [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]" />
+              <ContractAppearanceSelect id="employee-edit-status" v-model="currentStaff.status" label="Status" :disabled="!canDisableStaff" :options="currentStaff.status === 'Pending Activation' ? [{ value: 'Pending Activation', label: 'Pending Activation' }, { value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] : [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]" />
             </div>
             <fieldset class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
               <legend>Professional information</legend>
@@ -737,7 +765,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         <template #footer>
           <div class="flex flex-col sm:flex-row justify-end sm:space-x-2 space-y-2 sm:space-y-0">
             <button type="button" :disabled="savingEmployee" @click="showEditModal = false" class="employee-edit-cancel">Cancel</button>
-            <button type="submit" form="employee-edit-form" :aria-busy="savingEmployee" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save app-form-action">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
+            <button v-if="canUpdateStaff" type="submit" form="employee-edit-form" :aria-busy="savingEmployee" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save app-form-action">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
           </div>
         </template>
       </Modal>

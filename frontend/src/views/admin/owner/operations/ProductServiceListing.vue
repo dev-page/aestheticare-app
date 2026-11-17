@@ -7,26 +7,27 @@
         <div><p class="listing-eyebrow">Clinic services</p>
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Service Listings</h1>
         <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings.</p>
-        </div><button v-if="activeListingTab === 'listings'" type="button" class="listing-primary-button" @click="activeListingTab = 'create'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg><span>Create listing</span></button>
+        </div><button v-if="activeListingTab === 'listings' && canCreateListing" type="button" class="listing-primary-button" @click="activeListingTab = 'create'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg><span>Create listing</span></button>
       </div>
 
-      <div v-if="activeListingTab === 'listings'" class="listing-overview"><article><span>Total listings</span><strong>{{ posts.length }}</strong></article><article><span>Published</span><strong>{{ posts.filter(post => post.isPublished).length }}</strong></article><article><span>Unpublished</span><strong>{{ posts.filter(post => !post.isPublished).length }}</strong></article></div>
-      <nav class="listing-tabs" aria-label="Service listing sections"><button type="button" :class="{ 'is-active': activeListingTab === 'listings' }" :aria-pressed="activeListingTab === 'listings'" @click="activeListingTab = 'listings'">Listings</button><button type="button" :class="{ 'is-active': activeListingTab === 'create' }" :aria-pressed="activeListingTab === 'create'" @click="activeListingTab = 'create'">Create Listing</button></nav>
+      <p v-if="!canViewListings && !canCreateListing" class="listing-empty-state">You do not have permission to view or create service listings.</p>
+      <div v-if="activeListingTab === 'listings' && canViewListings" class="listing-overview"><article><span>Total listings</span><strong>{{ posts.length }}</strong></article><article><span>Published</span><strong>{{ posts.filter(post => post.isPublished).length }}</strong></article><article><span>Unpublished</span><strong>{{ posts.filter(post => !post.isPublished).length }}</strong></article></div>
+      <nav v-if="canViewListings || canCreateListing" class="listing-tabs" aria-label="Service listing sections"><button v-if="canViewListings" type="button" :class="{ 'is-active': activeListingTab === 'listings' }" :aria-pressed="activeListingTab === 'listings'" @click="activeListingTab = 'listings'">Listings</button><button v-if="canCreateListing" type="button" :class="{ 'is-active': activeListingTab === 'create' }" :aria-pressed="activeListingTab === 'create'" @click="activeListingTab = 'create'">Create Listing</button></nav>
 
-      <details v-if="activeListingTab === 'listings' && applicablePolicies.length" class="listing-policy-panel">
+      <details v-if="activeListingTab === 'listings' && canViewListings && applicablePolicies.length" class="listing-policy-panel">
         <summary class="listing-disclosure-trigger"><span>Applicable branch policies <small>{{ applicablePolicies.length }} enabled</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
         <div class="listing-policy-content"><p class="listing-policy-description">These rules are configured in Policy &amp; Contract Management and apply automatically when this listing is booked. Branch policy links determine which rules apply. They cannot be edited per listing.</p>
         <div class="listing-policy-grid"><article v-for="policy in applicablePolicies" :key="policy.key"><h3>{{ policy.label }}</h3><p>{{ policy.text }}</p></article></div></div>
       </details>
 
-      <section v-if="activeListingTab === 'listings'" class="listing-client-contract">
+      <section v-if="activeListingTab === 'listings' && canViewListings" class="listing-client-contract">
         <h2>Client Contract</h2>
         <p v-if="hasClientContract">Your clinic's saved Client Contract applies automatically to services, consultations, and packages booked online or as walk-ins. Each booking includes the applicable branch policies, additional clinic terms, and saved appearance. You do not need to create a separate contract for each listing.</p>
         <p v-else>Save a Client Contract in Policy &amp; Contract Management to apply it automatically to online and walk-in bookings for your listings.</p>
         <details v-if="hasClientContract" class="listing-contract-disclosure"><summary class="listing-disclosure-trigger"><span>Preview applied contract</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary><div class="listing-contract-preview-body"><p class="listing-contract-preview-note">This preview uses this branch's linked policies. The Walk-In Policy applies to walk-ins. The booked service details are added to each customer's agreement. Existing agreements retain their saved content and design.</p><ClientContractDocument :document="listingContractPreview" /></div></details>
       </section>
 
-      <div v-show="activeListingTab === 'create'" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
+      <div v-if="activeListingTab === 'create' && canCreateListing" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
         <ServiceListingFields :model="form" :disabled="loading" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
@@ -49,7 +50,7 @@
         </div>
       </div>
 
-      <div v-show="activeListingTab === 'listings'" class="listing-records-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700">
+      <div v-if="activeListingTab === 'listings' && canViewListings" class="listing-records-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700">
         <div class="listing-records-heading"><div><h2 class="text-lg font-semibold">Your listings</h2><p>{{ filteredListings.length }} of {{ posts.length }} listings</p></div><input v-model="listingSearch" type="search" aria-label="Search service listings" placeholder="Search by name, type, or description..." /></div>
 
         <div v-if="!filteredListings.length" class="listing-empty-state"><h3>{{ posts.length ? 'No matching listings' : 'No listings yet' }}</h3><p>{{ posts.length ? 'Try a different name, type, or description.' : 'Create your first listing to make a service available for booking.' }}</p><button v-if="!posts.length" type="button" class="listing-primary-button" @click="activeListingTab = 'create'">Create listing</button></div>
@@ -112,21 +113,21 @@
               <p class="listing-card-price text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
               <p v-if="post.vatApplicable" class="mt-1 text-xs text-emerald-300">{{ post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout' }}</p>
               <div class="listing-card-actions mt-3 flex flex-wrap gap-2">
-                <button
+                <button v-if="canUpdateListing"
                   @click="openEditPost(post)"
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                 >
                   {{ actionLoadingId === post.id ? 'Processing…' : 'Edit' }}
                 </button>
-                <button
+                <button v-if="canDisableListing"
                   @click="archivePost(post)"
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
                 >
                   {{ actionLoadingId === post.id ? 'Archiving…' : 'Archive' }}
                 </button>
-                <button
+                <button v-if="canDisableListing"
                   @click="deletePost(post)"
                   :disabled="actionLoadingId === post.id"
                   class="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
@@ -204,10 +205,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp())
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
-    const { userRole, isClinicAdminOwner } = usePermissions()
-    const canManageListingWorkflow = computed(() =>
-      isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'manager'
-    )
+    const { hasPermission, isClinicAdminOwner } = usePermissions()
+    const canViewListings = computed(() => hasPermission('services:view'))
+    const canCreateListing = computed(() => hasPermission('services:create'))
+    const canUpdateListing = computed(() => hasPermission('services:update'))
+    const canDisableListing = computed(() => hasPermission('services:disable'))
+    const canManageListingWorkflow = computed(() => isClinicAdminOwner.value || canUpdateListing.value)
 
     const loading = ref(false)
     const currentUserId = ref('')
@@ -231,7 +234,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const inventoryProducts = ref([])
 
     const posts = ref([])
-    const activeListingTab = ref('listings')
+    const activeListingTab = ref(canViewListings.value ? 'listings' : 'create')
+    watch([canViewListings, canCreateListing], ([canView, canCreate]) => {
+      if (activeListingTab.value === 'listings' && !canView && canCreate) activeListingTab.value = 'create'
+      if (activeListingTab.value === 'create' && !canCreate && canView) activeListingTab.value = 'listings'
+    })
     const listingSearch = ref('')
     const filteredListings = computed(() => {
       const search = listingSearch.value.trim().toLowerCase()
@@ -610,6 +617,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     )
 
     const createPost = async () => {
+      if (!canCreateListing.value) {
+        toast.error('You do not have permission to create service listings.')
+        return
+      }
       const postType = form.value.postType
       const selectedName = postType === 'Product'
         ? form.value.productName
@@ -773,6 +784,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const openEditPost = (post) => {
+      if (!canUpdateListing.value) return
       editTargetId.value = post.id
       editForm.value = {
         postType: post.postType || 'Service',
@@ -832,6 +844,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveEditedPost = async () => {
+      if (!canUpdateListing.value) return
       if (!editTargetId.value) return
       if (!currentBranchId.value) {
         toast.error('User branch is not available.')
@@ -984,6 +997,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const archivePost = async (post) => {
+      if (!canDisableListing.value) return
       const result = await Swal.fire({
         title: 'Archive Post?',
         text: `Archive "${post.title || 'this post'}"?`,
@@ -1021,6 +1035,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const deletePost = async (post) => {
+      if (!canDisableListing.value) return
       const result = await Swal.fire({
         title: 'Delete listing?',
         text: `Delete "${post.title || 'this listing'}"? This permanently removes the listing and cannot be undone.`,
@@ -1106,6 +1121,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageLoading,
       listingAction,
       canManageListingWorkflow,
+      canViewListings,
+      canCreateListing,
+      canUpdateListing,
+      canDisableListing,
       clinicVatRegistered,
       clinicTaxStatus,
       loading,

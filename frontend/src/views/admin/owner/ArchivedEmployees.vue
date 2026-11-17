@@ -1,7 +1,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { auth } from '@/config/firebaseConfig'
@@ -10,6 +10,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
+import { usePermissions } from '@/composables/usePermissions'
 
 export default {
   name: 'OwnerArchivedEmployees',
@@ -19,6 +20,8 @@ export default {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
+    const { hasPermission } = usePermissions()
+    const canManageArchived = computed(() => hasPermission('staff:disable'))
     const archivedStaff = ref([])
     const ownerBranchIds = ref([])
     const currentOwnerId = ref('')
@@ -41,7 +44,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const loadArchivedStaff = trackPageLoad(async () => {
-      if (!ownerBranchIds.value.length) {
+      if (!canManageArchived.value || !ownerBranchIds.value.length) {
         archivedStaff.value = []
         return
       }
@@ -64,6 +67,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const unarchiveStaff = async (staff) => {
+      if (!canManageArchived.value) return
       const fullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.email || 'Employee'
       const result = await Swal.fire({
         title: 'Unarchive Employee',
@@ -104,6 +108,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     return {
       pageLoading,
       archivedStaff,
+      canManageArchived,
       getRoleLabel,
       unarchiveStaff
     }
@@ -119,7 +124,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Archived Accounts</h1>
       <p class="text-slate-400 mb-6">Previously disabled employee accounts under your branches.</p>
 
-      <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 overflow-x-auto">
+      <p v-if="!canManageArchived" class="rounded-xl border border-slate-700 bg-slate-800 p-4 text-slate-200">You do not have permission to manage archived employee accounts.</p>
+      <div v-else class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 overflow-x-auto">
         <table class="w-full text-left min-w-[600px] border-collapse">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">

@@ -10,7 +10,8 @@ The backend creates the event in the assigned practitioner's connected Google ac
 2. Add these environment variables in the **backend host's secret/environment settings**, not the frontend:
    - `GOOGLE_OAUTH_CLIENT_ID`
    - `GOOGLE_OAUTH_CLIENT_SECRET`
-   - `GOOGLE_OAUTH_REDIRECT_URI`: the exact public backend URL followed by `/google-meet/oauth/callback`. Register that exact URI in the OAuth client.
+   - In Vercel production, the app sends `https://aestheticare.online/api/google-meet/oauth/callback`. Add that exact URI under the OAuth client's **Authorized redirect URIs**. The Vercel API route removes `/api` before Express handles the callback, but Google must receive the public URL including `/api`.
+   - For local development or preview deployments, set `GOOGLE_OAUTH_REDIRECT_URI` to that environment's public backend callback URL and register that exact URI separately.
    - `GOOGLE_TOKEN_ENCRYPTION_KEY`: a stable, base64-encoded random 32-byte key. Changing it requires practitioners to reconnect.
    - `FRONTEND_BASE_URL`: the trusted frontend origin used after successful connection.
 3. Deploy the backend, frontend, and Firestore rules together. This implementation polls the Meet REST API, so it does not need Google Workspace Events subscriptions or Pub/Sub. Connection states, account ownership mappings, encrypted refresh tokens, and code-attempt counters remain server-only. The customer cannot read the meeting link until the practitioner invitation is recorded.

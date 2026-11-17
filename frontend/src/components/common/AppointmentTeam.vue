@@ -30,7 +30,7 @@ const submit = async (participation = false) => {
 </script>
 <template>
   <button type="button" class="team-button" @click="show">Treatment team</button>
-  <Modal :is-open="open" :panel-style="{ maxWidth: '48rem', background: '#fffdf9', color: '#493425' }" @close="open = false">
+  <Modal :is-open="open" panel-class="appointment-team-modal" body-class="appointment-team-modal-body" :panel-style="{ maxWidth: '48rem', background: 'var(--ac-surface)', color: 'var(--ac-text)' }" @close="open = false">
     <template #header><h3>Treatment team</h3></template>
     <template #body><section class="team-panel">
       <p v-if="busy" role="status">Loading or saving team...</p><p v-if="error" role="alert" class="error">{{ error }}</p>
@@ -45,11 +45,26 @@ const submit = async (participation = false) => {
           <template v-else><strong>{{ people.find(person => person.id === member.employeeId)?.name || member.name }}</strong><span>{{ member.type || people.find(person => person.id === member.employeeId)?.type || 'Specialty not configured' }} · {{ member.responsibility }}</span><span>{{ member.participationConfirmed ? 'Participation confirmed' : 'Awaiting participation' }}</span></template>
         </div>
         <p>Team assignments are locked when treatment starts. Each assistant confirms their own participation while the service is ongoing.</p>
-        <div class="team-actions"><button v-if="canAssign" type="button" :disabled="busy || members.length >= 8" @click="members.push({ employeeId: '', responsibility: 'assistant' })">Add assistant</button><button v-if="canAssign" type="button" :disabled="busy" @click="submit(false)">Save team</button><button v-if="canConfirm" type="button" :disabled="busy" @click="submit(true)">Confirm my participation</button></div>
+        <div class="team-actions"><button v-if="canAssign" type="button" :disabled="busy || members.length >= 8" @click="members.push({ employeeId: '', responsibility: 'assistant' })">Add assistant</button><button v-if="canAssign" class="team-primary" type="button" :disabled="busy" @click="submit(false)">{{ busy ? 'Saving…' : 'Save team' }}</button><button v-if="canConfirm" class="team-primary" type="button" :disabled="busy" @click="submit(true)">{{ busy ? 'Saving…' : 'Confirm my participation' }}</button></div>
       </template>
     </section></template>
   </Modal>
 </template>
 <style scoped>
-.team-button,.team-panel button{border:1px solid #dfbb99;border-radius:7px;padding:9px 12px;background:#fffaf2;color:#664329;font-size:12px}.team-panel{color:#493425}.team-panel p{margin:10px 0;font-size:13px;line-height:1.6}.member-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;border:1px solid #e6c6a7;padding:12px;border-radius:8px;margin:12px 0}.member-row :deep(.appearance-select){flex:1;min-width:200px}.member-row span{font-size:12px;color:#755e4d}.team-actions{display:flex;flex-wrap:wrap;gap:10px}.error{color:#ab3325}
+.team-button,.team-panel button{border:1px solid var(--ac-border-strong);border-radius:var(--ac-radius-sm);padding:9px 12px;background:var(--ac-surface);color:var(--ac-text-secondary);font-size:12px}
+.team-button:hover,.team-panel button:hover:not(:disabled){background:var(--ac-surface-muted)}
+.team-panel{color:var(--ac-text)}
+.team-panel p{margin:10px 0;font-size:13px;line-height:1.6;color:var(--ac-text-secondary)}
+.member-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;border:1px solid var(--ac-border);background:var(--ac-surface-soft);padding:12px;border-radius:var(--ac-radius-sm);margin:12px 0}
+.member-row strong{color:var(--ac-text)}
+.member-row :deep(.appearance-select){flex:1;min-width:min(100%,220px)}
+.member-row span{font-size:12px;color:var(--ac-text-muted)}
+.team-actions{display:flex;flex-wrap:wrap;gap:10px}
+.team-panel button.team-primary{background:var(--ac-primary);border-color:var(--ac-primary);color:var(--ac-on-primary)}
+.team-panel button:disabled{opacity:.58;cursor:not-allowed}
+.team-panel .error{color:var(--ac-danger)}
+:global(.appointment-team-modal){width:min(100%,48rem);max-height:min(90dvh,48rem);border:1px solid var(--ac-border)!important;border-radius:var(--ac-radius-lg)!important;box-shadow:var(--ac-shadow-lg)!important}
+:global(.appointment-team-modal > div:first-child),:global(.appointment-team-modal > div:last-child){border-color:var(--ac-border)!important}
+:global(.appointment-team-modal-body){padding:clamp(1rem,3vw,1.5rem)!important}
+@media(max-width:600px){.member-row{align-items:stretch;flex-direction:column}.member-row :deep(.appearance-select){width:100%;min-width:0}.team-actions button{flex:1 1 100%}}
 </style>

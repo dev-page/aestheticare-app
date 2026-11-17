@@ -4,12 +4,12 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import { useAuthStore } from '@/stores/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
-import { allPermissionKeys } from '@/config/clinicPermissionRegistry'
+import { allPermissionKeys, defaultClinicRolePermissions } from '@/config/clinicPermissionRegistry'
 
 export const usePermissionsStore = defineStore('permissions', () => {
   const authStore = useAuthStore()
   const subscriptionStore = useSubscriptionStore()
-  const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'support:view'])
+  const defaultPermissionKeys = new Set(['notifications:view'])
   const fullAccessPermissionKey = 'administrator:full_access'
   const clinicAdminRestrictedPermissions = new Set([
     'roles:manage', 'branches:view', 'branches:create', 'clinic_profile:update', 'subscription:view', 'backups:view', 'backups:create',
@@ -313,8 +313,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     // Leave and overtime requests are personal employee self-service actions.
     // They do not grant access to review other employees' requests.
     if (isEmployeeAccount.value) {
-      set.add('leave:create')
-      set.add('overtime:create')
+      defaultClinicRolePermissions.forEach((permissionKey) => set.add(permissionKey))
     }
     if (userRole.value === 'Clinic Admin') {
       clinicAdminPermissions.forEach((permissionKey) => set.add(permissionKey))
@@ -340,6 +339,9 @@ export const usePermissionsStore = defineStore('permissions', () => {
       return true
     }
     if (defaultPermissionKeys.has(permission)) {
+      return true
+    }
+    if (isEmployeeAccount.value && defaultClinicRolePermissions.includes(permission)) {
       return true
     }
     if (effectivePermissions.value.includes(fullAccessPermissionKey)) {

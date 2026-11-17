@@ -1,4 +1,7 @@
+import { defaultClinicRolePermissions } from '../../../shared/clinicRoleDefaults.js'
+
 export const fullAccessPermissionKey = 'administrator:full_access'
+export { defaultClinicRolePermissions }
 
 export const permissionGroups = [
   {
@@ -68,7 +71,6 @@ export const permissionGroups = [
         permissions: [
           { key: 'clients:view', label: 'View Clients', description: 'Access client records and profiles.', icon: 'mdi:account-heart-outline' },
           { key: 'clients:update', label: 'Update Clients', description: 'Edit client records and profiles.', icon: 'mdi:account-edit-outline' },
-          { key: 'clients:disable', label: 'Archive Clients', description: 'Archive client records.', icon: 'mdi:account-off-outline' },
         ],
       },
       {
@@ -275,9 +277,11 @@ export const permissionDependencies = {
   'clinic_profile:update': ['clinic_profile:view'],
   'staff:update': ['staff:view'],
   'staff:disable': ['staff:view'],
+  'attendance:update': ['attendance:view'],
+  'attendance:import': ['attendance:view'],
   'clients:update': ['clients:view'],
-  'clients:disable': ['clients:view'],
   'appointments:update': ['appointments:view'],
+  'appointments:create': ['appointments:view', 'clients:view', 'appointments:update'],
   'appointments:review': ['appointments:view'],
   'consultations:create': ['consultations:view'],
   'inventory:create': ['inventory:view'],
@@ -286,16 +290,15 @@ export const permissionDependencies = {
   'inventory:disable': ['inventory:view'],
   'pharmacy:dispense': ['pharmacy:view'],
   'pharmacy:manage': ['pharmacy:view'],
+  'payments:create': ['payments:view', 'appointments:view'],
   'orders:update': ['orders:view', 'inventory:update'],
   'services:create': ['services:view'],
   'services:update': ['services:view'],
   'services:disable': ['services:view'],
   'hr:create': ['hr:view'],
   'hr:update': ['hr:view'],
-  'leave:create': ['hr:view'],
-  'leave:review': ['hr:view'],
-  'overtime:view': ['hr:view'],
-  'overtime:create': ['overtime:view'],
+  // Self-service leave and overtime requests must not imply read access to
+  // coworkers' HR records or shifts.
   'overtime:review': ['overtime:view', 'attendance:view'],
   'payroll:update': ['payroll:view', 'overtime:view'],
   'payroll:approve': ['payroll:view'],
@@ -304,6 +307,8 @@ export const permissionDependencies = {
   'finance:refunds:manage': ['finance:refunds:view'],
   'procurement:create': ['procurement:view'],
   'procurement:review': ['procurement:view'],
+  'suppliers:create': ['procurement:view'],
+  'suppliers:update': ['procurement:view'],
   'policies:update': ['policies:view'],
 }
 
@@ -311,6 +316,7 @@ export const permissionFeatureMap = {
   'staff:view': 'staff_management',
   'staff:create': 'staff_management',
   'staff:update': 'staff_management',
+  'staff:disable': 'staff_management',
   'roles:manage': 'staff_management',
   'attendance:view': 'attendance',
   'attendance:create': 'attendance',
@@ -318,12 +324,16 @@ export const permissionFeatureMap = {
   'attendance:import': 'attendance',
   'branches:create': 'multi_branch',
   'appointments:view': 'appointments',
+  'appointments:create': 'appointments',
   'appointments:update': 'appointments',
   'appointments:review': 'appointments',
   'clients:view': 'appointments',
+  'clients:update': 'appointments',
   'consultations:view': 'online_consultations',
   'consultations:create': 'online_consultations',
   'payments:view': 'reports',
+  'payments:create': 'pos_payments',
+  'inbox:view': 'appointments',
   'reports:view': 'reports',
   'inventory:view': 'inventory',
   'inventory:create': 'inventory',

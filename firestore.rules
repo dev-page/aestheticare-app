@@ -105,8 +105,10 @@ service cloud.firestore {
         || (userData().permissions != null && userData().permissions.hasAny([permission]))
         || (userData().effectivePermissions != null && userData().effectivePermissions.hasAny([permission]))
         || (rolePermissions() != null && rolePermissions().hasAny([permission]))
-        || ((userData().userType == 'Staff' || userData().userType == 'staff')
-          && (permission == 'leave:create' || permission == 'overtime:create'))
+        || ((userData().userType == 'Staff' || userData().userType == 'staff'
+            || userData().userType == 'Employee' || userData().userType == 'employee')
+          && (permission == 'activities:view' || permission == 'notifications:view'
+            || permission == 'leave:create' || permission == 'overtime:create'))
         ;
     }
 
@@ -331,7 +333,15 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branchId', 'clinicBranch', 'clinicLocation', 'updatedAt']))
           || (resource.data.branchId != null
             && canAccessBranch(resource.data.branchId)
+            && hasPermission('staff:disable')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'archived', 'archivedAt', 'updatedAt'])
+            && request.resource.data.status in ['Pending Activation', 'Active', 'Inactive']
+            && request.resource.data.get('archived', false) == (request.resource.data.status == 'Inactive'))
+          || (resource.data.branchId != null
+            && canAccessBranch(resource.data.branchId)
             && hasPermission('staff:update')
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'archived', 'archivedAt'])
+              || hasPermission('staff:disable'))
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchId', 'branchIds', 'organizationOwnerId', 'clinicLocation'])
             && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['engagementType', 'employmentType', 'weeklyHoursTarget'])
               || (request.resource.data.get('engagementType', resource.data.get('engagementType', 'employee')) in ['employee', 'student_intern']
@@ -596,8 +606,10 @@ service cloud.firestore {
       // Client profiles are created and edited only by trusted booking and
       // clinic-directory workflows, which validate the branch and field set.
       allow create, update: if false;
-      allow delete: if isSignedIn()
-        && (resource.data.branchId != null && canAccessBranch(resource.data.branchId) && hasPermission('clients:disable'));
+      // Client deletion is not an available clinic action. Profile corrections
+      // go through the trusted directory workflow, so no role permission may
+      // directly delete client records.
+      allow delete: if false;
     }
 
     match /attendanceDailyQRCodes/{qrId} {

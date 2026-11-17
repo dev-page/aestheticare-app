@@ -11,6 +11,7 @@ const route = useRoute()
 const { hasPermission } = usePermissions()
 const canView = computed(() => hasPermission('staff:view'))
 const canCreate = computed(() => hasPermission('staff:create'))
+const canManageAccess = computed(() => hasPermission('staff:disable'))
 const activeTab = computed(() => {
   if (route.path.endsWith('/archived')) return 'archived'
   if (route.path.endsWith('/new') || (!canView.value && canCreate.value)) return 'create'
@@ -19,7 +20,7 @@ const activeTab = computed(() => {
 const tabs = computed(() => [
   { key: 'profiles', label: 'Employee Profiles', to: '/hr/employees', allowed: canView.value },
   { key: 'create', label: 'Create Account', to: '/hr/employees/new', allowed: canCreate.value },
-  { key: 'archived', label: 'Archived Accounts', to: '/hr/employees/archived', allowed: canView.value },
+  { key: 'archived', label: 'Archived Accounts', to: '/hr/employees/archived', allowed: canManageAccess.value },
 ])
 </script>
 
@@ -37,7 +38,7 @@ const tabs = computed(() => [
       </nav>
       <StaffProfile v-if="activeTab === 'profiles' && canView" embedded />
       <AddStaff v-else-if="activeTab === 'create' && canCreate" embedded />
-      <ArchivedEmployees v-else-if="activeTab === 'archived' && canView" embedded />
+      <ArchivedEmployees v-else-if="activeTab === 'archived' && canManageAccess" embedded />
       <p v-else class="text-sm text-slate-400">You do not have access to this tab.</p>
     </main>
   </div>

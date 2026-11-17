@@ -82,7 +82,7 @@
                 <h3 class="truncate font-semibold text-white">{{ appointment.clientName || appointment.customerName || appointment.patientName || 'Customer' }}</h3>
                 <p v-if="appointment.isGroupRecipient" class="mt-1 text-xs text-violet-300">Group recipient {{ appointment.groupRecipientIndex }} of {{ appointment.groupRecipientCount }} · Paid by {{ appointment.groupOrganizerName || 'organizer' }}</p>
                 <p class="mt-2 text-sm text-slate-200">{{ appointment.service || appointment.type || 'Appointment' }}</p>
-                <span :class="statusClass(appointment.status)" class="mt-2 inline-flex max-w-full whitespace-normal leading-4">{{ appointment.status || 'Status not set' }}</span>
+                <span :class="statusClass(appointment.status)" class="mt-2">{{ appointment.status || 'Status not set' }}</span>
                 <p v-if="appointment.treatmentPlan?.totalSessions > 1" class="mt-1 text-xs text-amber-300">Treatment plan: {{ appointment.treatmentPlan.completedSessions || 0 }}/{{ appointment.treatmentPlan.totalSessions }} completed</p>
               </div>
 
@@ -407,9 +407,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     )
 
     const statusClass = (status) => {
-      if (status === 'Completed') return 'px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400'
-      if (status === 'Cancelled') return 'px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400'
-      return 'px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400'
+      const normalizedStatus = String(status || '').trim().toLowerCase()
+      const tone = normalizedStatus === 'completed'
+        ? 'status-complete'
+        : ['cancelled', 'rejected', 'no-show', 'no show'].includes(normalizedStatus)
+          ? 'status-cancelled'
+          : ['pending approval', 'contract pending', 'payment pending', 'awaiting customer confirmation', 'balance due'].includes(normalizedStatus)
+            ? 'status-pending'
+            : 'status-neutral'
+      return `appointment-status-pill ${tone}`
     }
 
     const canRecommendFollowUp = (appointment) => {
@@ -665,4 +671,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   border-radius: var(--ac-radius-sm);
   font: inherit;
 }
+
+.appointment-status-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  white-space: nowrap;
+  border: 1px solid var(--ac-border);
+  border-radius: 999px;
+  padding: .3rem .7rem;
+  font-size: .75rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.status-neutral { background: var(--ac-surface-muted); color: var(--ac-text-secondary); }
+.status-pending { background: var(--ac-warning-bg); border-color: var(--ac-border-strong); color: var(--ac-warning); }
+.status-complete { background: var(--ac-success-bg); border-color: #a6c9ad; color: #245b34; }
+.status-cancelled { background: var(--ac-danger-bg); border-color: #e5b8b2; color: var(--ac-danger); }
 </style>

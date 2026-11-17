@@ -132,14 +132,14 @@ const submitCode = async serviceKey => {
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     <p v-if="route.query.branchId" class="subline">Showing this branch's appointments. <router-link :to="{ path: route.path, query: { ...route.query, branchId: undefined } }" class="outline-button">Show all branches</router-link></p>
     <section class="records-panel filters">
-      <label>Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
-      <label>Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
+      <label class="filter-search">Search<input v-model="search" placeholder="Client, recipient, or service" type="search" /></label>
+      <label class="filter-type">Appointment Type<select v-model="source"><option value="">All types</option><option>Walk-in</option><option>Online booking</option></select></label>
       <label class="review-filter"><input v-model="needsReview" type="checkbox" /><span>Consultation verification pending</span></label>
-      <label>Status
+      <label class="filter-status">Status
         <select v-model="status"><option v-for="filter in APPOINTMENT_STATUS_FILTERS" :key="filter.value || 'all'" :value="filter.value">{{ filter.label }}</option></select>
         <small class="filter-help">Needs attention groups payment, approval, and customer follow-up states.</small>
       </label>
-      <label>Date
+      <label class="filter-date">Date
         <select v-model="dateMode"><option value="all">All dates</option><option value="today">Today</option><option value="custom">Choose a date…</option></select>
         <input v-if="dateMode === 'custom'" v-model="date" aria-label="Choose appointment date" type="date" />
       </label>
@@ -179,11 +179,16 @@ const submitCode = async serviceKey => {
 <style scoped>
 .appointment-records { color: var(--ac-text); }
 .records-panel { background: var(--ac-surface); border: 1px solid var(--ac-border); border-radius: 16px; margin-bottom: 20px; box-shadow: var(--ac-shadow-sm); }
-.filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; padding: 20px; }
+.filters { display: grid; grid-template-columns: minmax(210px, 2fr) repeat(4, minmax(135px, 1fr)); grid-template-areas: "search type review status date"; align-items: start; gap: 16px; padding: 20px; }
+.filter-search { grid-area: search; }
+.filter-type { grid-area: type; }
+.review-filter { grid-area: review; }
+.filter-status { grid-area: status; }
+.filter-date { grid-area: date; }
 label { display: grid; gap: 7px; font-size: 13px; color: var(--ac-text-secondary); }
 input, select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--ac-border-strong); border-radius: var(--ac-radius-sm); background: var(--ac-surface); color: var(--ac-text); }
 .filter-help { color: var(--ac-text-muted); font-size: 11px; line-height: 1.35; }
-.filters .review-filter { display: flex; align-items: center; align-self: start; gap: 10px; min-height: 42px; padding-top: 25px; cursor: pointer; }
+.filters .review-filter { display: flex; align-items: flex-start; align-self: start; gap: 10px; min-height: 44px; padding: 31px 2px 0; cursor: pointer; }
 .filters .review-filter input[type="checkbox"] { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; padding: 0; accent-color: #805337; cursor: pointer; }
 .filters .review-filter span { line-height: 1.35; }
 .table-panel { padding: 16px; }
@@ -198,6 +203,8 @@ th, td { padding: 14px 12px; border-bottom: 1px solid var(--ac-border); vertical
 .menu-trigger { font-size: 23px; line-height: 1; padding: 3px 10px; }
 .recipient-menu { position: fixed; z-index: 110; width: 180px; padding: 5px; border: 1px solid var(--ac-border-strong); border-radius: 10px; background: var(--ac-surface); color: var(--ac-text); box-shadow: var(--ac-shadow-md); }
 .recipient-menu button { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; font-size: 13px; }
+@media (max-width: 1180px) { .filters { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); grid-template-areas: "search search type" "review status date"; } .filters .review-filter { padding-top: 8px; } }
+@media (max-width: 680px) { .filters { grid-template-columns: minmax(0, 1fr); grid-template-areas: "search" "type" "review" "status" "date"; gap: 13px; padding: 14px; } .filters .review-filter { min-height: 38px; align-items: center; padding: 0; } }
 .recipient-menu button:hover:enabled { background: var(--ac-surface-muted); }
 .recipient-menu button:disabled { opacity: .45; cursor: not-allowed; }
 .booking-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 20px; border: 1px solid var(--ac-border); border-radius: 12px; background: var(--ac-surface); }

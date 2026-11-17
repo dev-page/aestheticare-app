@@ -72,10 +72,8 @@ const appointmentView = computed(() => pageState.value.appointmentView)
 const onlineMode = computed(() => pageState.value.onlineMode)
 const canAppointments = computed(() => canView.value || canReview.value)
 const needsBranch = computed(() => activeTab.value === 'queue' || (activeTab.value === 'appointments' && appointmentView.value === 'review'))
-const tabs = computed(() => [
-  { key: 'appointments', label: 'Appointments', allowed: canAppointments.value },
-  { key: 'queue', label: 'Service Queue', allowed: canQueue.value },
-])
+const allAppointmentsActive = computed(() => activeTab.value === 'appointments' && appointmentView.value === 'all')
+const reviewActive = computed(() => activeTab.value === 'appointments' && appointmentView.value === 'review')
 </script>
 <template>
   <div class="flex owner-theme min-h-screen">
@@ -84,19 +82,13 @@ const tabs = computed(() => [
       <h1 class="text-2xl md:text-3xl font-bold text-white">Appointment Management</h1>
       <p class="mt-2 text-sm text-slate-400">Manage appointment records, requests that need a decision, and today’s service queue.</p>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
-        <template v-for="tab in tabs" :key="tab.key">
-          <router-link v-if="tab.allowed" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: tab.key }) }" class="appointment-tab" :class="{ 'is-active': activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : undefined">{{ tab.label }}</router-link>
-        </template>
+        <router-link v-if="canView" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments' }) }" class="appointment-tab" :class="{ 'is-active': allAppointmentsActive }" :aria-current="allAppointmentsActive ? 'page' : undefined">All appointments</router-link>
+        <router-link v-if="canReview" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments', view: 'review' }) }" class="appointment-tab" :class="{ 'is-active': reviewActive }" :aria-current="reviewActive ? 'page' : undefined">Needs review <span v-if="requestPendingCount !== null" class="tab-count">{{ requestPendingCount }}</span></router-link>
+        <router-link v-if="canQueue" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'queue' }) }" class="appointment-tab" :class="{ 'is-active': activeTab === 'queue' }" :aria-current="activeTab === 'queue' ? 'page' : undefined">Service queue</router-link>
       </nav>
       <p v-if="!canAppointments && !canQueue" class="text-sm text-slate-400">You do not have permission to access appointment management.</p>
 
       <template v-if="activeTab === 'appointments' && canAppointments">
-        <nav class="appointment-tabs appointment-subtabs" aria-label="Appointment views">
-          <router-link v-if="canView" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments' }) }" class="appointment-tab" :class="{ 'is-active': appointmentView === 'all' }" :aria-current="appointmentView === 'all' ? 'page' : undefined">All appointments</router-link>
-          <router-link v-if="canReview" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments', view: 'review' }) }" class="appointment-tab" :class="{ 'is-active': appointmentView === 'review' }" :aria-current="appointmentView === 'review' ? 'page' : undefined">
-            Needs review <span v-if="requestPendingCount !== null" class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{{ requestPendingCount }}</span>
-          </router-link>
-        </nav>
         <div v-if="appointmentView === 'review'" class="mb-5">
           <h2 class="text-lg font-semibold text-white">Requests that need a decision</h2>
           <p class="mt-1 text-sm text-slate-400">Review new bookings, cancellations, and reschedules. The list opens to pending requests.</p>
@@ -137,5 +129,6 @@ const tabs = computed(() => [
 .appointment-tab:hover, .appointment-tab.is-active { color: #91643f; }
 .appointment-tab.is-active { border-bottom-color: #b78055; }
 .appointment-tab:focus-visible { outline: 2px solid #b78055; outline-offset: -2px; }
-.appointment-subtabs { margin: 0 0 20px; }
+.tab-count { display: inline-flex; min-width: 1.35rem; height: 1.35rem; align-items: center; justify-content: center; margin-left: .4rem; border-radius: 999px; background: var(--ac-surface-muted); color: var(--ac-text-secondary); font-size: .72rem; line-height: 1; }
+@media (max-width: 640px) { .appointment-tabs { gap: 2px; margin: 18px 0; } .appointment-tab { padding: 10px 12px; font-size: 13px; } }
 </style>

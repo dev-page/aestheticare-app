@@ -5,6 +5,7 @@ import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 const account = ref(null), busy = ref(false), loading = ref(true), error = ref(''), detailsExpanded = ref(false)
+const callbackCopied = ref(false)
 let confirmedBase = OTP_BACKEND_CANDIDATES[0], unsubscribe
 async function request(path, method = 'GET') {
   const token = await auth.currentUser?.getIdToken()
@@ -51,6 +52,16 @@ async function disconnect() {
   catch (cause) { error.value = cause.message }
   finally { busy.value = false }
 }
+async function copyCallback() {
+  if (!account.value?.redirectUri) return
+  try {
+    await navigator.clipboard.writeText(account.value.redirectUri)
+    callbackCopied.value = true
+    window.setTimeout(() => { callbackCopied.value = false }, 1800)
+  } catch (_error) {
+    error.value = 'Copy is unavailable in this browser. Select and copy the callback URL below.'
+  }
+}
 onMounted(() => {
   unsubscribe = onAuthStateChanged(auth, user => {
     if (user) load()
@@ -79,6 +90,11 @@ onUnmounted(() => unsubscribe?.())
           <button v-if="error && !loading" type="button" class="secondary" @click="load">Retry setup check</button>
         </div>
         <p v-if="!account.configured" role="status">Administrator setup required: enable Google Calendar and Meet APIs, configure the OAuth client and callback URL, and add the backend environment secrets.</p>
+        <div v-if="account.redirectUri" class="callback-setting">
+          <p><strong>OAuth callback URL</strong><span>Register this exact URL in the Google OAuth client.</span></p>
+          <code>{{ account.redirectUri }}</code>
+          <button type="button" class="secondary callback-copy" @click="copyCallback">{{ callbackCopied ? 'Copied' : 'Copy URL' }}</button>
+        </div>
         <p v-if="error" role="alert" class="error">{{ error }}</p>
       </div>
     </template>
@@ -93,20 +109,31 @@ onUnmounted(() => unsubscribe?.())
         <button v-if="error && !loading" type="button" class="secondary" @click="load">Retry setup check</button>
       </div>
       <p v-if="account && !account.configured" role="status">Administrator setup required: enable Google Calendar and Meet APIs, configure the OAuth client and callback URL, and add the backend environment secrets.</p>
+      <div v-if="account?.redirectUri" class="callback-setting">
+        <p><strong>OAuth callback URL</strong><span>Register this exact URL in the Google OAuth client.</span></p>
+        <code>{{ account.redirectUri }}</code>
+        <button type="button" class="secondary callback-copy" @click="copyCallback">{{ callbackCopied ? 'Copied' : 'Copy URL' }}</button>
+      </div>
       <p v-if="error" role="alert" class="error">{{ error }}</p>
     </template>
   </section>
 </template>
 
 <style scoped>
-.google-hosting-account { margin-bottom: 24px; padding: 20px; border: 1px solid #e8cfb2; border-radius: 14px; background: #fffdf9; color: #493225; }
-h2 { margin: 0; font-size: 18px; font-weight: 700; } p { margin: 8px 0; font-size: 13px; line-height: 1.6; color: #79614f; }
+.google-hosting-account { margin-bottom: 24px; padding: 20px; border: 1px solid var(--ac-border); border-radius: 14px; background: var(--ac-surface); color: var(--ac-text); }
+h2 { margin: 0; font-size: 18px; font-weight: 700; } p { margin: 8px 0; font-size: 13px; line-height: 1.6; color: var(--ac-text-secondary); }
 .hosting-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-button { padding: 10px 14px; border: 1px solid #8d5a3b; border-radius: 8px; background: #8d5a3b; color: white; font-size: 13px; font-weight: 600; }
-button.secondary { background: white; color: #79583f; border-color: #dfc2a5; } button:disabled { opacity: .5; cursor: not-allowed; } .error { color: #a33127; }.attendance-notice{padding:.65rem .8rem;border-radius:.65rem;background:#fff3d9;color:#805421}
+button { padding: 10px 14px; border: 1px solid var(--ac-primary); border-radius: 8px; background: var(--ac-primary); color: var(--ac-on-primary); font-size: 13px; font-weight: 600; }
+button.secondary { background: var(--ac-surface); color: var(--ac-text-secondary); border-color: var(--ac-border-strong); } button:disabled { opacity: .5; cursor: not-allowed; } .error { color: var(--ac-danger); }.attendance-notice{padding:.65rem .8rem;border-radius:.65rem;background:var(--ac-warning-bg);color:var(--ac-warning)}
 .connected-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .connected-summary p { margin-bottom: 0; }
-.hosting-details { margin-top: 12px; padding-top: 10px; border-top: 1px solid #e8cfb2; }
-button:focus-visible { outline: 2px solid #8d5a3b; outline-offset: 3px; }
+.hosting-details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ac-border); }
+.callback-setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 14px; margin-top: 14px; padding: 12px; border: 1px solid var(--ac-border); border-radius: 10px; background: var(--ac-surface-soft); }
+.callback-setting p { display: grid; margin: 0; }
+.callback-setting p span { color: var(--ac-text-muted); font-size: 12px; }
+.callback-setting code { grid-column: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ac-text); font-size: 12px; }
+.callback-copy { grid-column: 2; grid-row: 1 / span 2; }
+button:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 3px; }
 @media (max-width: 560px) { .connected-summary { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 560px) { .callback-setting { grid-template-columns: minmax(0, 1fr); } .callback-copy { grid-column: 1; grid-row: auto; justify-self: start; } }
 </style>

@@ -55,28 +55,31 @@ export const approvedOrderLines = (items, listings, amount) => {
   if (lines.reduce((sum, line) => sum + line.amount * line.quantity, 0) !== Number(amount)) fail('Your cart total changed. Refresh your cart before paying.')
   return lines
 }
-export const listingTransition = (post, action, role, uid, note = '') => {
+export const listingTransition = (post, action, role, uid, note = '', permissions = []) => {
   const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }) }
+  const permissionSet = permissions instanceof Set ? permissions : new Set(permissions)
+  const canManageListings = ['Owner', 'Manager'].includes(role) || permissionSet.has('services:update')
+  const canReviewListingTerms = ['Finance', 'Owner'].includes(role) || permissionSet.has('finance:reports:view')
   if (post.archived) fail('Restore the listing before submitting it for review.')
   if (['submit', 'publish'].includes(action)) {
     const error = validateListingNumbers(post)
     if (error) fail(error, 400)
   }
   if (action === 'submit') {
-    if (!['Owner', 'Manager'].includes(role)) fail('Only the clinic owner or manager can submit listings.', 403)
+    if (!canManageListings) fail('You do not have permission to submit listings.', 403)
     if (!['draft', 'rejected'].includes(post.financeStatus || 'draft')) fail('This listing has already been submitted.')
     if (!Number.isFinite(Number(post.price)) || Number(post.price) <= 0) fail('Set a valid positive price before submitting.')
     if (post.allowInstallments && (!Number.isFinite(Number(post.depositPercent)) || post.depositPercent < 1 || post.depositPercent >= 100)) fail('Set an initial payment between 1% and 99%.')
     return { ...draftListing(), financeStatus: 'pending', submittedBy: uid }
   }
   if (['approve', 'reject'].includes(action)) {
-    if (!['Finance', 'Owner'].includes(role)) fail('Only Finance or the clinic owner can review financial terms.', 403)
+    if (!canReviewListingTerms) fail('You do not have permission to review listing financial terms.', 403)
     if (post.financeStatus !== 'pending') fail('This listing is no longer awaiting Finance review.')
     if (action === 'reject' && !note.trim()) fail('Explain which financial terms need changing.', 400)
     return { financeStatus: action === 'approve' ? 'approved' : 'rejected', isPublished: false, financeReview: { reviewedBy: uid, note: note.trim(), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])) } }
   }
   if (['publish', 'unpublish'].includes(action)) {
-    if (!['Owner', 'Manager'].includes(role)) fail('Only the clinic owner or manager can publish listings.', 403)
+    if (!canManageListings) fail('You do not have permission to publish listings.', 403)
     if (action === 'publish' && post.financeStatus !== 'approved') fail('Finance must approve the financial terms first.')
     return { isPublished: action === 'publish', publishedBy: action === 'publish' ? uid : null }
   }
@@ -126,6 +129,7 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           context.roleKey,
           req.user.uid,
           String(req.body?.note || '').slice(0, 2000),
+          context.permissions,
         )
         if (action === 'publish' && post.postType === 'Package') {
           const stepIds = Array.isArray(post.treatmentCourseSteps)

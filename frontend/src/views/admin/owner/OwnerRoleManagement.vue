@@ -115,7 +115,7 @@
                       <p class="truncate text-xs text-[#d2b7a6]">{{ role.memberCount }} assigned staff</p>
                     </div>
                   </div>
-                  <span
+      <span
                     v-if="role.isBuiltIn"
                     class="shrink-0 whitespace-nowrap rounded-full border border-[#dfc5a8] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#67452e]"
                   >
@@ -462,7 +462,7 @@
                             <h4 class="text-sm font-semibold text-[#f3e7e0]">{{ group.label }}</h4>
                             <p class="text-xs text-[#d2b7a6]">{{ group.description }}</p>
                           </div>
-                          <span class="rounded-full bg-[#3a2417] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
+                          <span class="permission-count rounded-full bg-[#3a2417] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
                             {{ enabledCountForGroup(group) }}/{{ countPermissionsInGroup(group) }} enabled
                           </span>
                         </div>
@@ -480,7 +480,7 @@
                                 <p class="text-sm font-semibold text-[#f3e7e0]">{{ section.label }}</p>
                                 <p class="text-xs text-[#d2b7a6]">{{ section.description }}</p>
                               </div>
-                              <span class="rounded-full bg-[#3a2417] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
+                              <span class="permission-count rounded-full bg-[#3a2417] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]">
                                 {{ enabledCountForSection(section) }}/{{ section.permissions.length }} enabled
                               </span>
                             </div>
@@ -518,13 +518,13 @@
                                 </button>
                                 <div
                                   v-if="isDefaultPermission(permission.key)"
-                                  class="text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
+                                  class="permission-meta text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
                                 >
                                   Default access
                                 </div>
                                 <div
                                   v-else-if="isPermissionLocked(permission.key)"
-                                  class="text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
+                                  class="permission-meta text-right text-[11px] uppercase tracking-[0.18em] text-[#d2b7a6]"
                                 >
                                   {{ isOwnerOnlyPermission(permission.key) ? 'System administrator only' : 'Locked by current plan' }}
                                 </div>
@@ -594,6 +594,7 @@ import { auth, db } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import {
   allPermissionKeys,
+  defaultClinicRolePermissions,
   fullAccessPermissionKey,
   permissionDependencies,
   permissionFeatureMap,
@@ -604,7 +605,7 @@ import {
 const ROLE_COLOR = '#d2a679'
 // These pages are always available to clinic staff as self-service. Request
 // permissions do not grant access to review other employees' submissions.
-const defaultPermissionKeys = new Set(['activities:view', 'notifications:view', 'leave:create', 'overtime:create'])
+const defaultPermissionKeys = new Set(defaultClinicRolePermissions)
 const ownerOnlyPermissionKeys = new Set(
   permissionGroups.flatMap((group) => group.sections.flatMap((section) =>
     section.permissions.filter((permission) => permission.ownerOnly).map((permission) => permission.key)
@@ -778,9 +779,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const selectedPermissionsCount = computed(() =>
       selectedRoleDraft.value.permissions.includes(fullAccessPermissionKey)
         ? allPermissionKeys.length
-        : Array.isArray(selectedRoleDraft.value.permissions)
-          ? selectedRoleDraft.value.permissions.length
-          : 0
+        : permissionGroups.flatMap((group) => group.sections.flatMap((section) => section.permissions))
+          .filter((permission) => isPermissionEnabled(permission.key)).length
     )
 
     const statsCards = computed(() => [
@@ -1828,6 +1828,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   border-color: var(--ac-border) !important;
   background: var(--ac-surface-muted) !important;
   color: var(--ac-text-secondary) !important;
+}
+
+.permission-meta {
+  color: var(--ac-text-muted) !important;
+  line-height: 1.4;
 }
 
 .permission-icon {

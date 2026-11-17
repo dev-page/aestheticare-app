@@ -56,6 +56,7 @@ import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
+import { defaultClinicRolePermissions } from '../../shared/clinicRoleDefaults.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -777,6 +778,12 @@ const mailjetSecretKey = process.env.MAILJET_SECRET_KEY || ''
 const senderEmail = process.env.MAILJET_SENDER || ''
 const payMongoSecretKey = process.env.PAYMONGO_SECRET_KEY || ''
 const frontendBaseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:5173'
+// The production app is served from its custom domain and Vercel forwards
+// /api/* into this Express handler. Ignore stale Vercel-preview callback URLs
+// in the production environment so Google always receives the public callback.
+const googleOauthRedirectUri = String(process.env.VERCEL_ENV || '').trim() === 'production'
+  ? 'https://aestheticare.online/api/google-meet/oauth/callback'
+  : String(process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim()
 const configuredServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim()
 const serviceAccountPath = configuredServiceAccountPath
   ? path.isAbsolute(configuredServiceAccountPath)
@@ -983,7 +990,7 @@ const assertPayMongoConfigured = (res) => {
 }
 
 const isGoogleMeetConfigured = () => Boolean(
-  googleOauthClientId && googleOauthClientSecret && process.env.GOOGLE_OAUTH_REDIRECT_URI
+  googleOauthClientId && googleOauthClientSecret && googleOauthRedirectUri
   && Buffer.from(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '', 'base64').length === 32
 )
 
@@ -2095,7 +2102,7 @@ const CLINIC_ADMIN_PERMISSIONS = new Set([
   'clinic_profile:view',
   'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
-  'clients:view', 'clients:update', 'clients:disable',
+  'clients:view', 'clients:update',
   'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
   'payments:view', 'payments:create', 'inbox:view', 'reports:view',
   'services:view', 'services:create', 'services:update', 'services:disable',
@@ -2174,6 +2181,7 @@ const loadUserContext = async (uid) => {
   }
   const userPermissions = [
     ...(Array.isArray(userData.permissions) ? userData.permissions : []),
+    ...(isStaffAccount ? defaultClinicRolePermissions : []),
     // Staff role permissions are loaded from the current clinicRoles records
     // above. Their effectivePermissions field is a cache for Firestore rules,
     // and must never keep a revoked permission alive in backend authorization.
@@ -4868,7 +4876,7 @@ registerGoogleConsultations(app, {
   admin, google, requireAuth, authorizeClinicAction, loadUserContext,
   config: {
     clientId: googleOauthClientId, clientSecret: googleOauthClientSecret,
-    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI || '',
+    redirectUri: googleOauthRedirectUri,
     encryptionKey: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '',
     frontendUrl: frontendBaseUrl,
   },
@@ -8644,6 +8652,7 @@ app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('rol
       })
 
       const effectivePermissions = [...new Set([
+        ...defaultClinicRolePermissions,
         ...(Array.isArray(userData.permissions) ? userData.permissions : []),
         ...assignedRoleIds.flatMap((id) => rolePermissionCache.get(id) || []),
       ].map((permission) => String(permission || '').trim())
@@ -8751,7 +8760,10 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     if (customRoleSnaps.some((snap) => !snap.exists || String(snap.data()?.ownerId || '') !== ownerId)) {
       return res.status(400).json({ success: false, error: 'One or more selected custom roles are not available to this clinic organization.' })
     }
-    const effectivePermissions = [...new Set(customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? snap.data().permissions : []))]
+    const effectivePermissions = [...new Set([
+      ...defaultClinicRolePermissions,
+      ...customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? snap.data().permissions : []),
+    ])]
     await targetRef.set({
       firstName, middleName: text(input.middleName, 100) || null, lastName, suffix: text(input.suffix, 50) || null,
       fullName: text(input.fullName, 250) || `${firstName} ${lastName}`,

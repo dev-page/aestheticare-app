@@ -50,7 +50,7 @@ export const registerGoogleConsultations = (app, deps) => {
     try {
       await authorizeSelf(req.user.uid)
       const account = (await connectionRef(req.user.uid).get()).data()
-      res.json({ success: true, data: { configured: configured(), connected: Boolean(account?.active), attendanceEnabled: Boolean(account?.active && account?.scopes?.includes(meetReadScope)), email: account?.email || '' } })
+      res.json({ success: true, data: { configured: configured(), redirectUri: config.redirectUri || '', connected: Boolean(account?.active), attendanceEnabled: Boolean(account?.active && account?.scopes?.includes(meetReadScope)), email: account?.email || '' } })
     } catch (error) { respondError(res, error) }
   })
   app.post('/google-meet/account/connect', requireAuth, async (req, res) => {
