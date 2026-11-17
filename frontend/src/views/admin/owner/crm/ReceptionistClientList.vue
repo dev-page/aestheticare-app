@@ -2,7 +2,7 @@
   <div class="flex module-theme bg-slate-900 min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5 }" class="min-w-0 flex-1 p-4 md:p-8">
       <div class="mb-8 flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-white mb-2">Client List</h1>
@@ -61,113 +61,79 @@
         </div>
       </div>
 
-      <div v-if="selectedClient" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-        <div class="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
-          <div class="flex items-start justify-between border-b border-slate-700 px-6 py-4">
-            <div>
-              <h2 class="text-2xl font-bold text-white">{{ selectedClient.fullName || 'Client Profile' }}</h2>
-              <p class="mt-1 text-sm text-slate-400">Clinic contact details and appointment history. Changes here do not update the customer’s platform login or past appointment records.</p>
-            </div>
-            <button
-              type="button"
-              class="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 hover:bg-slate-800"
-              @click="closeClientView"
-            >
-              Close
-            </button>
-          </div>
-
-          <div class="grid gap-6 px-6 py-5 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <section class="rounded-xl border border-slate-700 bg-slate-800/70 p-5">
-              <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Client Details</h3>
-                <button v-if="canEditSelectedClient && !editingClient" type="button" class="rounded-lg border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-sm font-medium text-purple-200 transition hover:bg-purple-500/25" @click="beginClientEdit">Edit</button>
+      <Modal
+        :is-open="Boolean(selectedClient)"
+        :title="selectedClient?.fullName || 'Client Profile'"
+        panel-class="client-profile-dialog"
+        body-class="client-profile-modal-body"
+        :panel-style="{ maxWidth: '76rem' }"
+        @close="closeClientView"
+      >
+        <template #body>
+          <p class="client-profile-intro">Clinic contact details and appointment history. Changes here do not update the customer’s platform login or past appointment records.</p>
+          <div v-if="selectedClient" class="client-profile-grid">
+            <section class="client-profile-card">
+              <div class="client-profile-card-heading">
+                <h3>Client details</h3>
+                <button v-if="canEditSelectedClient && !editingClient" type="button" class="client-profile-action" @click="beginClientEdit">Edit</button>
               </div>
-              <div v-if="editingClient" class="mt-4 space-y-4">
-                <div class="grid gap-4 sm:grid-cols-2">
-                  <label class="block text-sm text-slate-300">First name<input v-model.trim="clientDraft.firstName" type="text" maxlength="100" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                  <label class="block text-sm text-slate-300">Middle name <span class="text-slate-500">(optional)</span><input v-model.trim="clientDraft.middleName" type="text" maxlength="100" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                  <label class="block text-sm text-slate-300">Last name<input v-model.trim="clientDraft.lastName" type="text" maxlength="100" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                  <label class="block text-sm text-slate-300">Suffix <span class="text-slate-500">(optional)</span><input v-model.trim="clientDraft.suffix" type="text" maxlength="20" placeholder="Jr., Sr., III" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                </div>
-                <label class="block text-sm text-slate-300">Email<input v-model.trim="clientDraft.email" type="email" maxlength="254" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                <label class="block text-sm text-slate-300">Phone<input v-model.trim="clientDraft.phone" type="tel" maxlength="32" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-purple-500 focus:outline-none" /></label>
-                <p v-if="editError" class="text-sm text-rose-300" role="alert">{{ editError }}</p>
+              <div v-if="editingClient" class="client-edit-grid">
+                <label class="client-edit-field">First name<input v-model.trim="clientDraft.firstName" type="text" maxlength="100" required /></label>
+                <label class="client-edit-field">Middle name <span>(optional)</span><input v-model.trim="clientDraft.middleName" type="text" maxlength="100" /></label>
+                <label class="client-edit-field">Last name<input v-model.trim="clientDraft.lastName" type="text" maxlength="100" required /></label>
+                <label class="client-edit-field">Suffix <span>(optional)</span><input v-model.trim="clientDraft.suffix" type="text" maxlength="20" placeholder="Jr., Sr., III" /></label>
+                <label class="client-edit-field client-edit-wide">Email<input v-model.trim="clientDraft.email" type="email" maxlength="254" required /></label>
+                <label class="client-edit-field client-edit-wide">Phone<input v-model.trim="clientDraft.phone" type="tel" maxlength="32" /></label>
+                <p v-if="editError" class="client-profile-error" role="alert">{{ editError }}</p>
               </div>
-              <div v-else class="mt-4 space-y-3 text-sm">
-                <p><span class="text-slate-500">Name:</span> <span class="text-white">{{ selectedClient.fullName || '-' }}</span></p>
-                <p><span class="text-slate-500">Middle name:</span> <span class="text-white">{{ selectedClient.middleName || selectedClient.midName || '-' }}</span></p>
-                <p><span class="text-slate-500">Suffix:</span> <span class="text-white">{{ selectedClient.suffix || '-' }}</span></p>
-                <p><span class="text-slate-500">Email:</span> <span class="text-white">{{ selectedClient.email || '-' }}</span></p>
-                <p><span class="text-slate-500">Phone:</span> <span class="text-white">{{ selectedClient.phone || '-' }}</span></p>
-                <p><span class="text-slate-500">First Seen:</span> <span class="text-white">{{ formatDate(selectedClient.createdAt) }}</span></p>
-                <p><span class="text-slate-500">Appointments:</span> <span class="text-white">{{ selectedClientHistory.length }}</span></p>
-              </div>
+              <dl v-else class="client-info-list">
+                <div><dt>Name</dt><dd>{{ selectedClient.fullName || '—' }}</dd></div>
+                <div><dt>Middle name</dt><dd>{{ selectedClient.middleName || selectedClient.midName || '—' }}</dd></div>
+                <div><dt>Suffix</dt><dd>{{ selectedClient.suffix || '—' }}</dd></div>
+                <div><dt>Email</dt><dd>{{ selectedClient.email || '—' }}</dd></div>
+                <div><dt>Phone</dt><dd>{{ selectedClient.phone || '—' }}</dd></div>
+                <div><dt>First seen</dt><dd>{{ formatDate(selectedClient.createdAt) }}</dd></div>
+                <div><dt>Appointments</dt><dd>{{ selectedClientHistory.length }}</dd></div>
+              </dl>
             </section>
 
-            <section class="rounded-xl border border-slate-700 bg-slate-800/70 p-5">
-              <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Appointment History</h3>
-                <span class="text-xs text-slate-500">{{ selectedClientHistory.length }} record{{ selectedClientHistory.length === 1 ? '' : 's' }}</span>
+            <section class="client-profile-card">
+              <div class="client-profile-card-heading">
+                <h3>Appointment history</h3>
+                <span>{{ selectedClientHistory.length }} record{{ selectedClientHistory.length === 1 ? '' : 's' }}</span>
               </div>
-
-              <div class="mt-4 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-                <article
-                  v-for="appointment in selectedClientHistory"
-                  :key="appointment.id"
-                  class="relative rounded-xl border border-slate-700 bg-slate-900/80 p-4 pl-5"
-                >
-                  <span class="absolute left-0 top-4 h-4 w-1 rounded-r-full bg-purple-400"></span>
-                  <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p class="text-base font-semibold text-white">{{ appointment.service || appointment.type || 'Appointment' }}</p>
-                      <p class="mt-1 text-sm text-slate-400">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</p>
-                      <p class="mt-1 text-xs text-slate-500">Practitioner: {{ appointment.practitionerName || appointment.assignedPractitionerName || '-' }}</p>
+              <div class="client-history-list">
+                <article v-for="appointment in selectedClientHistory" :key="appointment.id" class="client-history-card">
+                  <div class="client-history-heading">
+                    <div class="client-history-main">
+                      <h4>{{ appointment.service || appointment.type || 'Appointment' }}</h4>
+                      <p>{{ appointment.date || 'Date not set' }} {{ formatClockTime(appointment.time) }}</p>
+                      <p>Practitioner: {{ appointment.practitionerName || appointment.assignedPractitionerName || '—' }}</p>
                     </div>
-                    <div class="flex flex-col items-end gap-2">
-                      <span class="rounded-full bg-slate-700 px-3 py-1 text-xs font-medium text-slate-200">{{ appointment.status || 'Scheduled' }}</span>
-                      <div class="flex flex-wrap justify-end gap-2">
-                        <span
-                          v-for="tag in getAppointmentTimelineTags(appointment)"
-                          :key="tag.label"
-                          class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                          :class="timelineTagClass(tag.kind)"
-                        >
-                          {{ tag.label }}
-                        </span>
-                      </div>
-                    </div>
+                    <span class="client-status-badge">{{ appointment.status || 'Scheduled' }}</span>
                   </div>
-
-                  <div class="mt-4 grid gap-3 md:grid-cols-2">
-                    <div v-if="appointment.notes" class="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Notes</p>
-                      <p class="mt-2 whitespace-pre-wrap text-sm text-slate-200">{{ appointment.notes }}</p>
-                    </div>
-                    <div v-if="appointment.cancellationReason || appointment.rescheduleReason || appointment.requestDecisionNote" class="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">History Notes</p>
-                      <div class="mt-2 space-y-2 text-sm text-slate-200">
-                        <p v-if="appointment.cancellationReason"><span class="text-slate-400">Cancellation:</span> {{ appointment.cancellationReason }}</p>
-                        <p v-if="appointment.rescheduleReason"><span class="text-slate-400">Reschedule:</span> {{ appointment.rescheduleReason }}</p>
-                        <p v-if="appointment.requestDecisionNote"><span class="text-slate-400">Decision:</span> {{ appointment.requestDecisionNote }}</p>
-                      </div>
-                    </div>
+                  <div v-if="getAppointmentTimelineTags(appointment).length" class="client-history-tags">
+                    <span v-for="tag in getAppointmentTimelineTags(appointment)" :key="tag.label" :class="['client-history-tag', timelineTagClass(tag.kind)]">{{ tag.label }}</span>
+                  </div>
+                  <div v-if="appointment.notes || appointment.cancellationReason || appointment.rescheduleReason || appointment.requestDecisionNote" class="client-history-notes">
+                    <p v-if="appointment.notes"><strong>Notes:</strong> {{ appointment.notes }}</p>
+                    <p v-if="appointment.cancellationReason"><strong>Cancellation:</strong> {{ appointment.cancellationReason }}</p>
+                    <p v-if="appointment.rescheduleReason"><strong>Reschedule:</strong> {{ appointment.rescheduleReason }}</p>
+                    <p v-if="appointment.requestDecisionNote"><strong>Decision:</strong> {{ appointment.requestDecisionNote }}</p>
                   </div>
                 </article>
-
-                <div v-if="!selectedClientHistory.length" class="rounded-xl border border-dashed border-slate-700 bg-slate-900/70 p-6 text-center text-sm text-slate-400">
-                  No appointment history found for this client yet.
-                </div>
+                <div v-if="!selectedClientHistory.length" class="client-history-empty">No appointment history found for this client yet.</div>
               </div>
             </section>
           </div>
-
-          <footer v-if="editingClient" class="flex justify-end gap-3 border-t border-slate-700 px-6 py-4">
-            <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800" :disabled="savingClient" @click="cancelClientEdit">Cancel</button>
-            <button type="button" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="savingClient" @click="saveClientChanges">{{ savingClient ? 'Saving…' : 'Save Changes' }}</button>
-          </footer>
-        </div>
-      </div>
+        </template>
+        <template v-if="editingClient" #footer>
+          <div class="client-profile-footer">
+            <button type="button" class="client-profile-secondary" :disabled="savingClient" @click="cancelClientEdit">Cancel</button>
+            <button type="button" class="client-profile-primary" :disabled="savingClient" @click="saveClientChanges">{{ savingClient ? 'Saving…' : 'Save changes' }}</button>
+          </div>
+        </template>
+      </Modal>
     </main>
   </div>
 </template>
@@ -180,6 +146,7 @@ import { getFirestore, collection, query, where, doc, getDoc, onSnapshot } from 
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
+import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
@@ -188,7 +155,7 @@ import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
 export default {
   name: 'ReceptionistClientList',
-  components: { OwnerSidebar },
+  components: { OwnerSidebar, Modal },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -637,3 +604,164 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   }
 }
 </script>
+
+<style scoped>
+:global(.app-modal-panel.client-profile-dialog) {
+  max-height: calc(100dvh - 6rem) !important;
+  border: 1px solid var(--ac-border) !important;
+  border-radius: 18px !important;
+  background: var(--ac-surface) !important;
+  color: var(--ac-text) !important;
+}
+
+@media (min-width: 640px) {
+  :global(.app-modal-panel.client-profile-dialog) {
+    max-height: calc(100dvh - 3rem) !important;
+  }
+}
+
+:global(.client-profile-dialog > div:first-child),
+:global(.client-profile-dialog > div:last-child) {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface) !important;
+}
+
+:global(.client-profile-dialog > div:first-child h3) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ac-text) !important;
+}
+
+:global(.client-profile-dialog > div:first-child button) {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ac-border) !important;
+  border-radius: 10px;
+  color: var(--ac-text-secondary) !important;
+  background: var(--ac-surface-soft) !important;
+}
+
+:global(.client-profile-dialog .client-profile-modal-body) {
+  min-height: 0;
+  padding: 0 !important;
+  background: var(--ac-surface) !important;
+}
+
+.client-profile-intro {
+  margin: 0;
+  padding: 20px 22px 0;
+  color: var(--ac-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.client-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px 22px 24px;
+}
+
+.client-profile-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--ac-border);
+  border-radius: 14px;
+  background: var(--ac-surface-soft);
+}
+
+.client-profile-card-heading,
+.client-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.client-profile-card-heading h3 {
+  margin: 0;
+  color: var(--ac-text-secondary);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.client-profile-card-heading > span {
+  color: var(--ac-text-muted);
+  font-size: 12px;
+}
+
+.client-profile-action,
+.client-profile-secondary,
+.client-profile-primary {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ac-border-strong);
+  border-radius: 9px;
+  padding: 8px 13px;
+  color: var(--ac-text-secondary);
+  background: var(--ac-surface);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.client-profile-action:hover,
+.client-profile-secondary:hover { background: var(--ac-surface-muted); }
+
+.client-profile-primary {
+  border-color: var(--ac-accent);
+  color: var(--ac-on-accent, #fffaf4);
+  background: var(--ac-accent);
+}
+
+.client-profile-primary:hover { filter: brightness(.94); }
+.client-profile-primary:disabled,
+.client-profile-secondary:disabled { cursor: not-allowed; opacity: .6; }
+
+.client-info-list { display: grid; gap: 0; margin: 14px 0 0; }
+.client-info-list > div { display: grid; grid-template-columns: minmax(94px, .32fr) minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--ac-border); }
+.client-info-list dt { color: var(--ac-text-muted); font-size: 12px; }
+.client-info-list dd { min-width: 0; margin: 0; color: var(--ac-text); font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+
+.client-edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; margin-top: 15px; }
+.client-edit-field { display: grid; gap: 6px; color: var(--ac-text-secondary); font-size: 13px; font-weight: 600; }
+.client-edit-field > span { display: inline; color: var(--ac-text-muted); font-weight: 400; }
+.client-edit-field input { width: 100%; min-width: 0; border: 1px solid var(--ac-border-strong); border-radius: 9px; padding: 10px 12px; color: var(--ac-text); background: var(--ac-surface); }
+.client-profile-error { grid-column: 1 / -1; margin: 0; color: var(--ac-danger); font-size: 13px; }
+
+.client-history-list { display: grid; gap: 12px; max-height: 55vh; overflow-y: auto; margin-top: 14px; padding-right: 3px; }
+.client-history-card { min-width: 0; padding: 14px; border: 1px solid var(--ac-border); border-radius: 12px; background: var(--ac-surface); }
+.client-history-main { min-width: 0; }
+.client-history-main h4 { margin: 0; color: var(--ac-text); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.client-history-main p { margin: 5px 0 0; color: var(--ac-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.client-status-badge { flex: 0 0 auto; border: 1px solid var(--ac-border); border-radius: 999px; padding: 5px 9px; color: var(--ac-text-secondary); background: var(--ac-surface-muted); font-size: 11px; font-weight: 650; }
+.client-history-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.client-history-tag { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 700; }
+.client-history-notes { display: grid; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--ac-border); }
+.client-history-notes p { margin: 0; color: var(--ac-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.client-history-notes strong { color: var(--ac-text); }
+.client-history-empty { padding: 20px 14px; border: 1px dashed var(--ac-border-strong); border-radius: 12px; color: var(--ac-text-muted); font-size: 13px; text-align: center; }
+.client-profile-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+
+@media (min-width: 900px) {
+  .client-profile-grid { grid-template-columns: minmax(260px, .38fr) minmax(0, .62fr); }
+  .client-edit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-edit-wide { grid-column: 1 / -1; }
+}
+
+@media (max-width: 520px) {
+  .client-profile-intro { padding: 16px 16px 0; }
+  .client-profile-grid { gap: 12px; padding: 14px 16px 18px; }
+  .client-profile-card { padding: 14px; }
+  .client-profile-card-heading { align-items: center; }
+  .client-info-list > div { grid-template-columns: minmax(82px, .34fr) minmax(0, 1fr); gap: 8px; }
+  .client-history-heading { flex-direction: column; }
+  .client-history-list { max-height: none; }
+}
+</style>

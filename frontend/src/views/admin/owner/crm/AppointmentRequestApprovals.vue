@@ -5,8 +5,8 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 6, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 v-if="!embedded" class="mb-2 text-3xl font-bold text-white">Online Booking Requests</h1>
-          <p class="text-slate-400">Review online booking requests, cancellations, and reschedules before they affect the clinic schedule.</p>
+          <h1 v-if="!embedded" class="mb-2 text-3xl font-bold text-white">Appointment Change Requests</h1>
+          <p class="text-slate-400">Review customer cancellation and reschedule requests. New appointments are booked automatically when a valid slot is available.</p>
         </div>
         <button
           type="button"
@@ -17,7 +17,7 @@
         </button>
       </div>
 
-      <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
           <p class="text-sm text-slate-400">Cancellation Requests</p>
           <p class="mt-2 text-2xl font-bold text-rose-300">{{ cancellationRequests.length }}</p>
@@ -26,16 +26,12 @@
           <p class="text-sm text-slate-400">Reschedule Requests</p>
           <p class="mt-2 text-2xl font-bold text-cyan-300">{{ rescheduleRequests.length }}</p>
         </div>
-        <div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <p class="text-sm text-slate-400">New Booking Requests</p>
-          <p class="mt-2 text-2xl font-bold text-amber-300">{{ bookingRequests.length }}</p>
-        </div>
       </div>
 
       <div class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <section class="space-y-6">
           <div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label class="mb-2 block text-sm text-slate-400">Search</label>
                 <input
@@ -54,19 +50,6 @@
                   <option value="">All</option>
                   <option value="cancel">Cancellation</option>
                   <option value="reschedule">Reschedule</option>
-                  <option value="booking">New Booking</option>
-                </select>
-              </div>
-              <div>
-                <label class="mb-2 block text-sm text-slate-400">Status</label>
-                <select
-                  v-model="statusFilter"
-                  class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                >
-                  <option value="">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
                 </select>
               </div>
             </div>
@@ -109,14 +92,11 @@
                       <p class="text-xs text-slate-400">{{ request.serviceLabel }}</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <template v-if="request.requestType !== 'booking'">
-                        <p>{{ formatScheduleDateTime(request.date, request.time) }}</p>
-                        <p class="text-xs text-slate-400">{{ request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
-                      </template>
-                      <p v-else>—</p>
+                      <p>{{ formatScheduleDateTime(request.date, request.time) }}</p>
+                      <p class="text-xs text-slate-400">{{ request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
                     </td>
                     <td class="px-6 py-4 text-slate-300">
-                      <p v-if="request.requestType === 'booking' || request.requestType === 'reschedule'">{{ formatScheduleDateTime(request.requestType === 'booking' ? request.date : request.requestedDate, request.requestType === 'booking' ? request.time : request.requestedTime) }}</p>
+                      <p v-if="request.requestType === 'reschedule'">{{ formatScheduleDateTime(request.requestedDate, request.requestedTime) }}</p>
                       <p v-else>—</p>
                       <p class="text-xs text-slate-400">Practitioner: {{ request.requestedPractitionerName || request.assignedPractitionerName || 'Assigned Practitioner' }}</p>
                     </td>
@@ -162,13 +142,9 @@
                 <span>Service</span>
                 <span class="font-semibold text-white">{{ selectedRequest.serviceLabel }}</span>
               </div>
-              <div v-if="selectedRequest.requestType !== 'booking'" class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4">
                 <span>Current Appointment</span>
                 <span class="font-semibold text-white">{{ formatScheduleDateTime(selectedRequest.date, selectedRequest.time) }}</span>
-              </div>
-              <div v-if="selectedRequest.requestType === 'booking'" class="flex items-center justify-between gap-4">
-                <span>Requested Appointment</span>
-                <span class="font-semibold text-cyan-200">{{ formatScheduleDateTime(selectedRequest.date, selectedRequest.time) }}</span>
               </div>
               <div v-if="selectedRequest.requestType === 'reschedule'" class="flex items-center justify-between gap-4">
                 <span>Requested Appointment</span>
@@ -296,7 +272,6 @@ const requests = ref([])
 const selectedRequestId = ref('')
 const searchQuery = ref('')
 const typeFilter = ref('')
-const statusFilter = ref('pending')
 const decisionNote = ref('')
 const offlineRefundReference = ref('')
 const offlineRefundConfirmed = ref(false)
@@ -364,16 +339,10 @@ const requestTypeLabel = (status) => {
   const normalized = normalizeStatus(status)
   if (normalized.includes('cancellation requested')) return 'Cancellation Request'
   if (normalized.includes('reschedule requested')) return 'Reschedule Request'
-  if (normalized === 'pending approval' || normalized === 'requested') return 'New Booking Request'
-  return 'Appointment Request'
+  return 'Change Request'
 }
 
-const requestReviewState = (status) => {
-  const normalized = normalizeStatus(status)
-  if (normalized.includes('requested') || normalized === 'pending approval' || normalized === 'payment pending' || normalized === 'paid - awaiting approval') return 'Pending'
-  if (normalized === 'cancelled') return 'Approved'
-  return String(status || 'Pending')
-}
+const requestReviewState = () => 'Pending'
 
 const requestBadgeClass = (state) => {
   const normalized = normalizeStatus(state)
@@ -400,17 +369,14 @@ const filteredRequests = computed(() => {
     const matchesType =
       !typeFilter.value ||
       (typeFilter.value === 'cancel' && request.requestType === 'cancel') ||
-      (typeFilter.value === 'reschedule' && request.requestType === 'reschedule') ||
-      (typeFilter.value === 'booking' && request.requestType === 'booking')
-    const matchesStatus = !statusFilter.value || request.requestReviewState.toLowerCase() === statusFilter.value
-    return matchesSearch && matchesType && matchesStatus
+      (typeFilter.value === 'reschedule' && request.requestType === 'reschedule')
+    return matchesSearch && matchesType
   })
 })
 
 const pendingRequests = computed(() => requests.value.filter((request) => request.requestReviewState === 'Pending'))
 const cancellationRequests = computed(() => requests.value.filter((request) => request.requestType === 'cancel'))
 const rescheduleRequests = computed(() => requests.value.filter((request) => request.requestType === 'reschedule'))
-const bookingRequests = computed(() => requests.value.filter((request) => request.requestType === 'booking'))
 const selectedRequest = computed(() => requests.value.find((request) => request.id === selectedRequestId.value) || filteredRequests.value[0] || null)
 
 const selectRequest = (request) => {
@@ -423,18 +389,14 @@ const isPayMongoPayment = request => Boolean(request?.paymongoPaymentId) || Stri
 const requiresOfflineRefund = request => {
   const paid = Number(request?.amountPaid || 0) > 0
     && ['paid', 'partially paid', 'partially refunded', 'refunded'].includes(normalizeStatus(request?.paymentStatus))
-  if (request?.requestType === 'cancel') return Number(request.refundRequestedAmount || 0) > 0 && paid && !isPayMongoPayment(request)
-  return request?.requestType === 'booking' && paid && !isPayMongoPayment(request)
+  return request?.requestType === 'cancel' && Number(request.refundRequestedAmount || 0) > 0 && paid && !isPayMongoPayment(request)
 }
 
-const requiresFinanceRefundReview = request => {
-  if (request?.requestType === 'cancel') return Number(request.refundRequestedAmount || 0) > 0 && Number(request.amountPaid || 0) > 0
-  return request?.requestType === 'booking'
-    && Number(request.amountPaid || 0) > 0
-    && ['paid', 'partially paid', 'partially refunded', 'refunded'].includes(normalizeStatus(request.paymentStatus))
-}
+const requiresFinanceRefundReview = request => request?.requestType === 'cancel'
+  && Number(request.refundRequestedAmount || 0) > 0
+  && Number(request.amountPaid || 0) > 0
 const canApproveSelectedRequest = request => !(request?.requestType === 'cancel' && requiresFinanceRefundReview(request) && !canManageRefunds.value)
-const canRejectSelectedRequest = request => !(request?.requestType === 'booking' && requiresFinanceRefundReview(request) && !canManageRefunds.value)
+const canRejectSelectedRequest = () => true
 
 const loadRequests = trackPageLoad(async () => {
   loading.value = true
@@ -457,21 +419,16 @@ const loadRequests = trackPageLoad(async () => {
       .map((snap) => {
         const data = snap.data() || {}
         const status = String(data.status || '').toLowerCase()
-        if (status === 'pending approval' && (data.isGroupRecipient || (data.bookingOrderId && !data.isBookingOrderParent))) return null
         const requestType = status.includes('cancellation requested')
           ? 'cancel'
           : status.includes('reschedule requested')
             ? 'reschedule'
-            : status === 'pending approval' || status === 'requested' || status === 'payment pending' || status === 'paid - awaiting approval'
-              ? 'booking'
             : ''
         if (!requestType) return null
 
         const requestReason = requestType === 'cancel'
           ? data.cancellationReason || ''
-          : requestType === 'reschedule'
-            ? data.rescheduleReason || ''
-            : data.notes || ''
+          : data.rescheduleReason || ''
         const policySnapshot =
           requestType === 'cancel'
             ? data.cancellationPolicySnapshot || currentBranchPolicy.value.cancellationPolicy || currentBranchPolicy.value.refundPolicy
@@ -490,9 +447,7 @@ const loadRequests = trackPageLoad(async () => {
           fallbackPolicyText:
             requestType === 'cancel'
               ? 'Cancellation requests are reviewed by the clinic first. Approved cancellations are refunded without the system commission.'
-              : requestType === 'reschedule'
-                ? 'Reschedule requests are reviewed by the clinic first. The new date and time only take effect after approval.'
-              : 'Check the worker, time, materials, and equipment before approving. The customer pays the required amount after approval.',
+              : 'Reschedule requests are reviewed by the clinic first. The new date and time only take effect after approval.',
           serviceLabel: Array.isArray(data.services) && data.services.length ? data.services.join(', ') : data.service || 'Service not set',
           clientName: data.clientName || data.customerName || data.name || 'Customer',
           requestedPractitionerName: data.requestedPractitionerName || data.assignedPractitionerName || data.practitionerName || 'Assigned Practitioner',
@@ -531,14 +486,11 @@ const approveSelectedRequest = async () => {
 
   processing.value = true
   try {
-    const endpoint = request.requestType === 'booking'
-      ? `/appointments/${request.id}/approve-booking`
-      : `/appointments/${request.id}/approve-request`
-    const response = await fetchFromBackend(endpoint, {
+    const response = await fetchFromBackend(`/appointments/${request.id}/approve-request`, {
       method: 'POST',
       headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({
-      ...(request.requestType === 'booking' ? { decision: 'approve' } : { decision: 'approve' }),
+      decision: 'approve',
       decisionNote: decisionNote.value.trim(),
       ...(request.requestType === 'cancel' ? {
         offlineRefundConfirmed: offlineRefundConfirmed.value,
@@ -559,9 +511,7 @@ const approveSelectedRequest = async () => {
       throw new Error(payload?.error || 'Failed to approve the request.')
     }
 
-    if (request.requestType === 'booking') {
-      toast.success('Booking request approved. The customer can now complete payment.')
-    } else if (request.requestType === 'cancel') {
+    if (request.requestType === 'cancel') {
       const refundStatus = payload.data?.refundStatus
       toast.success(refundStatus === 'Processing'
         ? 'Cancellation approved. The refund is processing.'
@@ -592,23 +542,13 @@ const rejectSelectedRequest = async () => {
     toast.error('Please select a request first.')
     return
   }
-  if (request.requestType === 'booking' && requiresOfflineRefund(request)
-    && (!offlineRefundConfirmed.value || offlineRefundReference.value.trim().length < 2)) {
-    toast.error('Return the offline payment, confirm it, and enter its reference before rejecting this paid booking.')
-    return
-  }
-
   processing.value = true
   try {
-    const endpoint = request.requestType === 'booking'
-      ? `/appointments/${request.id}/approve-booking`
-      : `/appointments/${request.id}/approve-request`
-    const response = await fetchFromBackend(endpoint, {
+    const response = await fetchFromBackend(`/appointments/${request.id}/approve-request`, {
       method: 'POST',
       headers: await buildAuthHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({
         decision: 'reject', decisionNote: decisionNote.value.trim(),
-        ...(request.requestType === 'booking' ? { offlineRefundConfirmed: offlineRefundConfirmed.value, offlineRefundReference: offlineRefundReference.value.trim() } : {}),
       }),
     })
     const payload = await response.json().catch(() => null)
@@ -617,13 +557,9 @@ const rejectSelectedRequest = async () => {
     offlineRefundReference.value = ''
     offlineRefundConfirmed.value = false
     const refundStatus = payload.data?.refundStatus
-    toast.success(request.requestType === 'booking' && refundStatus === 'Processing'
-      ? 'Booking rejected. The refund is processing.'
-      : request.requestType === 'booking' && refundStatus === 'Refunded'
-        ? 'Booking rejected and refund confirmed.'
-        : request.requestType === 'booking' && refundStatus === 'Requested'
-          ? 'Booking rejected. Finance needs to review the refund.'
-          : 'Request rejected.')
+    toast.success(request.requestType === 'cancel' && refundStatus === 'Processing'
+      ? 'Cancellation request rejected. The refund is processing.'
+      : 'Appointment change request rejected.')
     await loadRequests()
     const nextSelected = requests.value.find((item) => item.id === request.id) || requests.value[0] || null
     selectedRequestId.value = nextSelected?.id || ''

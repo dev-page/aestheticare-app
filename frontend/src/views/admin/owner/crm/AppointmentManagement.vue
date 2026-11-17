@@ -83,15 +83,15 @@ const reviewActive = computed(() => activeTab.value === 'appointments' && appoin
       <p class="mt-2 text-sm text-slate-400">Manage appointment records, requests that need a decision, and today’s service queue.</p>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
         <router-link v-if="canView" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments' }) }" class="appointment-tab" :class="{ 'is-active': allAppointmentsActive }" :aria-current="allAppointmentsActive ? 'page' : undefined">All appointments</router-link>
-        <router-link v-if="canReview" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments', view: 'review' }) }" class="appointment-tab" :class="{ 'is-active': reviewActive }" :aria-current="reviewActive ? 'page' : undefined">Needs review <span v-if="requestPendingCount !== null" class="tab-count">{{ requestPendingCount }}</span></router-link>
+        <router-link v-if="canReview" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments', view: 'review' }) }" class="appointment-tab" :class="{ 'is-active': reviewActive }" :aria-current="reviewActive ? 'page' : undefined">Change requests <span v-if="requestPendingCount !== null" class="tab-count">{{ requestPendingCount }}</span></router-link>
         <router-link v-if="canQueue" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'queue' }) }" class="appointment-tab" :class="{ 'is-active': activeTab === 'queue' }" :aria-current="activeTab === 'queue' ? 'page' : undefined">Service queue</router-link>
       </nav>
       <p v-if="!canAppointments && !canQueue" class="text-sm text-slate-400">You do not have permission to access appointment management.</p>
 
       <template v-if="activeTab === 'appointments' && canAppointments">
         <div v-if="appointmentView === 'review'" class="mb-5">
-          <h2 class="text-lg font-semibold text-white">Requests that need a decision</h2>
-          <p class="mt-1 text-sm text-slate-400">Review new bookings, cancellations, and reschedules. The list opens to pending requests.</p>
+          <h2 class="text-lg font-semibold text-white">Customer change requests</h2>
+          <p class="mt-1 text-sm text-slate-400">Review customer cancellation and reschedule requests. New bookings are scheduled automatically when the requested slot passes availability checks.</p>
         </div>
         <div v-if="needsBranch && branches.length > 1" class="mb-5">
           <label for="appointment-branch" class="text-sm text-slate-400">Clinic branch</label>

@@ -95,12 +95,13 @@ export const registerWalkInPayments = (app, { admin, requireAuth, authorizeClini
         const parent = parentRef ? await tx.get(parentRef) : null
         const groupRef = appointment.groupBookingId ? db.collection('groupBookings').doc(appointment.groupBookingId) : null
         const group = groupRef ? await tx.get(groupRef) : null
-        const timestamp = admin.firestore.FieldValue.serverTimestamp(), serviceKey = String(crypto.randomInt(100000, 1000000))
-        const receipt = { appointmentId: ref.id, branchId: appointment.branchId, clientId: appointment.clientId, clientName: appointment.clientName || 'Walk-in client', service: appointment.service || 'Treatment', date: appointment.date, time: appointment.time, amount: amount / 100, total: amount / 100, pricingSnapshot: appointment.pricingSnapshot || null, method, status: 'Paid', type: 'appointment_payment', source: 'receptionist_pos', serviceKey, createdBy: req.user.uid, createdAt: timestamp, tendered: method === 'Cash' ? Number(req.body.tendered) : amount / 100, change: method === 'Cash' ? (cents(req.body.tendered) - amount) / 100 : 0, paymongoCheckoutSessionId: sessionId || null }
+        const timestamp = admin.firestore.FieldValue.serverTimestamp(), paidAt = admin.firestore.Timestamp.now(), serviceKey = String(crypto.randomInt(100000, 1000000))
+        const receipt = { transactionCode: receiptRef.id, appointmentId: ref.id, branchId: appointment.branchId, clientId: appointment.clientId, clientName: appointment.clientName || 'Walk-in client', customerEmail: appointment.customerEmail || '', customerPhone: appointment.customerPhone || '', practitionerName: appointment.practitionerName || '', service: appointment.service || 'Treatment', date: appointment.date, time: appointment.time, amount: amount / 100, total: amount / 100, pricingSnapshot: appointment.pricingSnapshot || null, method, status: 'Paid', type: 'appointment_payment', source: 'receptionist_pos', serviceKey, createdBy: req.user.uid, createdAt: paidAt, tendered: method === 'Cash' ? Number(req.body.tendered) : amount / 100, change: method === 'Cash' ? (cents(req.body.tendered) - amount) / 100 : 0, paymongoCheckoutSessionId: sessionId || null }
         // The payer and the treatment recipient remain separate identities.
         receipt.payerName = appointment.bookedByName || receipt.clientName
+        receipt.payerEmail = appointment.bookedByEmail || appointment.customerEmail || ''
         receipt.payerPhone = appointment.bookedByPhone || appointment.customerPhone || ''
-        tx.set(receiptRef, receipt); tx.update(ref, { status: 'Paid', paymentStatus: 'Paid', amountPaid: amount / 100, balance: 0, serviceKey, paidAt: timestamp, paymentMethod: method, updatedAt: timestamp })
+        tx.set(receiptRef, receipt); tx.update(ref, { status: 'Paid', paymentStatus: 'Paid', amountPaid: amount / 100, balance: 0, serviceKey, paidAt, paymentMethod: method, updatedAt: timestamp })
         if (bookingRef) {
           const paid = siblingIds.length ? siblings.reduce((sum, sibling) => sum + (sibling.id === ref.id ? amount : cents(sibling.data()?.amountPaid)), 0) : amount
           const total = siblingIds.length ? cents(booking.totalAmount ?? booking.amount) : amount

@@ -3,7 +3,7 @@
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 min-w-0 p-4 md:p-8">
       <div class="walk-in-content">
-        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Choose or add the care recipient, book their on-site appointment, then record consent and payment here. New client details are saved only when the booking succeeds.</p></div><div class="flex flex-wrap gap-2"><RouterLink v-if="!isPosRoute && canRecordPayments" to="/crm/pos" class="desk-button secondary">Unpaid walk-in payments</RouterLink><RouterLink v-if="isPosRoute && canCreateAppointments" to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink><RouterLink to="/crm/appointments" class="desk-button secondary">View appointments</RouterLink></div></header>
+        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Choose or add the care recipient, book their on-site appointment, then record consent and payment here. New client details are saved only when the booking succeeds.</p></div><div v-if="isPosRoute && canCreateAppointments" class="flex flex-wrap gap-2"><RouterLink to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink></div></header>
         <p v-if="error" class="desk-alert error" role="alert">{{ error }}</p>
         <p v-if="checkoutReturnNotice" class="desk-alert" role="status">{{ checkoutReturnNotice }}</p>
         <nav v-if="!isPosRoute" class="walk-in-progress" aria-label="Walk-in booking progress">
@@ -412,17 +412,17 @@ async function load() {
   const profile = await getDoc(doc(db, 'users', user.uid))
   branchId.value = String(profile.data()?.branchId || '')
   if (!branchId.value) throw Error('Your account has no branch assignment.')
+  const clinicSnap = await getDoc(doc(db, 'clinics', branchId.value))
+  branch.value = clinicSnap.data() || {}
   if (isPosRoute.value) {
     await refreshPaymentQueue()
     return
   }
-  const [clinicSnap, clientRows, serviceRows, availability] = await Promise.all([
-    getDoc(doc(db, 'clinics', branchId.value)),
+  const [clientRows, serviceRows, availability] = await Promise.all([
     getDocs(query(collection(db, 'clients'), where('branchId', '==', branchId.value))),
     getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', branchId.value))),
     api(`/public/clinics/${encodeURIComponent(branchId.value)}/practitioners`)
   ])
-  branch.value = clinicSnap.data() || {}
   clients.value = clientRows.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })).filter(client => !['inactive', 'archived'].includes(String(client.status || '').toLowerCase()))
   const catalogue = serviceRows.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }))
   services.value = catalogue.filter(service => ['service', 'consultation', 'package'].includes(String(service.postType || '').toLowerCase()) && !(String(service.postType || '').toLowerCase() === 'consultation' && !supportsOnSite(service)) && service.isPublished === true && service.financeStatus === 'approved' && !service.archived).map(service => {
@@ -559,17 +559,53 @@ async function verifyOnlinePayment(appointment) {
 }
 function updateContract(updated) { if (contractTarget.value && updated?.contract) contractTarget.value.contract = updated.contract }
 function startNewBooking() { contractTarget.value = null; createdAppointments.value = []; receipts.value = {}; cashReceived.value = {}; visits.value = []; selectedClientId.value = ''; bookingForSomeoneElse.value = false; booker.value = { name: '', email: '', phone: '' }; bookingSignature.value = ''; policyAcknowledged.value = false; bookingStep.value = 1; submissionId = crypto.randomUUID(); error.value = '' }
+function receiptPaidAt(value) {
+  if (!value) return ''
+  const timestamp = value?.toDate?.() || (typeof value === 'object' && Number.isFinite(Number(value._seconds ?? value.seconds))
+    ? new Date(Number(value._seconds ?? value.seconds) * 1000)
+    : new Date(value))
+  if (!Number.isFinite(timestamp.getTime())) return ''
+  return new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(timestamp)
+}
+function escapeReceiptText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
+}
 function printReceipt(receipt) {
   const popup = window.open('', '_blank')
   if (!popup) return void (error.value = 'Allow pop-ups to print the receipt.')
-  const content = popup.document.createElement('pre')
   const pricing = receipt.pricingSnapshot
-  const priceDetails = pricing
-    ? `\nSubtotal: ${currency(pricing.subtotal)}\nVAT: ${pricing.vatApplicable ? currency(pricing.vatAmount) : 'Not applied'}\nTotal: ${currency(pricing.total)}`
-    : `\nPaid: ${currency(receipt.total)}`
-  content.textContent = `Walk-in receipt\n${receipt.clientName}\n${receipt.service}\n${receipt.date} at ${formatClockTime(receipt.time)}${priceDetails}\nPayment method: ${receipt.method || 'Cash'}${receipt.method === 'Cash' ? `\nCash received: ${currency(receipt.tendered)}\nChange: ${currency(receipt.change)}` : ''}\nService code: ${receipt.serviceKey}`
-  popup.document.body.append(content)
-  popup.print()
+  const branchName = branch.value.clinicBranch || branch.value.clinicName || branch.value.name || 'Clinic branch'
+  const address = branch.value.clinicLocationAddress || branch.value.clinicLocation || branch.value.address || ''
+  const contactNumber = branch.value.contactNumber || ''
+  const total = pricing?.total ?? receipt.total ?? receipt.amount
+  const receiptNumber = receipt.transactionCode || `walk-in-${receipt.appointmentId || ''}`
+  const line = (label, value, className = '') => value === '' || value == null ? '' : `<div class="detail-row ${className}"><span>${escapeReceiptText(label)}</span><strong>${escapeReceiptText(value)}</strong></div>`
+  const dynamic = value => escapeReceiptText(value)
+  const cashDetails = receipt.method === 'Cash'
+    ? `<section class="cash-details"><h2>Cash tender</h2>${line('Cash received', currency(receipt.tendered))}${line('Change', currency(receipt.change))}</section>`
+    : ''
+  let printStarted = false
+  const beginPrint = () => {
+    if (printStarted || popup.closed || !popup.document.querySelector('.receipt-sheet')) return
+    printStarted = true
+    popup.focus()
+    popup.print()
+  }
+  popup.addEventListener('load', () => window.setTimeout(beginPrint, 100), { once: true })
+  const popupHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Receipt ${dynamic(receiptNumber)}</title><style>
+    @page{size:A4 portrait;margin:16mm}*{box-sizing:border-box}body{margin:0;background:#f7f2ec;color:#30241e;font:14px/1.5 Arial,Helvetica,sans-serif}.receipt-sheet{max-width:760px;margin:28px auto;padding:36px 42px;background:#fff;border:1px solid #e5d9ce;border-top:7px solid #85553a;box-shadow:0 12px 36px rgba(54,36,25,.1)}.receipt-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:24px;border-bottom:1px solid #e9e1d9}.brand{display:flex;align-items:center;gap:13px}.brand-mark{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:#85553a;color:#fff;font-family:Georgia,serif;font-size:21px;font-weight:bold}.brand h1{margin:0;font:700 21px Georgia,serif;color:#3e2a1e}.brand p,.receipt-kind p{margin:4px 0 0;color:#76695f}.receipt-kind{text-align:right}.receipt-kind h2{margin:0;font-size:18px;letter-spacing:.1em;text-transform:uppercase;color:#85553a}.paid-tag{display:inline-block;margin-top:8px;padding:4px 10px;border-radius:99px;background:#edf4ee;color:#315b3d;font-size:11px;font-weight:bold;letter-spacing:.08em}.clinic-contact{margin:16px 0 24px;color:#76695f;font-size:12px}.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}.summary-card{padding:14px 16px;border:1px solid #ebe3db;border-radius:8px;background:#fcfaf8}.summary-card span,.section-label{display:block;color:#87766a;font-size:10px;font-weight:bold;letter-spacing:.12em;text-transform:uppercase}.summary-card strong{display:block;margin-top:5px;overflow-wrap:anywhere;font-size:13px}.section-title{margin:22px 0 10px;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:#60432f}.items{width:100%;border-collapse:collapse}.items th{padding:11px 12px;background:#f5eee7;color:#654b39;text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase}.items th:last-child,.items td:last-child{text-align:right}.items td{padding:14px 12px;border-bottom:1px solid #ece5de;vertical-align:top}.items td strong{display:block}.items td small{color:#76695f}.totals{width:min(100%,360px);margin:18px 0 0 auto}.detail-row{display:flex;justify-content:space-between;gap:16px;padding:6px 0;color:#66584e}.detail-row strong{text-align:right;color:#30241e}.detail-row.grand-total{margin-top:6px;padding:12px 0;border-top:2px solid #85553a;font-size:17px;font-weight:bold}.detail-row.grand-total span,.detail-row.grand-total strong{color:#3e2a1e}.cash-details{margin-top:20px;padding:14px 16px;border:1px solid #ebe3db;border-radius:8px}.cash-details h2{margin:0 0 5px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#60432f}.receipt-footer{margin-top:34px;padding-top:18px;border-top:1px dashed #d7c8b9;text-align:center;color:#76695f;font-size:11px}.receipt-footer strong{display:block;margin-bottom:4px;color:#60432f;font-size:13px}.receipt-code{overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}@media(max-width:600px){body{background:#fff}.receipt-sheet{margin:0;padding:24px 18px;border:0;border-top:6px solid #85553a;box-shadow:none}.receipt-header{gap:12px}.brand h1{font-size:18px}.summary-grid{grid-template-columns:1fr}.items th,.items td{padding:10px 8px}}@media print{body{background:#fff;font-size:12px}.receipt-sheet{max-width:none;margin:0;padding:0;border:0;border-top:5px solid #85553a;box-shadow:none}.receipt-header{padding-bottom:18px}.receipt-footer{margin-top:24px}}
+    </style></head><body><main class="receipt-sheet"><header class="receipt-header"><div class="brand"><span class="brand-mark">AC</span><div><h1>AesthetiCare</h1><p>${dynamic(branchName)}</p></div></div><div class="receipt-kind"><h2>Payment receipt</h2><p>Walk-in service</p><span class="paid-tag">PAID</span></div></header>
+    <p class="clinic-contact">${[address, contactNumber ? `Contact: ${contactNumber}` : ''].filter(Boolean).map(dynamic).join(' · ')}</p>
+    <section class="summary-grid"><div class="summary-card"><span>Receipt number</span><strong class="receipt-code">${dynamic(receiptNumber)}</strong></div><div class="summary-card"><span>Payment date</span><strong>${dynamic(receiptPaidAt(receipt.createdAt) || 'Payment date unavailable')}</strong></div><div class="summary-card"><span>Paid by</span><strong>${dynamic(receipt.payerName || receipt.clientName || 'Walk-in client')}</strong>${receipt.payerEmail ? `<small>${dynamic(receipt.payerEmail)}</small>` : ''}${receipt.payerPhone ? `<small>${dynamic(receipt.payerPhone)}</small>` : ''}</div><div class="summary-card"><span>Care recipient</span><strong>${dynamic(receipt.clientName || 'Walk-in client')}</strong>${receipt.customerEmail ? `<small>${dynamic(receipt.customerEmail)}</small>` : ''}${receipt.customerPhone ? `<small>${dynamic(receipt.customerPhone)}</small>` : ''}</div></section>
+    <h2 class="section-title">Service and appointment</h2><table class="items"><thead><tr><th>Description</th><th>Appointment</th><th>Amount</th></tr></thead><tbody><tr><td><strong>${dynamic(receipt.service || 'Clinic service')}</strong>${receipt.practitionerName ? `<small>Practitioner: ${dynamic(receipt.practitionerName)}</small>` : ''}</td><td>${dynamic(dateLabel(receipt.date))}<br>${dynamic(formatClockTime(receipt.time))}</td><td>${dynamic(currency(pricing?.subtotal ?? receipt.amount ?? receipt.total))}</td></tr></tbody></table>
+    <section class="totals">${line('Subtotal', currency(pricing?.subtotal ?? receipt.amount ?? receipt.total))}${line(pricing?.vatApplicable ? 'VAT (12%)' : 'VAT', pricing?.vatApplicable ? currency(pricing.vatAmount) : 'Not applied')}${line('Payment method', receipt.method || 'Cash')}${line('Total paid', currency(total), 'grand-total')}</section>${cashDetails}
+    <h2 class="section-title">Payment reference</h2><div class="detail-row"><span>Transaction code</span><strong class="receipt-code">${dynamic(receiptNumber)}</strong></div>${line('Appointment reference', receipt.appointmentId || '')}${line('Service code', receipt.serviceKey || '')}
+    <footer class="receipt-footer"><strong>Thank you for choosing AesthetiCare.</strong>Please keep this receipt for your records. This document confirms payment for the service listed above.</footer></main></body></html>`
+  popup.document.open()
+  popup.document.write(popupHtml)
+  popup.document.close()
+  window.setTimeout(beginPrint, 250)
+  window.setTimeout(() => { if (!popup.closed && !printStarted) { error.value = 'Unable to prepare the receipt for printing.'; popup.close() } }, 1500)
 }
 onMounted(trackPageLoad(() => load().catch(cause => { error.value = cause.message || 'Unable to load the Walk-In Desk.' })))
 onMounted(() => { clockTimer = setInterval(() => { now.value = Date.now(); if (branchId.value && !busy.value) { const refresh = isPosRoute.value ? refreshPaymentQueue() : !createdAppointments.value.length ? refreshAvailability() : null; refresh?.catch(cause => { availabilityReady.value = false; error.value = cause.message || 'Unable to refresh appointment availability.' }) } }, 60000) })

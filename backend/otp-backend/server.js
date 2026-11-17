@@ -1482,30 +1482,40 @@ const sendAppointmentDecisionEmail = async ({
   const safeAppointmentLabel = String(appointmentLabel || 'appointment').trim() || 'appointment'
   const safeDate = String(appointmentDate || '').trim()
   const safeTime = String(appointmentTime || '').trim()
+  const refundSummary = requestType !== 'cancel'
+    ? ''
+    : isPayMongoPaid
+      ? refundAmount > 0
+        ? `We initiated a refund of ${formatPhilippineCurrency(refundAmount)}. The platform commission of ${formatPhilippineCurrency(commissionAmount)} is non-refundable and was retained according to platform policy.`
+        : 'No refundable amount remained after excluding the non-refundable platform commission.'
+      : 'No online refund was available for this appointment.'
   const timingText = 'The refund may take 3 to 5 business days to reflect, depending on your bank or payment method.'
-  const refundSummary = isPayMongoPaid
-    ? refundAmount > 0
-      ? `We initiated a refund of ${formatPhilippineCurrency(refundAmount)}. The platform commission of ${formatPhilippineCurrency(commissionAmount)} is non-refundable and was retained according to platform policy.`
-      : 'No refundable amount remained after excluding the non-refundable platform commission.'
-    : 'No online refund was available for this appointment.'
   const subject =
     requestType === 'cancel'
       ? 'Your appointment cancellation was approved and refund processing started'
-      : 'Your appointment reschedule was approved'
+      : requestType === 'clinic_reschedule'
+        ? 'Your appointment schedule has changed'
+        : 'Your appointment reschedule request was approved'
 
   const intro =
     requestType === 'cancel'
       ? `Hi ${safeCustomerName}, your cancellation request for ${safeAppointmentLabel} was approved by ${safeBranchName}.`
-      : `Hi ${safeCustomerName}, your reschedule request for ${safeAppointmentLabel} was approved by ${safeBranchName}.`
+      : requestType === 'clinic_reschedule'
+        ? `Hi ${safeCustomerName}, ${safeBranchName} has rescheduled your ${safeAppointmentLabel} because of a clinic schedule change.`
+        : `Hi ${safeCustomerName}, your reschedule request for ${safeAppointmentLabel} was approved by ${safeBranchName}.`
+
+  const clinicRescheduleHelp = requestType === 'clinic_reschedule'
+    ? 'If this new time does not work for you, contact the clinic or submit a reschedule request from My Appointments.'
+    : ''
 
   const scheduleLine = safeDate || safeTime
     ? `<p><strong>New schedule:</strong> ${[safeDate, safeTime].filter(Boolean).join(' ')}</p>`
     : ''
   const text =
     `${intro}\n\n` +
-    `${refundSummary}\n` +
-    `${timingText}\n\n` +
+    `${refundSummary ? `${refundSummary}\n${timingText}\n\n` : ''}` +
     (safeDate || safeTime ? `Schedule: ${[safeDate, safeTime].filter(Boolean).join(' ')}\n\n` : '') +
+    `${clinicRescheduleHelp ? `${clinicRescheduleHelp}\n\n` : ''}` +
     `If you have questions, please contact the clinic.`
 
   const message = {
@@ -1516,9 +1526,9 @@ const sendAppointmentDecisionEmail = async ({
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
         <p>${intro}</p>
-        <p>${refundSummary}</p>
-        <p>${timingText}</p>
+        ${refundSummary ? `<p>${refundSummary}</p><p>${timingText}</p>` : ''}
         ${scheduleLine}
+        ${clinicRescheduleHelp ? `<p>${clinicRescheduleHelp}</p>` : ''}
         <p>If you have questions, please contact the clinic.</p>
       </div>
     `,
@@ -4318,6 +4328,72 @@ const authorizeClinicAction = async (uid, branchId, permission) => {
   assertWorkflow(context.permissions.has(permission) || context.permissions.has('administrator:full_access'), 'You do not have permission for this action.', 403)
 }
 
+// Recheck appointment permission using snapshots from the active transaction.
+// This prevents a role or branch assignment revoked during a reschedule from
+// remaining authorized through the earlier, request-level check.
+const authorizeClinicActionInTransaction = async (tx, uid, branchId, permission) => {
+  const firestore = admin.firestore()
+  const userRef = firestore.collection('users').doc(uid)
+  const branchRef = firestore.collection('clinics').doc(branchId)
+  const [userSnap, branchSnap] = await Promise.all([tx.get(userRef), tx.get(branchRef)])
+  assertWorkflow(userSnap.exists && branchSnap.exists, 'You cannot manage appointments for this branch.', 403)
+
+  const userData = userSnap.data() || {}
+  const branch = branchSnap.data() || {}
+  const assignedBranches = new Set([userData.branchId, ...(Array.isArray(userData.branchIds) ? userData.branchIds : [])]
+    .map(value => String(value || '').trim()).filter(Boolean))
+  assertWorkflow(String(branch.ownerId || '') === uid || assignedBranches.has(branchId), 'You cannot manage appointments for this branch.', 403)
+
+  const rawRole = String(userData.role || '').trim()
+  const rawUserType = String(userData.userType || '').trim()
+  const compactRole = rawRole.toLowerCase().replace(/[\s_-]+/g, '')
+  const compactUserType = rawUserType.toLowerCase().replace(/[\s_-]+/g, '')
+  const isStaffAccount = compactUserType === 'staff' || compactUserType === 'employee'
+  const legacyClinicAdmin = ['clinicadmin', 'clinicadministrator'].includes(compactRole)
+  const ownerByType = !isStaffAccount && (compactUserType === 'owner' || compactRole === 'owner' || compactRole === 'clinicowner')
+  const roleKey = ownerByType || (!isStaffAccount && legacyClinicAdmin && String(branch.ownerId || '') === uid)
+    ? 'Owner'
+    : isStaffAccount
+      ? (legacyClinicAdmin ? 'Clinic Admin' : 'Staff')
+      : normalizeRoleKey(rawRole || rawUserType)
+
+  const rolePermissions = []
+  if (!isStaffAccount && roleKey) {
+    const roleSnap = await tx.get(firestore.collection('rolePermissions').doc(roleKey))
+    if (roleSnap.exists && Array.isArray(roleSnap.data()?.permissions)) rolePermissions.push(...roleSnap.data().permissions)
+  }
+
+  const customRoleIds = [...new Set([
+    ...(Array.isArray(userData.customRoleIds) ? userData.customRoleIds : []),
+    userData.customRoleId,
+  ].map(value => String(value || '').trim()).filter(Boolean))]
+  const customRoleSnaps = await Promise.all(customRoleIds.map(roleId => tx.get(firestore.collection('clinicRoles').doc(roleId))))
+  const staffOwnerId = String(userData.organizationOwnerId || branch.ownerId || '').trim()
+  const customRolePermissions = customRoleSnaps.flatMap(roleSnap => {
+    if (!roleSnap.exists) return []
+    const roleData = roleSnap.data() || {}
+    if (isStaffAccount && (!staffOwnerId || String(roleData.ownerId || '').trim() !== staffOwnerId)) return []
+    return Array.isArray(roleData.permissions) ? roleData.permissions : []
+  })
+
+  const userPermissions = [
+    ...(Array.isArray(userData.permissions) ? userData.permissions : []),
+    ...(isStaffAccount ? defaultClinicRolePermissions : []),
+    ...(!isStaffAccount && Array.isArray(userData.effectivePermissions) ? userData.effectivePermissions : []),
+  ]
+  const builtInClinicPermissions = roleKey === 'Owner'
+    ? [...CLINIC_ADMIN_PERMISSIONS, ...CLINIC_OWNER_ADDITIONAL_PERMISSIONS]
+    : roleKey === 'Clinic Admin'
+      ? [...CLINIC_ADMIN_PERMISSIONS]
+      : []
+  const effectivePermissions = builtInClinicPermissions.length
+    ? [...builtInClinicPermissions, ...userPermissions, ...rolePermissions, ...customRolePermissions]
+      .filter(permissionKey => permissionKey !== 'administrator:full_access')
+    : [...userPermissions, ...rolePermissions, ...customRolePermissions]
+      .filter(permissionKey => roleKey === 'Superadmin' || permissionKey !== 'administrator:full_access')
+  assertWorkflow(effectivePermissions.includes(permission) || effectivePermissions.includes('administrator:full_access'), 'You do not have permission for this action.', 403)
+}
+
 // Branch entitlement belongs to the clinic organization, never to an individual
 // browser page. Basic clinics retain one active branch; Premium clinics may add
 // branches. The new branch inherits its organization's subscription state.
@@ -4372,8 +4448,9 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
   }
 })
 const sendServiceCode = async ({ email, serviceKey, date, time }) => {
-  if (!email || !postmarkClient || !senderEmail) return
-  await sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends; the system will create your Google Meet link. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
+  if (!email) return { skipped: true, reason: 'Missing recipient email for the refreshed service code.' }
+  if (!postmarkClient || !senderEmail) return { skipped: true, reason: 'Postmark not configured for the refreshed service code.' }
+  return sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends; the system will create your Google Meet link. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
 }
 let runAppointmentPaymentHoldSweep = async () => ({ expired: 0 })
 const safelySweepAppointmentPaymentHolds = async () => {
@@ -6534,7 +6611,8 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
     const requesterRole = String(requester.role || requester.userType || '').trim().toLowerCase()
     const isClinicOwner = req.user.uid === ownerId
       || ['owner', 'clinic owner', 'clinicowner'].includes(requesterRole)
-    const isBranchStaff = String(requester.branchId || '').trim() === branchId
+    const isBranchStaff = (String(requester.branchId || '').trim() === branchId
+      || (Array.isArray(requester.branchIds) && requester.branchIds.map(value => String(value || '').trim()).includes(branchId)))
       && !['customer', 'supplier'].includes(requesterRole)
     if (clinic.isPublished !== true && !isClinicOwner && !isBranchStaff) {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
@@ -6549,8 +6627,12 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
         .map((roleSnap) => roleSnap.id)
     )
 
-    const staffSnap = await firestore.collection('users').where('branchId', '==', branchId).get()
-    const practitioners = staffSnap.docs
+    const [primaryStaffSnap, additionalBranchStaffSnap] = await Promise.all([
+      firestore.collection('users').where('branchId', '==', branchId).get(),
+      firestore.collection('users').where('branchIds', 'array-contains', branchId).get(),
+    ])
+    const uniqueStaff = new Map([...primaryStaffSnap.docs, ...additionalBranchStaffSnap.docs].map(staffSnap => [staffSnap.id, staffSnap]))
+    const practitioners = [...uniqueStaff.values()]
       .map((staffSnap) => ({ id: staffSnap.id, ...staffSnap.data() }))
       .filter((staff) => {
         const role = String(staff.role || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
@@ -9947,6 +10029,208 @@ app.post('/appointments/:id/approve-request', requireAuth, async (req, res) => {
       success: false,
       error: error?.message || 'Failed to approve appointment request',
     })
+  }
+})
+
+app.post('/appointments/:id/clinic-reschedule', requireAuth, async (req, res) => {
+  if (!adminReady) {
+    return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin is not ready' })
+  }
+
+  const appointmentId = String(req.params.id || '').trim()
+  const date = String(req.body?.date || '').trim()
+  const time = String(req.body?.time || '').trim()
+  const practitionerId = String(req.body?.practitionerId || '').trim()
+  const reason = String(req.body?.reason || '').trim()
+  if (!appointmentId) return res.status(400).json({ success: false, error: 'Appointment id is required.' })
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || parseClockToMinutes(time) === null) {
+    return res.status(400).json({ success: false, error: 'Choose a valid appointment date and time.' })
+  }
+  if (new Date(`${date}T${time}:00+08:00`).getTime() <= Date.now()) {
+    return res.status(400).json({ success: false, error: 'Choose a future date and time.' })
+  }
+  if (!practitionerId) return res.status(400).json({ success: false, error: 'Choose an available practitioner.' })
+  if (reason.length < 5 || reason.length > 1000) {
+    return res.status(400).json({ success: false, error: 'Enter a reason between 5 and 1000 characters.' })
+  }
+
+  const firestore = admin.firestore()
+  const appointmentRef = firestore.collection('appointments').doc(appointmentId)
+  const warnings = []
+
+  try {
+    const initialSnap = await appointmentRef.get()
+    if (!initialSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+    const initial = initialSnap.data() || {}
+    const branchId = String(initial.branchId || '').trim()
+    assertWorkflow(branchId, 'Appointment has no clinic branch.', 409)
+    await authorizeClinicAction(req.user.uid, branchId, 'appointments:update')
+
+    const staffSnap = await firestore.collection('users').doc(req.user.uid).get()
+    const staffName = getStaffDisplayName(staffSnap.exists ? staffSnap.data() || {} : {})
+    let customerProfile = null
+    try {
+      customerProfile = await getAppointmentCustomerProfile(firestore, initial)
+    } catch (profileError) {
+      warnings.push(profileError?.message || 'Customer profile could not be loaded for notification.')
+    }
+    const branchName = await getAppointmentBranchName(firestore, branchId, 'Clinic').catch(() => 'Clinic')
+
+    const result = await firestore.runTransaction(async tx => {
+      await authorizeClinicActionInTransaction(tx, req.user.uid, branchId, 'appointments:update')
+      const freshSnap = await tx.get(appointmentRef)
+      assertWorkflow(freshSnap.exists, 'Appointment not found.', 404)
+      const fresh = freshSnap.data() || {}
+      assertWorkflow(String(fresh.branchId || '').trim() === branchId, 'Appointment branch changed. Refresh and try again.', 409)
+      assertWorkflow(!fresh.isGroupParent && !fresh.isBookingOrderParent, 'Reschedule an individual service recipient instead of a booking summary.', 400)
+      assertWorkflow(!fresh.startedAt && !fresh.checkedInAt, 'An appointment that has started or checked in cannot be rescheduled.')
+      assertWorkflow(['scheduled', 'paid', 'awaiting payment', 'contract pending', 'unpaid', 'balance due'].includes(normalized(fresh.status)), 'Only an upcoming appointment can be rescheduled.')
+      const currentSchedule = `${String(fresh.date || '').trim()} ${String(fresh.time || '').trim()}`
+      assertWorkflow(currentSchedule !== `${date} ${time}`, 'Choose a different date or time.')
+
+      const leaveSnap = await tx.get(firestore.collection('leaveRequests').where('requesterId', '==', practitionerId))
+      const approvedLeave = leaveSnap.docs.find(leaveDoc => {
+        const leave = leaveDoc.data() || {}
+        return normalized(leave.status) === 'approved'
+          && String(leave.startDate || '').trim() <= date
+          && String(leave.endDate || '').trim() >= date
+      })
+      assertWorkflow(!approvedLeave, 'The selected practitioner is on approved leave for that date.')
+
+      const prepared = await prepareBooking({
+        tx,
+        db: firestore,
+        reservation: {
+          ...fresh,
+          date,
+          time,
+          endTime: '',
+          practitionerId,
+          assignedPractitionerId: practitionerId,
+          groupBooking: null,
+        },
+        getBookingRange,
+        rangesOverlap,
+        appointmentId,
+      })
+      const practitionerSnap = await tx.get(firestore.collection('users').doc(practitionerId))
+      assertWorkflow(practitionerSnap.exists, 'The selected practitioner is unavailable.', 409)
+      const practitionerData = practitionerSnap.data() || {}
+      const practitionerName = String(practitionerData.fullName || `${practitionerData.firstName || ''} ${practitionerData.lastName || ''}`.trim() || practitionerData.email || 'Practitioner')
+      const now = admin.firestore.FieldValue.serverTimestamp()
+      const serviceKey = fresh.serviceKey ? String(crypto.randomInt(100000, 1000000)) : null
+
+      tx.set(prepared.lock, { updatedAt: now })
+      for (const lock of prepared.customerLocks || []) tx.set(lock, { updatedAt: now })
+      tx.update(appointmentRef, {
+        ...resetAppointmentAccess(),
+        date,
+        time,
+        endTime: prepared.data.endTime,
+        practitionerId,
+        assignedPractitionerId: practitionerId,
+        practitionerName,
+        assignedPractitionerName: practitionerName,
+        totalServiceDurationMinutes: prepared.data.totalServiceDurationMinutes,
+        staffingRequirements: prepared.data.staffingRequirements,
+        resources: prepared.data.resources,
+        treatmentTeam: [],
+        serviceKey,
+        clinicRescheduleReason: reason,
+        clinicRescheduledAt: now,
+        clinicRescheduledById: req.user.uid,
+        clinicRescheduledByName: staffName,
+        clinicPreviousSchedule: {
+          date: String(fresh.date || ''),
+          time: String(fresh.time || ''),
+          practitionerId: String(fresh.practitionerId || fresh.assignedPractitionerId || ''),
+          practitionerName: String(fresh.practitionerName || fresh.assignedPractitionerName || ''),
+        },
+        updatedAt: now,
+      })
+      if (fresh.treatmentPlan?.totalSessions > 1) {
+        const sessionNumber = Number(fresh.sessionNumber || 1)
+        const sessionId = `${fresh.treatmentPlanAppointmentId || appointmentId}-${sessionNumber}`
+        tx.set(firestore.collection('treatmentSessions').doc(sessionId), {
+          date,
+          time,
+          practitionerId,
+          status: 'Scheduled',
+          updatedAt: now,
+        }, { merge: true })
+      }
+      tx.set(firestore.collection('appointmentAudit').doc(), {
+        appointmentId,
+        branchId,
+        actorId: req.user.uid,
+        action: 'clinic_rescheduled',
+        previousStatus: fresh.status,
+        nextStatus: fresh.status,
+        previousDate: String(fresh.date || ''),
+        previousTime: String(fresh.time || ''),
+        previousPractitionerId: String(fresh.practitionerId || fresh.assignedPractitionerId || ''),
+        date,
+        time,
+        practitionerId,
+        reason,
+        createdAt: now,
+      })
+      return {
+        appointmentId,
+        customerId: String(fresh.customerId || ''),
+        customerName: String(fresh.customerName || fresh.clientName || 'Customer'),
+        customerEmail: String(fresh.customerEmail || ''),
+        service: String(fresh.service || 'appointment'),
+        date,
+        time,
+        status: fresh.status,
+        serviceKey,
+      }
+    })
+
+    if (result.serviceKey) {
+      const codeDelivery = await sendServiceCode({ email: customerProfile?.customerEmail || result.customerEmail, serviceKey: result.serviceKey, date, time }).catch(error => ({ skipped: true, reason: error?.message || 'The refreshed service code email could not be sent.' }))
+      if (codeDelivery?.skipped || codeDelivery?.statusCode !== 200) {
+        warnings.push(codeDelivery?.reason || 'The refreshed service code email was not accepted by the mail provider.')
+      }
+    }
+    const customerId = customerProfile?.customerId || result.customerId
+    const scheduleLabel = [date, time].filter(Boolean).join(' ')
+    try {
+      const notificationResult = await createAppointmentNotification({
+        firestore,
+        customerId,
+        title: 'Appointment Rescheduled by Clinic',
+        message: `${branchName} rescheduled your ${result.service} due to a clinic schedule change. New schedule: ${scheduleLabel}. Contact the clinic or submit a new reschedule request if this time does not work for you.`,
+        link: '/customer/appointments',
+      })
+      if (notificationResult?.skipped) warnings.push(notificationResult.reason || 'The in-app customer notification was skipped.')
+    } catch (notificationError) {
+      warnings.push(notificationError?.message || 'The in-app customer notification could not be created.')
+    }
+    try {
+      const emailResult = await sendAppointmentDecisionEmail({
+        recipient: customerProfile?.customerEmail || result.customerEmail,
+        customerName: customerProfile?.customerName || result.customerName,
+        branchName,
+        appointmentLabel: result.service,
+        requestType: 'clinic_reschedule',
+        appointmentDate: date,
+        appointmentTime: time,
+      })
+      if (emailResult?.skipped || emailResult?.delivery?.statusCode !== 200) {
+        warnings.push(emailResult?.reason || 'The reschedule email was not accepted by the mail provider.')
+      }
+    } catch (emailError) {
+      warnings.push(emailError?.message || 'The reschedule email could not be sent.')
+    }
+
+    const responseData = { ...result, warnings }
+    delete responseData.serviceKey
+    return res.json({ success: true, data: responseData })
+  } catch (error) {
+    console.error('clinic appointment reschedule error:', error)
+    return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Failed to reschedule appointment.' })
   }
 })
 

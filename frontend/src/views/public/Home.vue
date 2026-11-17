@@ -11,7 +11,7 @@
 
         <ul class="hidden lg:flex items-center gap-4 xl:gap-7 text-[11px] tracking-[0.2em] uppercase text-charcoal-600">
           <li>
-            <button @click="scrollToSection('features')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('features')" class="home-nav-text-link relative text-charcoal-700 uppercase transition-colors duration-200
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Features
@@ -19,28 +19,27 @@
           </li>
 
           <li>
-            <button @click="scrollToSection('solutions')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('solutions')" class="home-nav-text-link relative text-charcoal-700 uppercase transition-colors duration-200
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Solutions
             </button>
           </li>
           <li>
-            <router-link to="/subscription-features" class="relative text-charcoal-700 hover:text-gold-700 hover:font-bold transition-all duration-300
+            <router-link to="/subscription-features" class="home-nav-text-link relative text-charcoal-700 transition-colors duration-200
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">
               Pricing
             </router-link>
           </li>
           <li>
-            <button @click="scrollToSection('faq')" class="relative text-charcoal-700 uppercase hover:text-gold-700 hover:font-bold transition-all duration-300
+            <button @click="scrollToSection('faq')" class="home-nav-text-link relative text-charcoal-700 uppercase transition-colors duration-200
                       before:absolute before:left-0 before:bottom-[-4px] before:w-0 before:h-[2px] before:bg-gold-700
                       before:transition-all before:duration-300 hover:before:w-full">FAQ</button>
           </li>
           <li>
             <router-link to="/centers"
-              class="flex items-center gap-2 px-4 py-2 rounded-full border-2 border-gold-500 text-gold-500 font-medium
-                    hover:bg-gold-500 hover:text-white transition-all duration-300"
+              class="home-nav-centers flex items-center gap-2 px-4 py-2 rounded-full border-2 font-medium"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -55,13 +54,13 @@
         <div class="hidden lg:flex items-center gap-2 sm:gap-4">
           <router-link
             to="/login"
-            class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-gold-700 text-gold-700 text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-700 hover:text-white transition"
+            class="home-nav-login px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border text-xs sm:text-sm tracking-widest uppercase"
           >
             Login
           </router-link>
           <router-link
             to="/register"
-            class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-gold-700 text-white text-xs sm:text-sm tracking-widest uppercase hover:bg-gold-800 transition"
+            class="home-nav-register px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm tracking-widest uppercase"
           >
             Register
           </router-link>
@@ -69,7 +68,7 @@
 
         <button
           @click="isMobileMenuOpen = !isMobileMenuOpen"
-          class="lg:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg border border-gold-500/60 text-gold-700 hover:bg-gold-100 transition"
+          class="home-menu-toggle lg:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg border transition-colors"
           aria-label="Toggle navigation menu"
           aria-controls="home-mobile-menu"
           :aria-expanded="isMobileMenuOpen"
@@ -103,7 +102,7 @@
             <div class="flex items-center gap-2">
               <button
                 @click="closeMobileMenu"
-                class="inline-flex items-center justify-center h-9 w-9 rounded-md border border-gold-500/50 text-gold-700 hover:bg-gold-100 transition"
+                class="home-menu-close inline-flex items-center justify-center h-9 w-9 rounded-md border transition-colors"
                 aria-label="Close navigation menu"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,26 +114,26 @@
 
           <div class="flex-1 overflow-y-auto p-5 flex flex-col text-xs tracking-[0.2em] uppercase text-charcoal-700">
             <div class="flex flex-col gap-2">
-              <button @click="scrollToSection('features'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Features</button>
-              <button @click="scrollToSection('solutions'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Solutions</button>
-              <router-link to="/subscription-features" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Pricing</router-link>
-              <button @click="scrollToSection('faq'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">FAQ</button>
-              <button @click="scrollToSection('contact'); closeMobileMenu()" class="py-2 border-b border-gold-200/70 text-left uppercase transition-all duration-200 hover:text-gold-700 hover:pl-1">Contact Us</button>
-              <router-link to="/centers" @click="closeMobileMenu" class="py-2 border-b border-gold-200/70 transition-all duration-200 hover:text-gold-700 hover:pl-1">Centers</router-link>
+              <button @click="scrollToSection('features'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">Features</button>
+              <button @click="scrollToSection('solutions'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">Solutions</button>
+              <router-link to="/subscription-features" @click="closeMobileMenu" class="home-mobile-nav-link py-2 border-b border-gold-200/70 transition-colors duration-200">Pricing</router-link>
+              <button @click="scrollToSection('faq'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">FAQ</button>
+              <button @click="scrollToSection('contact'); closeMobileMenu()" class="home-mobile-nav-link py-2 border-b border-gold-200/70 text-left uppercase transition-colors duration-200">Contact Us</button>
+              <router-link to="/centers" @click="closeMobileMenu" class="home-mobile-nav-link py-2 border-b border-gold-200/70 transition-colors duration-200">Centers</router-link>
             </div>
 
             <div class="mt-auto pt-6 flex flex-col gap-3">
               <router-link
                 to="/login"
                 @click="closeMobileMenu"
-                class="px-4 py-3 rounded-full border border-gold-700 text-gold-700 text-center transition hover:bg-gold-50"
+                class="home-nav-login home-nav-login-mobile px-4 py-3 rounded-full border text-center transition-colors"
               >
                 Login
               </router-link>
               <router-link
                 to="/register"
                 @click="closeMobileMenu"
-                class="px-4 py-3 rounded-full bg-gold-700 text-white text-center transition hover:bg-gold-800"
+                class="home-nav-register home-nav-register-mobile px-4 py-3 rounded-full text-center transition-colors"
               >
                 Register
               </router-link>
@@ -404,8 +403,8 @@
             <router-link to="/subscription-features" class="capability-btn-main">
               Explore
             </router-link>
-            <button @click="prevCapability" class="capability-btn-icon" aria-label="Previous capability">&#8592;</button>
-            <button @click="nextCapability" class="capability-btn-icon" aria-label="Next capability">&#8594;</button>
+            <button @click="prevCapability" class="capability-btn-icon" aria-label="Previous capability"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m0 0 7-7m-7 7 7 7" /></svg></button>
+            <button @click="nextCapability" class="capability-btn-icon" aria-label="Next capability"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m0 0-7-7m7 7-7 7" /></svg></button>
             <button
               @click="toggleCapabilityAutoplay"
               class="capability-btn-icon capability-autoplay-button"
@@ -429,7 +428,7 @@
               class="capability-rail-nav capability-rail-nav-left"
               aria-label="Previous mini cards"
             >
-              &#8249;
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
             </button>
 
             <div class="capability-rail">
@@ -456,7 +455,7 @@
               class="capability-rail-nav capability-rail-nav-right"
               aria-label="Next mini cards"
             >
-              &#8250;
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
             </button>
           </div>
         </div>
@@ -894,9 +893,35 @@ export default {
 </script>
 
 <style scoped>
-.public-glass-nav :is(a, button):not(.public-brand-cluster) {
-  font-family: "Playfair Display", serif;
-}
+.public-glass-nav :is(a, button):not(.public-brand-cluster) { font-family: inherit; }
+.home-page .public-glass-nav .home-nav-text-link { color: #493225; text-decoration: none; font-weight: 600; }
+.home-page .public-glass-nav .home-nav-text-link::before { background: #85553a; }
+.home-page .public-glass-nav .home-nav-text-link:hover,
+.home-page .public-glass-nav .home-nav-text-link:focus-visible { color: #74462d; }
+.home-page .public-glass-nav .home-nav-centers,
+.home-page .public-glass-nav .home-nav-login { border-color: #85553a; background: transparent; color: #65432f; font-weight: 700; transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease; }
+.home-page .public-glass-nav .home-nav-centers:hover,
+.home-page .public-glass-nav .home-nav-centers:focus-visible,
+.home-page .public-glass-nav .home-nav-login:hover,
+.home-page .public-glass-nav .home-nav-login:focus-visible { border-color: #74462d; background: #74462d; color: #fff !important; }
+.home-page .public-glass-nav .home-nav-register { border: 1px solid #85553a; background: #85553a; color: #fff; font-weight: 700; transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease; }
+.home-page .public-glass-nav .home-nav-register:hover,
+.home-page .public-glass-nav .home-nav-register:focus-visible { border-color: #603b27; background: #603b27; color: #fff; }
+.home-page .public-glass-nav .home-mobile-nav-link { color: #493225; }
+.home-page .public-glass-nav .home-mobile-nav-link:hover,
+.home-page .public-glass-nav .home-mobile-nav-link:focus-visible { color: #74462d; }
+.home-page .public-glass-nav .home-menu-toggle,
+.home-page .public-glass-nav .home-menu-close { border-color: #bd926b; background: transparent; color: #65432f; }
+.home-page .public-glass-nav .home-menu-toggle:hover,
+.home-page .public-glass-nav .home-menu-toggle:focus-visible,
+.home-page .public-glass-nav .home-menu-close:hover,
+.home-page .public-glass-nav .home-menu-close:focus-visible { border-color: #74462d; background: #74462d; color: #fff; }
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-nav-text-link { color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-mobile-nav-link { color: var(--ac-text-secondary); }
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-nav-text-link:hover,
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-nav-text-link:focus-visible,
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-mobile-nav-link:hover,
+:global(html[data-ac-theme="dark"]) .home-page .public-glass-nav .home-mobile-nav-link:focus-visible { color: var(--ac-text); }
 .support-section { scroll-margin-top: 90px; }
 .faq-list { max-width: 900px; margin: 0 auto; display: grid; gap: 14px; }
 .faq-item { border: 1px solid var(--color-gold-300, #d7aa7d); border-radius: 18px; background: rgba(255, 255, 255, 0.65); box-shadow: 0 4px 16px rgba(54, 34, 22, 0.035); transition: border-color 200ms, background 200ms, box-shadow 200ms; }
@@ -1133,14 +1158,18 @@ export default {
   background: #ffffff;
 }
 .capability-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
   border: 1px solid rgba(255, 248, 235, 0.6);
   background: rgba(255, 248, 235, 0.12);
   color: #fff8eb;
   width: 3rem;
   height: 3rem;
   border-radius: 50%;
-  font-size: 1.2rem;
-  line-height: 1;
+  line-height: 0;
   backdrop-filter: blur(10px);
   transition: transform 0.22s ease, background 0.22s ease;
 }
@@ -1148,10 +1177,14 @@ export default {
   transform: translateY(-1px);
   background: rgba(255, 248, 235, 0.18);
 }
-.capability-autoplay-button svg {
+.capability-btn-icon svg {
+  display: block;
+  flex: 0 0 auto;
   width: 1rem;
   height: 1rem;
 }
+.capability-btn-icon:not(.capability-autoplay-button) svg { width: 1.15rem; height: 1.15rem; }
+.capability-btn-icon:not(.capability-autoplay-button) svg path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .home-page :is(a, button):focus-visible {
   outline: 3px solid #7b4f37;
   outline-offset: 3px;
@@ -1183,10 +1216,13 @@ export default {
   border: 1px solid rgba(255, 248, 235, 0.65);
   background: rgba(52, 34, 24, 0.58);
   color: #fff8eb;
-  font-size: 1.35rem;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
   backdrop-filter: blur(10px);
 }
+.capability-rail-nav svg { display: block; width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .capability-rail-nav-left {
   left: -2.9rem;
 }
