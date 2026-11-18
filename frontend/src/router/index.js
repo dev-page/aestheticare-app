@@ -37,9 +37,9 @@ const routes = [
   { path: "/customer-app/forgot-password", name: "customer-app-forgot-password", component: () => import("@/views/customer-app/CustomerForgotPass.vue"), meta: { guestOnly: true } },
   { path: "/activate-account", name: "activate-account", component: () => import("@/views/public/ActivateAccount.vue") },
   { path: "/group-consent", name: "group-consent", component: () => import("@/views/public/GroupConsent.vue") },
-  { path: "/register", name: "register", component: () => import("@/views/public/Register.vue") },
+  { path: "/register", name: "register", component: () => import("@/views/public/Register.vue"), meta: { skipAuthenticatedProfile: true } },
   { path: "/forgot-password", name: "forgot-password", component: () => import("@/views/public/ForgotPassword.vue") },
-  { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue") },
+  { path: "/clinic/register", name: "register-clinic", component: () => import("@/views/public/Register.vue"), meta: { skipAuthenticatedProfile: true } },
   {
     path: "/clinic/register/step-:step",
     name: "register-clinic-step",
@@ -425,7 +425,11 @@ router.beforeEach(async (to, from, next) => {
 
   let forcedEmployeePasswordChange = false
   let currentUserData = {}
-  if (currentUser?.uid) {
+  // Clinic registration creates a Firebase session before OTP verification.
+  // Public registration steps already load their registration profile directly;
+  // making these routes wait on the generic authenticated-profile endpoint can
+  // stall browser-back and account-choice navigation while OTP is in progress.
+  if (currentUser?.uid && to.meta.skipAuthenticatedProfile !== true) {
     try {
       const userData = await fetchAuthenticatedProfile(currentUser)
       currentUserData = userData

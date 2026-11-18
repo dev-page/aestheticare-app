@@ -1044,7 +1044,7 @@ const saveRegistrationProfile = async (user, accountType, profile, clinic = null
     accountType,
     profile,
     ...(clinic ? { clinic } : {}),
-  }, { headers: { Authorization: `Bearer ${token}` } })
+  }, { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 })
   if (!response?.data?.success) throw new Error(response?.data?.error || 'Unable to save registration details.')
   return response.data.data || {}
 }
@@ -1288,6 +1288,7 @@ const fetchRegistrationProfile = async (emailValue) => {
     const token = await sessionUser.getIdToken()
     const res = await axios.post(`${OTP_API_BASE}/auth/registration-profile`, {}, {
       headers: { Authorization: `Bearer ${token}` },
+      timeout: 20000,
     })
     const data = res?.data?.data || {}
     return {
@@ -2216,7 +2217,7 @@ const checkRegistrationAttempt = async (emailValue) => {
     const res = await axios.post(`${OTP_API_BASE}/auth/check-registration-attempt`, {
       email: String(emailValue || '').trim().toLowerCase(),
       purpose: 'clinic',
-    })
+    }, { timeout: 20000 })
     return res?.data || { success: false, error: 'Unable to validate registration attempt.' }
   } catch (error) {
     return error?.response?.data || {
@@ -2414,7 +2415,7 @@ const verifyOtp = async () => {
     const verifyRes = await axios.post(`${OTP_API_BASE}/auth/verify-registration-otp`, {
       email: lookupEmail,
       otp: otpCode.value,
-    })
+    }, { timeout: 20000 })
 
     if (!verifyRes?.data?.success) {
       throw new Error(verifyRes?.data?.error || 'Failed to verify OTP')
