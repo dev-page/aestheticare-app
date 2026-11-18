@@ -139,7 +139,7 @@ export const registerGoogleConsultations = (app, deps) => {
           updatedAt: stamp(),
         })
         if (!existingNotification) tx.set(notificationRef, {
-          recipientUserId: practitionerId, branchId: appointment.branchId, title: 'Customer is in the virtual waiting room',
+          recipientUserId: practitionerId, branchId: appointment.branchId, title: 'Customer verified their service code',
           message: 'The customer entered their service code for the online consultation.',
           link: '/crm/appointments?tab=queue&mode=online', read: false, deleted: false, createdAt: stamp(),
         })
