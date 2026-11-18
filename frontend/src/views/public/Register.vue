@@ -152,7 +152,7 @@ const authorizedRepPositionOptions = [
 const caviteLocations = [
   'Bacoor',
   'Cavite City',
-  'DasmariÃ±as City',
+  'Dasmarinas City',
   'General Trias',
   'Imus',
   'Tagaytay',

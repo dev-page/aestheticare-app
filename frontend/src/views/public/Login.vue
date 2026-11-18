@@ -15,6 +15,7 @@ import { toast } from 'vue3-toastify'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { isCustomerAppAccount } from '@/utils/customerApp'
 import { fetchAuthenticatedProfile } from '@/utils/authenticatedProfile'
+import { AUTH_LAST_ACTIVITY_KEY, markAuthSessionActivity } from '@/utils/authSessionActivity'
 
 const router = useRouter()
 const route = useRoute()
@@ -179,6 +180,7 @@ const startLoginOtpCooldown = (seconds = 60) => {
 const requestLoginOtp = async (uid, emailAddress, credentials = null) => {
   let currentCredentials = credentials
   if (!currentCredentials) {
+    markAuthSessionActivity()
     currentCredentials = await signInWithEmailAndPassword(auth, emailAddress, password.value)
   }
   const idToken = await currentCredentials.user.getIdToken(true)
@@ -279,6 +281,7 @@ const handleLogin = async () => {
         isRememberMe.value ? browserLocalPersistence : browserSessionPersistence
       )
 
+      markAuthSessionActivity()
       const userCredentials = await signInWithEmailAndPassword(auth, email.value.trim(), password.value)
       // The customer app must identify the account before showing its global
       // loader. Otherwise a clinic or staff account gets an error underneath
@@ -422,6 +425,7 @@ const verifyLoginOtp = async () => {
       email: loginOtpEmail.value,
       otp: normalizedOtp,
     })
+    markAuthSessionActivity()
     const credentials = await signInWithEmailAndPassword(auth, loginOtpEmail.value, password.value)
     await credentials.user.reload()
     const userData = await fetchAuthenticatedProfile(credentials.user)
@@ -468,10 +472,13 @@ onMounted(() => {
       console.warn('Could not clear the expired Firebase session before login:', error)
     }
     try {
-      window.localStorage.removeItem('auth:last-activity-at')
+      window.localStorage.removeItem(AUTH_LAST_ACTIVITY_KEY)
     } catch {
       // The timestamp is only a convenience for the inactivity timer.
     }
+    const remainingQuery = { ...route.query }
+    delete remainingQuery.expired
+    await router.replace({ path: route.path, query: remainingQuery }).catch(() => {})
   })()
 })
 

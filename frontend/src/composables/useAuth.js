@@ -5,6 +5,7 @@ import { signOut } from 'firebase/auth'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { clearSidebarTransientState } from '@/composables/useSidebarState'
+import { AUTH_LAST_ACTIVITY_KEY } from '@/utils/authSessionActivity'
 
 export function useAuth() {
   const authStore = useAuthStore()
@@ -14,8 +15,6 @@ export function useAuth() {
   // ── Inactivity auto-logout ───────────────────────────────────────────────
   const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000 // 15 minutes
   const WARNING_BEFORE_MS = 30 * 1000 // warn 30 seconds before expiry
-  const LAST_ACTIVITY_KEY = 'auth:last-activity-at'
-
   let inactivityTimer = null
   let warningTimer = null
 
@@ -37,7 +36,7 @@ export function useAuth() {
 
   const lastActivityAt = () => {
     try {
-      return Number(window.localStorage.getItem(LAST_ACTIVITY_KEY) || 0)
+      return Number(window.localStorage.getItem(AUTH_LAST_ACTIVITY_KEY) || 0)
     } catch (_error) {
       return 0
     }
@@ -46,7 +45,7 @@ export function useAuth() {
   const recordActivity = () => {
     if (!user.value || document.visibilityState === 'hidden') return
     try {
-      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+      window.localStorage.setItem(AUTH_LAST_ACTIVITY_KEY, String(Date.now()))
     } catch (_error) {
       // The in-memory timer still protects the session if storage is unavailable.
     }
@@ -84,7 +83,7 @@ export function useAuth() {
     try {
       await signOut(auth)
       clearCache()
-      try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
+      try { window.localStorage.removeItem(AUTH_LAST_ACTIVITY_KEY) } catch (_error) {}
       await router.replace('/login?expired=inactivity')
       // Keep the process overlay up until Vue has rendered the login route.
       await nextTick()
@@ -119,7 +118,7 @@ export function useAuth() {
   }
 
   const handleStorageActivity = (event) => {
-    if (event.key === LAST_ACTIVITY_KEY) resetInactivityTimer()
+    if (event.key === AUTH_LAST_ACTIVITY_KEY) resetInactivityTimer()
   }
 
   const handleVisibilityChange = () => {
@@ -158,7 +157,7 @@ export function useAuth() {
     try {
       await signOut(auth)
       clearCache()
-      try { window.localStorage.removeItem(LAST_ACTIVITY_KEY) } catch (_error) {}
+      try { window.localStorage.removeItem(AUTH_LAST_ACTIVITY_KEY) } catch (_error) {}
       await router.replace('/login')
       // Do not reveal the protected page between sign-out and login rendering.
       await nextTick()

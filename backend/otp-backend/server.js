@@ -51,6 +51,7 @@ import { google } from 'googleapis'
 import vision from '@google-cloud/vision'
 import { EMAIL_WEBSITE_URL } from './emailLinks.js'
 import { demand, clock, verifyLocation, scanAction } from './attendancePolicy.js'
+import { calculateShiftStartAlignment } from '../../shared/philippineOvertime.js'
 import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
@@ -8636,6 +8637,8 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
       demand(!existing.branchId || existing.branchId === normalizedBranchId, 'Clock out at the branch where you clocked in.', 409)
       scanAction(existing, intent, Date.now())
       const now = admin.firestore.Timestamp.now()
+      const actualTimeIn = existing.timeIn || manilaTimeLabel()
+      const attendanceTiming = calculateShiftStartAlignment(actualTimeIn, schedule.shiftStart)
       const next = {
         employeeId: req.user.uid,
         employeeName: String(userData.fullName || `${userData.firstName || ''} ${userData.lastName || ''}`).trim() || userData.email || 'Employee',
@@ -8649,6 +8652,10 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         shiftStart: schedule.shiftStart,
         shiftEnd: schedule.shiftEnd,
         unpaidMealBreakMinutes: schedule.unpaidMealBreakMinutes,
+        payrollTimeIn: existing.payrollTimeIn || attendanceTiming.payrollTimeIn,
+        earlyMinutes: existing.earlyMinutes ?? attendanceTiming.earlyMinutes,
+        lateMinutes: existing.lateMinutes ?? attendanceTiming.lateMinutes,
+        attendanceStatus: existing.attendanceStatus || attendanceTiming.attendanceStatus,
         locationVerified: hasLocation,
         locationAccuracyMeters: Number.isFinite(accuracyNumber) ? Math.round(accuracyNumber) : null,
         locationDistanceMeters: distanceMeters,
@@ -8659,7 +8666,7 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
       }
       if (!existing.timeIn) {
         next.timeInEpoch = now.toMillis()
-        next.timeIn = manilaTimeLabel()
+        next.timeIn = actualTimeIn
         next.status = 'Logged'
         next.action = 'clock_in'
       } else if (!existing.timeOut) {

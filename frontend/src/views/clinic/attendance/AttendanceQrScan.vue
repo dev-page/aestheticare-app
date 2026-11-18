@@ -45,8 +45,12 @@
           <AttendanceCamera v-if="!isScanning" @capture="selectProof" />
           <p class="mt-2 text-xs text-slate-400">{{ proofFileName || 'Take a fresh photo before scanning.' }}</p>
 
-          <div class="attendance-scanner-frame mt-5 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
+          <div class="attendance-scanner-frame relative mt-5 overflow-hidden rounded-2xl border">
             <div id="attendance-qr-reader" class="min-h-[320px]"></div>
+            <div v-if="!isScanning" class="attendance-scanner-placeholder pointer-events-none absolute inset-0 flex min-h-[320px] flex-col items-center justify-center gap-2 px-6 text-center">
+              <span class="text-base font-semibold">Scanner preview</span>
+              <span class="text-sm">Take a photo, then start the scanner to read today’s clinic QR.</span>
+            </div>
           </div>
 
           <p class="mt-4 text-sm" :class="statusClass">
@@ -68,6 +72,12 @@
             <p class="text-xs uppercase tracking-[0.18em] text-slate-500">My Attendance Today</p>
             <div class="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300"><div><p class="text-xs text-slate-500">Time in</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeIn || 'Not recorded' }}</p></div><div><p class="text-xs text-slate-500">Time out</p><p class="mt-1 font-medium text-white">{{ attendanceRecord.timeOut || 'Not recorded' }}</p></div></div>
             <p class="mt-3 text-xs text-slate-400">Status: <span class="text-white">{{ attendanceRecord.timeOut ? 'Complete' : attendanceRecord.timeIn ? 'On Duty' : 'Not clocked in' }}</span></p>
+            <p v-if="attendanceRecord.timeIn && attendanceRecord.attendanceStatus === 'Late'" class="mt-2 text-xs font-semibold text-rose-600">
+              Late by {{ attendanceRecord.lateMinutes }} minute{{ attendanceRecord.lateMinutes === 1 ? '' : 's' }}.
+            </p>
+            <p v-else-if="attendanceRecord.timeIn && attendanceRecord.earlyMinutes > 0" class="mt-2 text-xs text-slate-500">
+              Early punch recorded; payable time starts at {{ attendanceRecord.payrollTimeIn }}.
+            </p>
           </section>
 
           <section class="attendance-card rounded-2xl border border-slate-700 bg-slate-800 p-5">
@@ -475,3 +485,30 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+.attendance-scanner-frame {
+  min-height: 320px;
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-muted) !important;
+  box-shadow: var(--ac-shadow-sm);
+}
+
+.attendance-scanner-placeholder {
+  color: var(--ac-text-muted);
+}
+
+.attendance-scanner-frame :deep(#attendance-qr-reader__dashboard),
+.attendance-scanner-frame :deep(#attendance-qr-reader__header_message) {
+  color: var(--ac-text-secondary);
+}
+
+.attendance-scanner-frame :deep(video) {
+  border-radius: 1rem;
+  object-fit: cover;
+}
+
+.attendance-scanner-frame :deep(canvas) {
+  max-width: 100%;
+}
+</style>

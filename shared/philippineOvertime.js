@@ -50,6 +50,31 @@ const elapsedMinutes = (start, end) => {
   return elapsed >= 0 ? elapsed : elapsed + 24 * 60
 }
 
+// Attendance always keeps the employee's real punch. Payroll aligns an early
+// punch to the scheduled start while retaining late minutes for attendance.
+export const calculateShiftStartAlignment = (actualTimeIn, shiftStart) => {
+  const actualMinutes = parseClockToMinutes(actualTimeIn)
+  const shiftStartMinutes = parseClockToMinutes(shiftStart)
+  if (actualMinutes === null || shiftStartMinutes === null) {
+    return {
+      payrollTimeIn: actualTimeIn || '',
+      earlyMinutes: 0,
+      lateMinutes: 0,
+      attendanceStatus: actualMinutes === null ? 'Scheduled' : 'Logged',
+    }
+  }
+
+  const offsetFromShiftStart = (actualMinutes - shiftStartMinutes + 24 * 60) % (24 * 60)
+  const earlyMinutes = offsetFromShiftStart > 12 * 60 ? 24 * 60 - offsetFromShiftStart : 0
+  const lateMinutes = offsetFromShiftStart > 0 && offsetFromShiftStart <= 12 * 60 ? offsetFromShiftStart : 0
+  return {
+    payrollTimeIn: earlyMinutes > 0 ? shiftStart : actualTimeIn,
+    earlyMinutes,
+    lateMinutes,
+    attendanceStatus: lateMinutes > 0 ? 'Late' : 'Present',
+  }
+}
+
 const overlapMinutes = (start, end, windowStart, windowEnd) => {
   let finish = end
   if (finish <= start) finish += 24 * 60
@@ -63,28 +88,38 @@ const overlapMinutes = (start, end, windowStart, windowEnd) => {
 }
 
 export const calculatePhilippineOvertime = (attendance = {}, employee = {}) => {
-  const timeIn = parseClockToMinutes(attendance.timeIn)
+  const actualTimeIn = parseClockToMinutes(attendance.timeIn)
   const timeOut = parseClockToMinutes(attendance.timeOut)
   const shiftStart = parseClockToMinutes(attendance.shiftStart)
   const shiftEnd = parseClockToMinutes(attendance.shiftEnd)
-  const rawWorkedMinutes = elapsedMinutes(timeIn, timeOut)
+  const rawWorkedMinutes = elapsedMinutes(actualTimeIn, timeOut)
   if (rawWorkedMinutes === null) return { overtimeMinutes: 0, nightMinutes: 0, dayClassification: 'ordinary', multiplier: 1.25, exempt: isPhilippineOvertimeExempt(employee) }
+
+  const alignment = calculateShiftStartAlignment(attendance.timeIn, attendance.shiftStart)
+  // Only new punches (or shifts closed after this rule is enabled) carry the
+  // aligned value. Leave older completed records at their original pay basis.
+  const payrollTimeIn = attendance.payrollTimeIn || attendance.timeIn || alignment.payrollTimeIn
+  const payableTimeIn = parseClockToMinutes(payrollTimeIn)
+  const alignedEarlyMinutes = attendance.payrollTimeIn
+    ? Math.max(0, Number(attendance.earlyMinutes ?? alignment.earlyMinutes) || 0)
+    : 0
+  const payableWorkedMinutes = Math.max(0, rawWorkedMinutes - alignedEarlyMinutes)
 
   const scheduledMinutes = elapsedMinutes(shiftStart, shiftEnd)
   const explicitMealBreak = Number(attendance.unpaidMealBreakMinutes ?? attendance.mealBreakMinutes)
   const mealBreakMinutes = Number.isFinite(explicitMealBreak) && explicitMealBreak >= 0
     ? explicitMealBreak
     : scheduledMinutes > PHILIPPINE_NORMAL_WORK_MINUTES ? 60 : 0
-  const workedMinutes = Math.max(0, rawWorkedMinutes - mealBreakMinutes)
+  const workedMinutes = Math.max(0, payableWorkedMinutes - mealBreakMinutes)
   const exempt = isPhilippineOvertimeExempt(employee)
   const overtimeMinutes = exempt ? 0 : Math.max(0, workedMinutes - PHILIPPINE_NORMAL_WORK_MINUTES)
   const dayClassification = normalizeDayClassification(attendance.dayClassification || attendance.dayType || attendance.holidayType)
   const multiplier = PHILIPPINE_OT_MULTIPLIERS[dayClassification]
   const nightMinutes = overtimeMinutes
-    ? Math.min(overtimeMinutes, overlapMinutes((timeIn ?? 0), (timeIn ?? 0) + rawWorkedMinutes, 22 * 60, 30 * 60))
+    ? Math.min(overtimeMinutes, overlapMinutes((payableTimeIn ?? 0), (payableTimeIn ?? 0) + payableWorkedMinutes, 22 * 60, 30 * 60))
     : 0
 
-  return { rawWorkedMinutes, mealBreakMinutes, workedMinutes, overtimeMinutes, nightMinutes, dayClassification, multiplier, exempt }
+  return { rawWorkedMinutes, payableTimeIn: payrollTimeIn, payableWorkedMinutes, mealBreakMinutes, workedMinutes, overtimeMinutes, nightMinutes, dayClassification, multiplier, exempt }
 }
 
 export const calculatePhilippineOvertimePay = (attendance, employee, hourlyRate) => {

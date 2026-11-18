@@ -4,127 +4,56 @@
 
     <main v-page-loading="{ active: pageLoading, variant: 'cards', cards: 6 }" class="flex-1 p-4 md:p-8 text-white">
       <div class="mb-6">
-        <h1 class="text-2xl md:text-3xl font-bold mb-1">Archives</h1>
-        <p class="text-slate-400">Review archived posts and suppliers, then restore or delete when needed.</p>
+        <h1 class="mb-1 text-2xl font-bold md:text-3xl">Archived Posts</h1>
+        <p class="text-slate-400">Review archived product and service posts, then restore or permanently delete them.</p>
       </div>
 
-      <div class="mb-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          @click="activeTab = 'posts'"
-          :class="[
-            'px-4 py-2 rounded-full text-sm font-semibold transition',
-            activeTab === 'posts' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          ]"
-        >
-          Posts
-        </button>
-        <button
-          type="button"
-          @click="activeTab = 'suppliers'"
-          :class="[
-            'px-4 py-2 rounded-full text-sm font-semibold transition',
-            activeTab === 'suppliers' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          ]"
-        >
-          Suppliers
-        </button>
-      </div>
+      <section class="rounded-xl border border-slate-700 bg-slate-800 p-4 sm:p-6">
+        <div v-if="posts.length === 0" class="text-slate-400">No archived posts yet.</div>
 
-      <div class="bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700">
-        <div v-if="activeTab === 'posts'">
-          <div v-if="posts.length === 0" class="text-slate-400">No archived posts yet.</div>
-
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <article v-for="post in posts" :key="post.id" class="bg-slate-900/70 border border-slate-700 rounded-lg overflow-hidden">
-              <img v-if="post.imageUrl" :src="post.imageUrl" alt="Post image" class="w-full h-40 object-cover" />
-              <div class="p-4">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">{{ post.postType }}</span>
-                  <span class="text-xs text-slate-400">{{ formatDate(post.archivedAt || post.updatedAt || post.createdAt) }}</span>
-                </div>
-                <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-                <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName }}</p>
-                <p class="text-sm text-slate-400 mb-2">{{ post.description }}</p>
-                <p class="text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
-
-                <div class="mt-3">
-                  <button
-                    v-if="canRestorePosts"
-                    @click="unarchivePost(post)"
-                    :disabled="loadingId === post.id"
-                    class="px-3 py-1 text-xs rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    Unarchive
-                  </button>
-                  <button
-                    v-if="canDeletePosts"
-                    @click="deletePermanently(post)"
-                    :disabled="loadingId === post.id"
-                    class="ml-2 px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                  >
-                    Delete Permanently
-                  </button>
-                </div>
+        <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <article v-for="post in posts" :key="post.id" class="overflow-hidden rounded-lg border border-slate-700 bg-slate-900/70">
+            <img v-if="post.imageUrl" :src="post.imageUrl" alt="Post image" class="h-40 w-full object-cover" />
+            <div class="p-4">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="rounded bg-purple-500/20 px-2 py-1 text-xs text-purple-300">{{ post.postType }}</span>
+                <span class="text-xs text-slate-400">{{ formatDate(post.archivedAt || post.updatedAt || post.createdAt) }}</span>
               </div>
-            </article>
-          </div>
-        </div>
+              <h2 class="mb-1 font-semibold">{{ post.title }}</h2>
+              <p class="mb-1 text-sm text-slate-300">{{ post.productName || post.serviceName }}</p>
+              <p class="mb-2 text-sm text-slate-400">{{ post.description }}</p>
+              <p class="font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
 
-        <div v-else>
-          <div v-if="archivedSuppliers.length === 0" class="text-slate-400">No archived suppliers yet.</div>
-
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <article v-for="supplier in archivedSuppliers" :key="supplier.id" class="bg-slate-900/70 border border-slate-700 rounded-lg p-4">
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="font-semibold text-white">{{ supplier.name || 'Unnamed Supplier' }}</h3>
-                <span class="text-xs text-slate-400">{{ formatDate(supplier.archivedAt || supplier.updatedAt || supplier.createdAt) }}</span>
-              </div>
-              <p class="text-sm text-slate-300 mb-1">Contact: {{ supplier.contact || '-' }}</p>
-              <p class="text-sm text-slate-300 mb-1">Email: {{ supplier.email || '-' }}</p>
-              <p class="text-sm text-slate-300 mb-3">Phone: {{ supplier.phone || '-' }}</p>
-
-              <div class="flex flex-wrap gap-1 mb-3">
-                <span
-                  v-for="cat in normalizedCategories(supplier)"
-                  :key="`${supplier.id}-${cat}`"
-                  class="px-2 py-0.5 rounded-full text-[11px] bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                >
-                  {{ cat }}
-                </span>
-                <span v-if="normalizedCategories(supplier).length === 0" class="text-slate-500 text-xs">No category</span>
-              </div>
-
-              <div class="flex items-center gap-2">
+              <div class="mt-3">
                 <button
-                  v-if="canRestoreSuppliers"
-                  @click="unarchiveSupplier(supplier)"
-                  :disabled="loadingId === supplier.id"
-                  class="px-3 py-1 text-xs rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                  v-if="canRestorePosts"
+                  type="button"
+                  @click="unarchivePost(post)"
+                  :disabled="loadingId === post.id"
+                  class="rounded bg-emerald-600 px-3 py-1 text-xs hover:bg-emerald-700 disabled:opacity-50"
                 >
                   Unarchive
                 </button>
                 <button
-                  v-if="canDeleteSuppliers"
-                  @click="deleteSupplierPermanently(supplier)"
-                  :disabled="loadingId === supplier.id"
-                  class="px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                  v-if="canDeletePosts"
+                  type="button"
+                  @click="deletePermanently(post)"
+                  :disabled="loadingId === post.id"
+                  class="ml-2 rounded bg-red-600 px-3 py-1 text-xs hover:bg-red-700 disabled:opacity-50"
                 >
                   Delete Permanently
                 </button>
               </div>
-            </article>
-          </div>
+            </div>
+          </article>
         </div>
-      </div>
+      </section>
     </main>
   </div>
 </template>
 
 <script>
-import { usePageLoading } from '@/composables/usePageLoading'
-
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
@@ -133,26 +62,22 @@ import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { logActivity } from '@/utils/activityLogger'
 import { usePermissions } from '@/composables/usePermissions'
+import { usePageLoading } from '@/composables/usePageLoading'
 
 export default {
   name: 'ArchivedPosts',
   components: { OwnerSidebar },
   setup() {
-const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
-
+    const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasPermission } = usePermissions()
 
     const currentBranchId = ref('')
     const posts = ref([])
-    const archivedSuppliers = ref([])
     const loadingId = ref('')
-    const activeTab = ref('posts')
     const canRestorePosts = computed(() => hasPermission('services:create') && hasPermission('services:disable'))
     const canDeletePosts = computed(() => hasPermission('services:disable'))
-    const canRestoreSuppliers = computed(() => hasPermission('inventory:create') && hasPermission('inventory:disable'))
-    const canDeleteSuppliers = computed(() => hasPermission('inventory:disable'))
 
     const formatCurrency = (value) =>
       new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value) || 0)
@@ -164,46 +89,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return '-'
     }
 
-    const normalizedCategories = (supplier) => {
-      if (Array.isArray(supplier.categories)) return supplier.categories.filter(Boolean)
-      if (supplier.category) return [supplier.category]
-      return []
-    }
-
     const loadArchivedPosts = trackPageLoad(async () => {
-      if (!hasPermission('services:view')) {
+      if (!hasPermission('services:view') || !currentBranchId.value) {
         posts.value = []
         return
       }
-      if (!currentBranchId.value) {
-        posts.value = []
-        return
-      }
+
       const archivedQuery = query(
         collection(db, 'archivedProductServicePosts'),
         where('branchId', '==', currentBranchId.value)
       )
       const snapshot = await getDocs(archivedQuery)
       posts.value = snapshot.docs
-        .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .sort((a, b) => (b.archivedAt?.seconds || b.updatedAt?.seconds || 0) - (a.archivedAt?.seconds || a.updatedAt?.seconds || 0))
-    })
-
-    const loadArchivedSuppliers = trackPageLoad(async () => {
-      if (!hasPermission('inventory:view')) {
-        archivedSuppliers.value = []
-        return
-      }
-      if (!currentBranchId.value) {
-        archivedSuppliers.value = []
-        return
-      }
-      const archivedQuery = query(
-        collection(db, 'archivedSuppliers'),
-        where('branchId', '==', currentBranchId.value)
-      )
-      const snapshot = await getDocs(archivedQuery)
-      archivedSuppliers.value = snapshot.docs
         .map((snap) => ({ id: snap.id, ...snap.data() }))
         .sort((a, b) => (b.archivedAt?.seconds || b.updatedAt?.seconds || 0) - (a.archivedAt?.seconds || a.updatedAt?.seconds || 0))
     })
@@ -280,77 +177,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const unarchiveSupplier = async (supplier) => {
-      if (!canRestoreSuppliers.value) {
-        toast.error('You do not have permission to restore archived suppliers.')
-        return
-      }
-      const result = await Swal.fire({
-        title: 'Unarchive Supplier?',
-        text: `Restore "${supplier.name || 'this supplier'}" to active suppliers?`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Unarchive',
-        cancelButtonText: 'Cancel'
-      })
-      if (!result.isConfirmed) return
-
-      loadingId.value = supplier.id
-      try {
-        const { id, originalSupplierId, archivedAt, archivedBy, ...payload } = supplier
-        await setDoc(doc(db, 'suppliers', supplier.id), {
-          ...payload,
-          updatedAt: serverTimestamp()
-        })
-        await deleteDoc(doc(db, 'archivedSuppliers', supplier.id))
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Unarchived supplier',
-          details: `Unarchived supplier: ${supplier.name || supplier.id}.`
-        })
-        toast.success('Supplier unarchived.')
-        await loadArchivedSuppliers()
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to unarchive supplier.')
-      } finally {
-        loadingId.value = ''
-      }
-    }
-
-    const deleteSupplierPermanently = async (supplier) => {
-      if (!canDeleteSuppliers.value) {
-        toast.error('You do not have permission to permanently delete archived suppliers.')
-        return
-      }
-      const result = await Swal.fire({
-        title: 'Delete Permanently?',
-        text: `Permanently delete "${supplier.name || 'this supplier'}"? This cannot be undone.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Delete',
-        cancelButtonText: 'Cancel'
-      })
-      if (!result.isConfirmed) return
-
-      loadingId.value = supplier.id
-      try {
-        await deleteDoc(doc(db, 'archivedSuppliers', supplier.id))
-        await logActivity(db, {
-          module: 'Manager',
-          action: 'Deleted archived supplier permanently',
-          details: `Deleted archived supplier: ${supplier.name || supplier.id}.`
-        })
-        toast.success('Archived supplier deleted permanently.')
-        await loadArchivedSuppliers()
-      } catch (error) {
-        console.error(error)
-        toast.error('Failed to delete archived supplier.')
-      } finally {
-        loadingId.value = ''
-      }
-    }
-
     let unsubscribeAuth = null
 
     onMounted(trackPageLoad(() => {
@@ -358,14 +184,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (!user) {
           currentBranchId.value = ''
           posts.value = []
-          archivedSuppliers.value = []
           return
         }
 
         const userSnap = await getDoc(doc(db, 'users', user.uid))
         currentBranchId.value = userSnap.exists() ? (userSnap.data().branchId || '') : ''
         await loadArchivedPosts()
-        await loadArchivedSuppliers()
       })
     }))
 
@@ -376,20 +200,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     return {
       pageLoading,
       posts,
-      archivedSuppliers,
       loadingId,
-      activeTab,
       canRestorePosts,
       canDeletePosts,
-      canRestoreSuppliers,
-      canDeleteSuppliers,
       formatCurrency,
       formatDate,
-      normalizedCategories,
       unarchivePost,
-      deletePermanently,
-      unarchiveSupplier,
-      deleteSupplierPermanently
+      deletePermanently
     }
   }
 }
