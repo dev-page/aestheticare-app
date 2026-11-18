@@ -526,7 +526,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       searchQuery,
       filteredStaffList,
       customRoles,
-      practitionerTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
+      employeeSpecialtyTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
       licenseFile, licenseOcrResult, licenseOcrBusy, handleLicenseFile
     }
   }

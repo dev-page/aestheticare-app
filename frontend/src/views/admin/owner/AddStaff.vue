@@ -692,6 +692,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageLoading,
       loading,
       currentStaff,
+      employeeSpecialtyTypes,
       isStudentIntern,
       setEngagementType,
       setEmploymentType,
