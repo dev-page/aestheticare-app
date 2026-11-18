@@ -294,7 +294,7 @@
           v-else
           @click="logout"
           :class="[
-            'mt-2 w-full rounded-lg border border-[#5a3927] text-[#f0e2d8] hover:bg-[#3a2417] hover:text-white transition-colors',
+            'readonly-exempt mt-2 w-full rounded-lg border border-[#5a3927] text-[#f0e2d8] hover:bg-[#3a2417] hover:text-white transition-colors',
             sidebarCollapsed ? 'h-10 flex items-center justify-center' : 'px-3 py-2 flex items-center gap-2 justify-center'
           ]"
           :title="sidebarCollapsed ? 'Logout' : ''"

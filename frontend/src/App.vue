@@ -2,7 +2,7 @@
   <div
     class="aestheticare-app"
     :class="{
-      'read-only-mode': (isReadOnly || isSuspended) && isAuthenticatedAppRoute && !isSubscriptionRoute,
+      'read-only-mode': (isReadOnly || isSuspended) && isAuthenticatedAppRoute && !isSubscriptionRoute && !isClinicOnboardingRoute,
       'system-admin-route': isSystemAdminRoute,
       'landing-route': isLandingRoute,
     }"

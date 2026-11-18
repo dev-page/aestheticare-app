@@ -53,6 +53,7 @@ service cloud.firestore {
 
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'ownerId', 'organizationOwnerId',
         'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults',
         'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
@@ -88,6 +89,94 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'draftDocuments', 'draftDocumentsUpdatedAt'
         ]);
+    }
+
+    // Approved owners must be able to finish their initial clinic profile
+    // before selecting a subscription. These checks cover only that setup,
+    // leaving subscription, approval, ownership and other fields protected.
+    function validOnboardingDetails(details) {
+      return details is map
+        && details.keys().hasOnly(['businessEmail', 'contactNumber', 'description', 'services'])
+        && details.keys().hasAll(['businessEmail', 'contactNumber', 'description', 'services'])
+        && details.businessEmail is string && details.businessEmail.size() > 0 && details.businessEmail.size() <= 254
+        && details.contactNumber is string && details.contactNumber.matches('^9[0-9]{9}$')
+        && details.description is string && details.description.size() > 0 && details.description.size() <= 1000
+        && details.services is list && details.services.size() > 0 && details.services.size() <= 50;
+    }
+
+    function validOnboardingDay(day) {
+      return day is map && day.keys().hasOnly(['closed', 'ranges'])
+        && day.keys().hasAll(['closed', 'ranges'])
+        && day.closed is bool && day.ranges is list
+        && day.ranges.size() > 0 && day.ranges.size() <= 8;
+    }
+
+    function validOnboardingHours(hours) {
+      return hours is map
+        && hours.keys().hasOnly(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+        && hours.keys().hasAll(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+        && validOnboardingDay(hours.monday) && validOnboardingDay(hours.tuesday)
+        && validOnboardingDay(hours.wednesday) && validOnboardingDay(hours.thursday)
+        && validOnboardingDay(hours.friday) && validOnboardingDay(hours.saturday)
+        && validOnboardingDay(hours.sunday);
+    }
+
+    function validOnboardingDraft(draft) {
+      return draft is map
+        && draft.keys().hasOnly(['clinicDetails', 'availability', 'completedStep', 'updatedAt', 'profilePicture', 'bannerPicture'])
+        && draft.keys().hasAll(['clinicDetails', 'completedStep', 'updatedAt'])
+        && validOnboardingDetails(draft.clinicDetails)
+        && draft.completedStep in [1, 2, 3]
+        && draft.updatedAt == request.time
+        && (!('availability' in draft) ? draft.completedStep == 1 : validOnboardingHours(draft.availability))
+        && (!('profilePicture' in draft) || (draft.profilePicture is string && draft.profilePicture.size() <= 2048))
+        && (!('bannerPicture' in draft) || (draft.bannerPicture is string && draft.bannerPicture.size() <= 2048));
+    }
+
+    function ownerCanSaveOnboardingCheckpoint() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let draft = request.resource.data.get('onboardingDraft', null);
+      return changed.hasOnly(['onboardingDraft', 'profilePicture', 'bannerPicture', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && validOnboardingDraft(draft)
+        && (!changed.hasAny(['profilePicture', 'bannerPicture'])
+          || (draft.completedStep == 3
+            && request.resource.data.get('profilePicture', '') == draft.get('profilePicture', '')
+            && request.resource.data.get('bannerPicture', '') == draft.get('bannerPicture', '')));
+    }
+
+    function ownerCanCompleteOnboarding() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let draft = resource.data.get('onboardingDraft', null);
+      return changed.hasOnly([
+          'profilePicture', 'bannerPicture', 'businessEmail', 'contactNumber', 'description', 'services',
+          'operatingHours', 'isPublished', 'publishedAt', 'clinicSetupRequired', 'clinicSetupCompletedAt',
+          'clinicSetupVersion', 'onboardingDraft', 'clinicSetupPlanSkippedAt', 'updatedAt'
+        ])
+        && draft is map && draft.get('completedStep', 0) == 3
+        && validOnboardingDetails(draft.clinicDetails)
+        && validOnboardingHours(draft.availability)
+        && request.resource.data.businessEmail == draft.clinicDetails.businessEmail
+        && request.resource.data.contactNumber == draft.clinicDetails.contactNumber
+        && request.resource.data.description == draft.clinicDetails.description
+        && request.resource.data.services == draft.clinicDetails.services
+        && request.resource.data.operatingHours == draft.availability
+        && request.resource.data.profilePicture == draft.get('profilePicture', '')
+        && request.resource.data.bannerPicture == draft.get('bannerPicture', '')
+        && request.resource.data.isPublished == true && request.resource.data.publishedAt == request.time
+        && request.resource.data.clinicSetupRequired == false && request.resource.data.clinicSetupCompletedAt == request.time
+        && request.resource.data.clinicSetupVersion == 1 && !('onboardingDraft' in request.resource.data)
+        && request.resource.data.updatedAt == request.time
+        && (!changed.hasAny(['clinicSetupPlanSkippedAt']) || request.resource.data.clinicSetupPlanSkippedAt == request.time);
+    }
+
+    function ownerCanSaveInitialOnboarding(clinicId) {
+      return clinicId == request.auth.uid && isClinicOwner()
+        && userData().get('status', '') in ['Active', 'active']
+        && resource.data.get('approvalStatus', '') == 'Approved'
+        && resource.data.get('clinicSetupRequired', false) == true
+        && resource.data.get('clinicSetupCompletedAt', null) == null
+        && (ownerCanSaveOnboardingCheckpoint() || ownerCanCompleteOnboarding());
     }
 
     function rolePermissions() {
@@ -407,10 +496,13 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
-      allow read: if (resource.data.isPublished == true)
-        || (isSignedIn()
-          && (request.auth.uid == clinicId
-            || isSuperadmin() || resource.data.ownerId == request.auth.uid || isStaffOfBranch(clinicId)));
+      // The clinic document also holds registration and verification data.
+      // Publication never grants public access to this private record.
+      allow read: if isSignedIn()
+        && (request.auth.uid == clinicId
+          || isSuperadmin() || resource.data.ownerId == request.auth.uid
+          || resource.data.get('branchAdminId', '') == request.auth.uid
+          || isStaffOfBranch(clinicId));
       // Initial clinics and additional branches are created by trusted
       // registration/branch services so applicants cannot set approval or
       // publication fields in the initial document.
@@ -419,11 +511,13 @@ service cloud.firestore {
         && (isSuperadmin()
           || (isOwnerOfBranch(clinicId)
             && ((subscriptionAllowsBusinessWrite(clinicId) && applicantCannotChangeVerificationFields())
-              || applicantCanSaveClinicDocumentDraft()))
+              || applicantCanSaveClinicDocumentDraft()
+              || ownerCanSaveInitialOnboarding(clinicId)))
           || (isOwnerOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
           || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
-            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields())
+            && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields()
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchAdminId']))
           || (isStaffOfBranch(clinicId) && hasPermission('policies:update')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'cancellationPolicy', 'cancellationPolicyEnabled', 'reschedulePolicy', 'reschedulePolicyEnabled',
@@ -437,6 +531,14 @@ service cloud.firestore {
               'policiesUpdatedAt', 'updatedAt'
             ])));
       allow delete: if isSignedIn() && isSuperadmin();
+    }
+
+    // Public directory records contain only fields selected by the trusted
+    // projection writer. Clients must not be able to insert arbitrary private
+    // fields into this publicly readable collection.
+    match /publicClinics/{clinicId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     match /rolePermissions/{roleId} {

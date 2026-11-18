@@ -1,4 +1,5 @@
 import { subscriptionLifecycle } from './subscriptionLifecycle.js'
+import { subscriptionDate } from './subscriptionDates.js'
 
 const CARE_LISTING_TYPES = new Set(['Service', 'Consultation', 'Package'])
 
@@ -30,6 +31,17 @@ export const isClinicCustomerDiscoverable = (clinic, now = new Date()) => Boolea
   && clinic.isPublished === true
   && String(clinic.status || '').trim().toLowerCase() !== 'inactive'
   && subscriptionLifecycle(clinic, now).isOperational)
+
+// Public profiles contain only a server-derived entitlement, not billing data.
+// The expiry also prevents stale profiles remaining discoverable if a scheduled
+// projection update is delayed.
+export const isPublicClinicCustomerDiscoverable = (clinic, now = new Date()) => {
+  if (!clinic || clinic.isPublished !== true || clinic.customerAccess !== true
+    || String(clinic.status || '').trim().toLowerCase() === 'inactive') return false
+  if (clinic.customerAccessUntil == null) return true
+  const accessUntil = subscriptionDate(clinic.customerAccessUntil)
+  return Boolean(accessUntil && accessUntil > now)
+}
 
 export function assertCustomerCheckoutSupported(metadata = {}) {
   if (String(metadata?.module || '').trim().toLowerCase() === 'customer_order') {

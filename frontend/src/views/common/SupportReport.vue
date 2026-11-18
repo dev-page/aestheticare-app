@@ -330,7 +330,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const loadClinicOptions = trackPageLoad(async () => {
       try {
-        const snapshot = await getDocs(query(collection(db, 'clinics'), where('isPublished', '==', true)))
+        const snapshot = await getDocs(query(collection(db, 'publicClinics'), where('isPublished', '==', true)))
         clinicOptions.value = snapshot.docs
           .map((clinicDoc) => ({ id: clinicDoc.id, ...clinicDoc.data() }))
           .filter((clinic) => String(clinic.approvalStatus || '').toLowerCase().includes('approved') || clinic.isPublished === true)
@@ -466,7 +466,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         selectedClinicId.value = data.branchId || ''
         await loadClinicOptions()
         if (data.branchId && !clinicOptions.value.some((clinic) => clinic.id === data.branchId)) {
-          const branchSnapshot = await getDoc(doc(db, 'clinics', data.branchId))
+          const branchCollection = panelKey.value === 'customer' ? 'publicClinics' : 'clinics'
+          const branchSnapshot = await getDoc(doc(db, branchCollection, data.branchId))
           if (branchSnapshot.exists()) {
             const branchData = branchSnapshot.data() || {}
             clinicOptions.value.push({

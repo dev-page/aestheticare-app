@@ -4,6 +4,13 @@ const admin = require('firebase-admin')
 admin.initializeApp()
 Object.assign(exports, require('./supplyMonitoring')({ admin, functions }))
 
+// Re-read inside a transaction so delayed or retried events cannot publish an
+// older version of a clinic after a more recent edit or unpublication.
+const { syncPublicClinic } = require('./publicClinicProjection.cjs')
+exports.syncPublicClinic = functions.runWith({ failurePolicy: true }).firestore
+  .document('clinics/{clinicId}')
+  .onWrite((_change, context) => syncPublicClinic(admin.firestore(), context.params.clinicId))
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 const normalizePlanKey = (value) => {

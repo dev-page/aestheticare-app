@@ -98,7 +98,7 @@
             <div class="center-panel-grid mt-4 space-y-4">
               <div class="center-panel p-5">
                 <h4 class="center-panel-title mb-2">Contact</h4>
-                <p class="center-panel-copy text-sm">Email: {{ center.businessEmail || center.email || 'Not set' }}</p>
+                <p class="center-panel-copy text-sm">Email: {{ center.businessEmail || 'Not set' }}</p>
                 <p class="center-panel-copy text-sm mt-1">Phone: {{ center.contactNumber || 'Not set' }}</p>
               </div>
               <div class="center-panel p-5 space-y-4">
@@ -630,7 +630,7 @@
 </template>
 
 <script setup>
-import { getCustomerCareListingName, isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../../shared/customerCatalog.js'
+import { getCustomerCareListingName, isPublicClinicCustomerDiscoverable, isCustomerCareListing } from '../../../../shared/customerCatalog.js'
 import { onlinePolicy } from '../../../../shared/onlineConsultation.js'
 import { isCategorizedService, normalizeServiceCategory, serviceCategoryOptions, filterCategorizedServices } from '../../../../shared/serviceCategories.js'
 import { usePageLoading } from '@/composables/usePageLoading'
@@ -1005,7 +1005,6 @@ const buildCenterModel = (branchId, data = {}) => ({
   latitude: data.clinicLocationLat ?? data.locationLat ?? data.addressLat ?? data.latitude ?? data.lat ?? '',
   longitude: data.clinicLocationLng ?? data.locationLng ?? data.addressLng ?? data.longitude ?? data.lng ?? '',
   description: data.description || '',
-  email: data.email || '',
   businessEmail: data.businessEmail || '',
   contactNumber: data.contactNumber || '',
   services: Array.isArray(data.services) ? data.services.filter(Boolean) : [],
@@ -1493,14 +1492,14 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
 })
 
 const loadBranchData = trackPageLoad(async (branchId) => {
-  const clinicSnap = await getDoc(doc(db, 'clinics', branchId))
+  const clinicSnap = await getDoc(doc(db, 'publicClinics', branchId))
   if (!clinicSnap.exists()) {
     throw new Error('Branch not found.')
   }
 
   const data = clinicSnap.data() || {}
 
-  const centerBlocked = !isClinicCustomerDiscoverable(data)
+  const centerBlocked = !isPublicClinicCustomerDiscoverable(data)
 
   if (centerBlocked) {
     throw new Error('Center unavailable.')
@@ -2307,7 +2306,7 @@ const buildQuickAnswer = ({ key }) => {
         ? `We currently offer: ${center.value.services.join(', ')}.`
         : 'We do not have a published services list yet.'
     case 'contact':
-      return `You can reach us at ${center.value.contactNumber || 'our phone'} or ${center.value.businessEmail || center.value.email || 'our email'}.`
+      return `You can reach us at ${center.value.contactNumber || 'our phone'} or ${center.value.businessEmail || 'our email'}.`
     case 'location':
       return center.value.location ? `We are located at ${center.value.location}.` : 'Our location is not set yet.'
     case 'price':
@@ -3183,7 +3182,7 @@ const submitBooking = async () => {
 onMounted(trackPageLoad(async () => {
   loading.value = true
   try {
-    const rootSnap = await getDoc(doc(db, 'clinics', centerId))
+    const rootSnap = await getDoc(doc(db, 'publicClinics', centerId))
     if (!rootSnap.exists()) {
       toast.error('Center not found.')
       router.replace({ name: 'centers' })
@@ -3191,7 +3190,7 @@ onMounted(trackPageLoad(async () => {
     }
 
     const rootData = rootSnap.data() || {}
-    if (!isClinicCustomerDiscoverable(rootData)) {
+    if (!isPublicClinicCustomerDiscoverable(rootData)) {
       toast.error('This branch is currently unavailable.')
       router.replace({ name: 'centers' })
       return

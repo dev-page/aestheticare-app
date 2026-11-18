@@ -1161,7 +1161,7 @@ const loadRescheduleAvailability = trackPageLoad(async (appointment, { autoSelec
     // practitioner profile. The booking API revalidates the slot on submit.
     const [scheduleSnap, clinicSnap] = await Promise.all([
       getDocs(query(collection(db, 'users', practitionerId, 'schedules'), where('recurring', '==', true))),
-      getDoc(doc(db, 'clinics', branchId)),
+      getDoc(doc(db, 'publicClinics', branchId)),
     ])
 
     if (loadSeq !== requestModalLoadSeq.value || !requestModal.value.open) return
@@ -1781,7 +1781,7 @@ const startClinicsListener = () => {
   // Firestore rule. Historical appointments still fall back to “Clinic” when
   // their former clinic is no longer published.
   unsubscribeClinics = pageListener(
-    onSnapshot, query(collection(db, 'clinics'), where('isPublished', '==', true)),
+    onSnapshot, query(collection(db, 'publicClinics'), where('isPublished', '==', true)),
     (snapshot) => {
       const clinicMap = new Map()
       sortRecordsNewestFirst(snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))).forEach((data) => {

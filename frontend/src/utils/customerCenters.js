@@ -1,4 +1,4 @@
-import { getCustomerCareListingName, isClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
+import { getCustomerCareListingName, isPublicClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 
@@ -26,7 +26,7 @@ const buildBranches = (clinics, serviceMap) =>
       const ownerId = toText(clinic.ownerId)
       return (
         Boolean(ownerId) &&
-        isClinicCustomerDiscoverable(clinic)
+        isPublicClinicCustomerDiscoverable(clinic)
       )
     })
     .map((clinic) => {
@@ -116,10 +116,9 @@ const buildServiceMap = async (clinicIds) => {
 }
 
 export const fetchCustomerCenters = async () => {
-  // This constraint is required by the Firestore rule for public clinic
-  // discovery; querying the whole collection could include private drafts.
+  // Read only published public profiles; clinic registration records stay private.
   const clinicsSnapshot = await getDocs(
-    query(collection(db, 'clinics'), where('isPublished', '==', true))
+    query(collection(db, 'publicClinics'), where('isPublished', '==', true))
   )
   const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
   const serviceMap = await buildServiceMap(clinics.map((clinic) => clinic.id))
@@ -163,7 +162,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
   }
 
   clinicUnsubscribe = onSnapshot(
-    query(collection(db, 'clinics'), where('isPublished', '==', true)),
+    query(collection(db, 'publicClinics'), where('isPublished', '==', true)),
     (snapshot) => {
       const clinics = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
       stopServiceListeners()
