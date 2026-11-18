@@ -2,7 +2,7 @@
   <div
     class="aestheticare-app"
     :class="{
-      'read-only-mode': (isReadOnly || isSuspended) && !isSubscriptionRoute,
+      'read-only-mode': (isReadOnly || isSuspended) && isAuthenticatedAppRoute && !isSubscriptionRoute,
       'system-admin-route': isSystemAdminRoute,
       'landing-route': isLandingRoute,
     }"
@@ -126,6 +126,7 @@ import { isCustomerAppContext } from '@/utils/customerApp'
 const { isLoading, user, inactivityWarning, initAuth, startInactivityTracking, stopInactivityTracking, continueSession } = useAuth()
 
 const route = useRoute()
+const isAuthenticatedAppRoute = computed(() => route.matched.some((record) => record.meta?.requiresAuth === true))
 const isClinicOnboardingRoute = computed(() => String(route.path || '').toLowerCase() === '/clinic/onboarding')
 const isSystemAdminRoute = computed(() => String(route.path || '').toLowerCase().startsWith('/superadmin/'))
 const {

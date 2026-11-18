@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
-import { createUserWithEmailAndPassword, signInWithCustomToken, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
@@ -1005,7 +1005,8 @@ const sendOtpEmail = async (toEmail) => {
     )
 
     if (res?.data?.success) {
-      console.log('Registration OTP sent successfully')
+      // The server deliberately returns the same response for every email;
+      // it does not confirm that a code was sent or that an account exists.
       return {
         success: true,
         error: '',
@@ -2318,8 +2319,23 @@ const registerClinic = async () => {
         showRegistrationAttemptBlock(attemptResult)
         return
       }
-      const credentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
-      registrationUser = credentials.user
+      try {
+        const credentials = await createUserWithEmailAndPassword(auth, normalizedEmail, password.value)
+        registrationUser = credentials.user
+      } catch (error) {
+        if (error?.code !== 'auth/email-already-in-use') throw error
+        // A previous attempt may have created the Auth account but failed
+        // before saving its profile. The OTP endpoint cannot recover that
+        // state, so authenticate with the supplied password and resume the
+        // normal, server-authorized profile creation flow.
+        try {
+          const credentials = await signInWithEmailAndPassword(auth, normalizedEmail, password.value)
+          registrationUser = credentials.user
+        } catch (signInError) {
+          if (!['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found'].includes(signInError?.code)) throw signInError
+          throw error
+        }
+      }
     }
 
     userUid.value = registrationUser.uid
@@ -2382,7 +2398,6 @@ const registerClinic = async () => {
     focusOtpInput(0)
     handleClinicOtpResult(otpResult, 'If this account is eligible, a verification code has been sent to its email.')
   } catch (err) {
-    console.error('Clinic registration could not be completed:', err?.response?.data || err?.code || err?.message || err)
     const errorCode = String(err?.code || '')
     if (errorCode === 'auth/email-already-in-use') {
       otpRecipientEmail.value = email.value.trim().toLowerCase()
@@ -2393,6 +2408,7 @@ const registerClinic = async () => {
       focusOtpInput(0)
       handleClinicOtpResult(otpResult, 'If this account is eligible, a verification code has been sent to its email.')
     } else {
+      console.error('Clinic registration could not be completed:', err?.response?.data || err?.code || err?.message || err)
       toast.error(err?.response?.data?.error || err?.message || 'Registration could not be completed. Your details are saved only after secure verification; please retry.')
     }
   } finally {
@@ -2437,7 +2453,10 @@ const verifyOtp = async () => {
     }
 
     const registration = await fetchRegistrationProfile()
-    if (!registration?.exists || registration.uid !== credential.user.uid || !registration.profile) {
+    if (!registration) {
+      throw new Error('Your email was verified, but your registration could not be loaded. Refresh the page to continue.')
+    }
+    if (!registration.exists || registration.uid !== credential.user.uid || !registration.profile) {
       await signOut(auth)
       throw new Error('We could not confirm this clinic registration. Please restart email verification.')
     }
