@@ -8,7 +8,6 @@ import { lotAvailableQuantity } from './inventoryLots.js'
 import { day as inventoryDay } from './supplyModel.js'
 import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, validateTreatmentCourseComposition } from '../../shared/treatmentCourse.js'
 import { APPOINTMENT_PLATFORM_COMMISSION_PERCENT, appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../shared/appointmentPricing.js'
-import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { bookingFitsClinicHours } from '../../shared/clinicOperatingHours.js'
 import { isBookingPaymentHoldReleased } from '../../shared/bookingPaymentHold.js'
@@ -227,9 +226,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const contractOwnerId = String(contractBranch.ownerId || contractBranch.organizationOwnerId || '').trim()
   let contractPolicy = contractOwnerId ? (await tx.get(db.collection('clinicPolicies').doc(contractOwnerId))).data() : null
   if (!contractPolicy) contractPolicy = (await tx.get(db.collection('clinicPolicies').doc(branchId))).data() || {}
-  const clinicVatRegistered = clinicIsVatRegistered(contractPolicy)
-  check(offer.vatApplicable !== true || clinicVatRegistered, 'This VAT-applicable listing is unavailable until the clinic tax status is confirmed from its BIR certificate.', 409)
-  const pricingSnapshot = buildAppointmentPricing({ listedPrice, vatApplicable: clinicVatRegistered && offer.vatApplicable === true, vatPriceMode: offer.vatPriceMode })
+  const pricingSnapshot = buildAppointmentPricing({ listedPrice, vatPriceMode: offer.vatPriceMode })
   const total = pricingSnapshot.total
   const commissionAmount = appointmentCommissionAmount(pricingSnapshot.subtotal)
   const merchantNetAmount = Math.round((pricingSnapshot.subtotal - commissionAmount) * 100) / 100

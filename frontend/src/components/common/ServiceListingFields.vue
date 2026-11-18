@@ -68,16 +68,11 @@
 
         <section v-if="['Service', 'Consultation', 'Package'].includes(form.postType)" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
           <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">Apply the fixed 12% VAT only if this specific listing is taxable for your clinic.</p></div>
-            <span class="rounded-full border px-3 py-1 text-xs font-semibold" :class="form.vatApplicable ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200' : 'border-slate-600 bg-slate-800 text-slate-400'">{{ form.vatApplicable && vatRegistered ? '12% VAT enabled' : 'No VAT on this listing' }}</span>
+            <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">Every booking includes fixed 12% VAT. Choose whether the listed price includes VAT or VAT is added at checkout.</p></div>
+            <span class="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">12% VAT on every booking</span>
           </div>
-          <label class="mt-4 flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-4" :class="!vatRegistered ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-            <input v-model="form.vatApplicable" type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" :disabled="disabled || !vatRegistered" />
-            <span><strong class="block text-sm text-slate-100">This listing is subject to VAT</strong><span class="mt-1 block text-xs leading-5 text-slate-400">The checkout will show the subtotal, VAT amount, and total.</span></span>
-          </label>
-          <p v-if="!vatRegistered" class="mt-2 text-xs text-amber-200">{{ taxStatus === 'non_vat' ? 'Your clinic is confirmed Non-VAT, so VAT cannot be applied to this listing.' : taxStatus === 'needs_clarification' ? 'Your BIR tax status needs clarification. Contact AesthetiCare support before changing VAT settings.' : 'VAT listing controls unlock after an administrator reviews your clinic’s BIR certificate.' }}</p>
-          <label v-if="form.vatApplicable" class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown?
-            <select v-model="form.vatPriceMode" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled || !vatRegistered">
+          <label class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown?
+            <select v-model="form.vatPriceMode" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled">
               <option value="inclusive">Price already includes 12% VAT</option>
               <option value="exclusive">Add 12% VAT to the listed price</option>
             </select>
@@ -299,10 +294,9 @@ import { computed, ref, watch } from 'vue'
 import { normalizeServiceCategory, serviceCategoryKey, serviceCategoryOptions } from '../../../../shared/serviceCategories.js'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import ServiceStaffingFields from './ServiceStaffingFields.vue'
-const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, vatRegistered: Boolean, taxStatus: { type: String, default: 'needs_review' }, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
+const props = defineProps({ model: { type: Object, required: true }, editing: Boolean, disabled: Boolean, inventoryProducts: { type: Array, default: () => [] }, posts: { type: Array, default: () => [] }, imageFileName: { type: String, default: '' } })
 defineEmits(['image-change'])
 const form = computed(() => props.model)
-const vatRegistered = computed(() => props.vatRegistered === true)
 const courseSteps = computed(() => Array.isArray(form.value.treatmentCourseSteps) ? form.value.treatmentCourseSteps : [])
 const courseServiceOptions = computed(() => props.posts.filter(post => ['Service', 'Consultation'].includes(post.postType) && post.isPublished === true && post.financeStatus === 'approved' && post.archived !== true))
 const packageComponents = computed(() => [...new Set(courseSteps.value.map(step => String(step.serviceId || '')).filter(Boolean))].map(id => props.posts.find(post => post.id === id)).filter(Boolean))

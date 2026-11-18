@@ -37,7 +37,7 @@
       <div v-if="activeListingTab === 'create' && canCreateListing" class="listing-create-panel bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-700 mb-6">
         <h2 class="text-lg font-semibold mb-2">Create listing</h2><p class="listing-section-description">Add the service details, booking rules, and resources needed for each appointment.</p>
 
-        <ServiceListingFields :model="form" :disabled="loading" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
+        <ServiceListingFields :model="form" :disabled="loading" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="imageFileName" @image-change="handleImageUpload" />
 
         <div class="flex gap-2">
           <button
@@ -118,7 +118,7 @@
                 Standalone consultation post. Customers book this separately before any follow-up service.
               </p>
               <p class="listing-card-price text-sm font-semibold text-green-400">{{ formatCurrency(post.price) }}</p>
-              <p v-if="post.vatApplicable" class="mt-1 text-xs text-emerald-300">{{ post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout' }}</p>
+              <p v-if="['Service', 'Consultation', 'Package'].includes(post.postType)" class="mt-1 text-xs text-emerald-300">{{ post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout' }}</p>
               <div class="listing-card-actions mt-3">
                 <button v-if="canUpdateListing"
                   @click="openEditPost(post)"
@@ -155,7 +155,7 @@
           </div>
 
           <div class="flex-1 overflow-y-auto px-6 py-5">
-            <ServiceListingFields :model="editForm" editing :disabled="loading" :vat-registered="clinicVatRegistered" :tax-status="clinicTaxStatus" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
+            <ServiceListingFields :model="editForm" editing :disabled="loading" :inventory-products="inventoryProducts" :posts="posts" :image-file-name="editImageFileName" @image-change="handleEditImageUpload" />
           </div>
 
           <div class="border-t border-slate-700 px-6 py-4">
@@ -224,15 +224,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const currentUserId = ref('')
     const currentBranchId = ref('')
     const clinicPolicies = ref({})
-    const clinicVatRegistered = computed(() => clinicPolicies.value.taxProfile?.reviewSource === 'admin_review'
-      && clinicPolicies.value.taxProfile?.status === 'vat_registered'
-      && Boolean(clinicPolicies.value.taxProfile?.reviewedBy)
-      && Boolean(clinicPolicies.value.taxProfile?.reviewedAt))
-    const clinicTaxStatus = computed(() => {
-      const profile = clinicPolicies.value.taxProfile || {}
-      if (profile.reviewSource !== 'admin_review' || !profile.reviewedBy || !profile.reviewedAt) return 'needs_review'
-      return ['vat_registered', 'non_vat', 'needs_clarification'].includes(profile.status) ? profile.status : 'needs_review'
-    })
     const contractBranch = ref({})
     const contractPdfLoading = ref(false)
     const hasClientContract = computed(() => clinicPolicies.value.clientContract?.configured === true)
@@ -729,7 +720,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : postType === 'Package'
               ? Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
               : Number(form.value.price || form.value.consultationFee || 0),
-          vatApplicable: postType !== 'Product' && clinicVatRegistered.value && form.value.vatApplicable === true,
+          vatApplicable: postType !== 'Product',
           vatPriceMode: form.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
           discountPercent: postType === 'Package' ? packageDiscountPercent : 0,
           discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
@@ -938,7 +929,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : editForm.value.postType === 'Package'
               ? Math.round(editPackageSubtotal * (1 - editPackageDiscountPercent / 100) * 100) / 100
               : Number(editForm.value.price || editForm.value.consultationFee || 0),
-          vatApplicable: editForm.value.postType !== 'Product' && clinicVatRegistered.value && editForm.value.vatApplicable === true,
+          vatApplicable: editForm.value.postType !== 'Product',
           vatPriceMode: editForm.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
           discountPercent: editPackageDiscountPercent,
           discountAmount: editForm.value.postType === 'Package' ? Math.round(editPackageSubtotal * editPackageDiscountPercent / 100 * 100) / 100 : 0,
@@ -1157,8 +1148,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       canCreateListing,
       canUpdateListing,
       canDisableListing,
-      clinicVatRegistered,
-      clinicTaxStatus,
       loading,
       form,
       applicablePolicies,

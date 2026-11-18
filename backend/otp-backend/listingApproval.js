@@ -1,6 +1,5 @@
 import { normalizeStaffing } from '../../shared/practitionerTeam.js'
 import { validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
-import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
 import { subscriptionRecord } from '../../shared/subscriptionDates.js'
 export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount', 'vatApplicable', 'vatPriceMode']
@@ -104,13 +103,6 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         const subscription = subscriptionLifecycle(subscriptionRecord(context.userData || {}, clinic))
         if (!subscription.isOperational || !['basic', 'premium'].includes(subscription.plan)) {
           throw Object.assign(new Error('An active Free Trial, Basic, or Premium subscription is required to manage listings.'), { status: 403 })
-        }
-        if (['submit', 'publish'].includes(action) && post.vatApplicable === true) {
-          const policyOwnerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
-          const taxPolicy = policyOwnerId
-            ? (await tx.get(db.collection('clinicPolicies').doc(policyOwnerId))).data()
-            : (await tx.get(db.collection('clinicPolicies').doc(post.branchId))).data()
-          if (!clinicIsVatRegistered(taxPolicy)) throw Object.assign(new Error('A VAT-applicable listing can be submitted after a reviewer confirms the clinic tax status from its BIR certificate.'), { status: 409 })
         }
         if (['submit', 'publish'].includes(action) && post.postType === 'Service' && post.requiresConsultationFirst) {
           const linkedId = String(post.linkedConsultationId || '').trim()

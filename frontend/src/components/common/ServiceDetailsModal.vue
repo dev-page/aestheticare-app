@@ -22,7 +22,7 @@ const online = computed(() => props.service.type === 'Consultation' && props.ser
 const policy = computed(() => onlinePolicy(props.service.consultationPolicy))
 const staffing = computed(() => Array.isArray(props.service.staffingRequirements) ? props.service.staffingRequirements.filter(member => member?.type && Number(member.count) > 0) : [])
 const price = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
-const vatDescription = offer => offer?.vatApplicable === true ? (offer.vatPriceMode === 'inclusive' ? '12% VAT included' : '12% VAT added at checkout') : 'No VAT'
+const vatDescription = offer => offer?.vatPriceMode === 'inclusive' ? '12% VAT included' : '12% VAT added at checkout'
 const profession = value => ({ doctor: 'Doctor', nurse: 'Registered nurse', aesthetician: 'Aesthetician / facialist', other: 'Practitioner' }[value] || value)
 let previousFocus
 const onKeydown = event => {

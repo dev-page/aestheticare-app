@@ -297,7 +297,6 @@ const sameDayTreatmentTime = visit => {
 const currency = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
 const pricingFor = service => buildAppointmentPricing({
   listedPrice: Number(service?.price || 0),
-  vatApplicable: policy.value.vatRegistered === true && service?.vatApplicable === true,
   vatPriceMode: service?.vatPriceMode,
 })
 const visitPricing = visit => {

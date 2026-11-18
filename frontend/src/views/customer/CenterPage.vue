@@ -197,7 +197,7 @@
                       <h3>{{ item.title || item.name }}</h3>
                       <p class="service-preview-duration"><Icon icon="lucide:clock-3" width="16" aria-hidden="true" />{{ item.durationMinutes ? item.durationMinutes + ' minutes' : 'Confirm duration with clinic' }}</p>
                       <p class="service-preview-price">{{ formatServicePrice(item.price) }}</p>
-                      <p v-if="item.vatApplicable" class="service-preview-tax">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
+                      <p class="service-preview-tax">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
                       <button type="button" class="service-preview-details" aria-haspopup="dialog" @click="openServiceDetails(item)">View Details<Icon icon="lucide:arrow-up-right" width="17" aria-hidden="true" /></button>
                     </div>
                   </article>
@@ -223,7 +223,7 @@
                     <div class="p-4">
                       <h3 class="text-xl font-semibold text-[#3d281d]">{{ item.title || item.name }}</h3>
                       <p class="mt-2 text-[#8b6a4d]">₱{{ Number(item.consultationFee || item.price || 0).toFixed(2) }}</p>
-                      <p v-if="item.vatApplicable" class="mt-1 text-xs text-[#8b6a4d]">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
+                      <p class="mt-1 text-xs text-[#8b6a4d]">{{ item.vatPriceMode === 'inclusive' ? '12% VAT included' : '+12% VAT at checkout' }}</p>
                       <p class="mt-1 text-sm text-[#6f4a2d]">{{ item.description || 'No description.' }}</p>
                       <div class="mt-3 flex flex-wrap gap-2">
                         <span class="center-badge center-badge-warm px-2 py-1 text-[11px] font-medium">
@@ -803,7 +803,6 @@ const selectedServiceTotal = computed(() =>
 )
 const priceSnapshotForService = (service) => buildAppointmentPricing({
   listedPrice: Number(service?.price || 0),
-  vatApplicable: service?.vatApplicable === true,
   vatPriceMode: service?.vatPriceMode,
 })
 const selectedServicePricing = computed(() => sumAppointmentPricing(selectedServices.value.map(priceSnapshotForService)))
@@ -1596,7 +1595,6 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       title: post.title || '',
       description: post.description || '',
       price: Number(post.price || 0),
-      vatApplicable: post.vatApplicable === true,
       vatPriceMode: post.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
       consultationName: post.consultationName || '',
       requiresConsultationFirst: Boolean(post.requiresConsultationFirst),

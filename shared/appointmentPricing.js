@@ -8,11 +8,11 @@ const toCents = (value) => {
   return Number.isSafeInteger(cents) ? cents : null
 }
 
-export const buildAppointmentPricing = ({ listedPrice, vatApplicable = false, vatPriceMode = 'exclusive' } = {}) => {
+export const buildAppointmentPricing = ({ listedPrice, vatPriceMode = 'exclusive' } = {}) => {
   const listedPriceCents = toCents(listedPrice)
   if (listedPriceCents === null) throw new TypeError('Appointment price must be a finite, non-negative amount.')
 
-  const applicable = vatApplicable === true
+  const applicable = true
   const priceMode = vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive'
   let subtotalCents = listedPriceCents
   let vatCents = 0

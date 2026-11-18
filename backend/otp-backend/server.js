@@ -7,7 +7,6 @@ import { subscriptionLifecycle, hasActivePaidCycle, GRACE_PERIOD_DAYS } from '..
 import { registerSubscriptionTrial } from './subscriptionTrial.js'
 import { registerSubscriptionReminders, sendSubscriptionReminders } from './subscriptionReminders.js'
 import { serviceOnlyClinicPolicies } from '../../shared/clinicPolicyContent.js'
-import { clinicIsVatRegistered } from '../../shared/clinicTaxProfile.js'
 import { BOOKING_PAYMENT_HOLD_MS, isBookingPaymentHoldReleased, timestampMillis } from '../../shared/bookingPaymentHold.js'
 import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePolicyEnabled, rescheduleAllowanceForPolicy } from '../../shared/appointmentChangePolicy.js'
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder } from './orderWorkflow.js'
@@ -2103,9 +2102,6 @@ const getClinicPoliciesForBranch = async (firestore, branchId, knownBranch = nul
   const ownerId = String(branch.ownerId || branch.organizationOwnerId || '').trim()
   const applyBranchLinks = (sourcePolicy) => {
     const policy = serviceOnlyClinicPolicies(sourcePolicy)
-    // Ignore legacy owner-edited VAT flags. Only a backend-recorded reviewer
-    // decision enables VAT for the clinic organization.
-    policy.vatRegistered = clinicIsVatRegistered(sourcePolicy)
     // Undefined means a legacy branch that predates explicit linking: preserve
     // its existing behaviour by enforcing every enabled clinic policy.
     if (!Array.isArray(branch.enforcedPolicyKeys)) return policy
@@ -5315,25 +5311,6 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
     const userData = userSnap.exists ? userSnap.data() : {}
 
     const submittedDocuments = clinicData.submittedDocuments || {}
-    const organizationOwnerId = String(clinicData.ownerId || clinicData.organizationOwnerId || uid).trim()
-    const [organizationClinicSnap, policySnap, birPreflightSnap] = await Promise.all([
-      firestore.collection('clinics').doc(organizationOwnerId).get(),
-      firestore.collection('clinicPolicies').doc(organizationOwnerId).get(),
-      firestore.collection('clinics').doc(organizationOwnerId).collection('documentPreflights').doc('birRegistration').get(),
-    ])
-    const organizationClinic = organizationClinicSnap.exists ? organizationClinicSnap.data() || {} : clinicData
-    const birPreflight = birPreflightSnap.exists ? birPreflightSnap.data() || {} : {}
-    const policy = policySnap.exists ? policySnap.data() || {} : {}
-    const birDocument = organizationClinic.submittedDocuments?.birRegistration || {}
-    const birPath = String(birDocument.path || birDocument.storagePath || '').trim()
-    const hasMatchingBirPreflight = birPreflight.accepted === true && Boolean(birPath) && birPreflight.storagePath === birPath
-    const taxReview = {
-      organizationOwnerId,
-      profile: policy.taxProfile || null,
-      candidate: hasMatchingBirPreflight ? birPreflight.taxTypeCandidate || { status: 'unclear', evidence: '' } : { status: 'unclear', evidence: '' },
-      quality: hasMatchingBirPreflight ? birPreflight.quality || null : null,
-      hasBirDocument: Boolean(birDocument.path || birDocument.storagePath || birDocument.url),
-    }
     const reviewsSnap = await firestore.collection('clinics').doc(uid).collection('documentReviews').get()
     const documentReviews = {}
     reviewsSnap.forEach((d) => (documentReviews[d.id] = d.data()))
@@ -5342,75 +5319,10 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
     const reviewHistory = []
     historySnap.forEach((d) => reviewHistory.push({ id: d.id, ...d.data() }))
 
-    return res.json({ success: true, data: { uid, clinic: clinicData, user: userData, submittedDocuments, documentReviews, reviewHistory, taxReview } })
+    return res.json({ success: true, data: { uid, clinic: clinicData, user: userData, submittedDocuments, documentReviews, reviewHistory } })
   } catch (error) {
     console.error('clinic-review error', error)
     return res.status(500).json({ success: false, error: error?.message || 'Failed to load clinic review' })
-  }
-})
-
-app.post('/admin/clinic-tax-profile/review', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  const status = String(req.body?.status || '').trim().toLowerCase()
-  const note = String(req.body?.note || '').trim().slice(0, 1000)
-  if (!uid) return res.status(400).json({ success: false, error: 'Clinic ID is required.' })
-  if (!['vat_registered', 'non_vat', 'needs_clarification'].includes(status)) {
-    return res.status(400).json({ success: false, error: 'Choose VAT-registered, Non-VAT, or needs clarification.' })
-  }
-  try {
-    const firestore = admin.firestore()
-    const requestedClinicSnap = await firestore.collection('clinics').doc(uid).get()
-    if (!requestedClinicSnap.exists) return res.status(404).json({ success: false, error: 'Clinic was not found.' })
-    const requestedClinic = requestedClinicSnap.data() || {}
-    const ownerId = String(requestedClinic.ownerId || requestedClinic.organizationOwnerId || uid).trim()
-    const organizationClinicRef = firestore.collection('clinics').doc(ownerId)
-    const [organizationClinicSnap, policySnap, preflightSnap] = await Promise.all([
-      organizationClinicRef.get(),
-      firestore.collection('clinicPolicies').doc(ownerId).get(),
-      organizationClinicRef.collection('documentPreflights').doc('birRegistration').get(),
-    ])
-    const organizationClinic = organizationClinicSnap.exists ? organizationClinicSnap.data() || {} : {}
-    const birDocument = organizationClinic.submittedDocuments?.birRegistration || {}
-    if (!birDocument.path && !birDocument.storagePath && !birDocument.url) {
-      return res.status(409).json({ success: false, error: 'A submitted BIR Certificate of Registration is required before recording the clinic tax status.' })
-    }
-    const preflight = preflightSnap.exists ? preflightSnap.data() || {} : {}
-    const birPath = String(birDocument.path || birDocument.storagePath || '').trim()
-    const hasMatchingBirPreflight = preflight.accepted === true && Boolean(birPath) && preflight.storagePath === birPath
-    const ocrCandidate = String(hasMatchingBirPreflight ? preflight.taxTypeCandidate?.status || 'unclear' : 'unclear')
-    const taxProfile = {
-      status,
-      vatRegistered: status === 'vat_registered',
-      sourceDocumentKey: 'birRegistration',
-      reviewSource: 'admin_review',
-      reviewedBy: String(req.user?.uid || ''),
-      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }
-    const policyRef = firestore.collection('clinicPolicies').doc(ownerId)
-    await Promise.all([
-      policyRef.set({ ownerId, policyScope: 'clinic', taxProfile, vatRegistered: status === 'vat_registered', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
-      organizationClinicRef.collection('reviewHistory').add({
-        action: 'clinic-tax-profile-reviewed',
-        status,
-        reviewer: req.user?.uid || null,
-        sourceDocumentKey: 'birRegistration',
-        ocrCandidate,
-        ocrEvidence: String(hasMatchingBirPreflight ? preflight.taxTypeCandidate?.evidence || '' : '').slice(0, 140),
-        note: note || null,
-        ts: admin.firestore.FieldValue.serverTimestamp(),
-      }),
-    ])
-    await writeSystemAdminActivity(req, {
-      action: 'Reviewed clinic tax profile',
-      module: 'Clinic Verification',
-      details: `Recorded ${status.replaceAll('_', ' ')} BIR status for clinic organization ${ownerId}.`,
-      targetId: ownerId,
-      targetName: String(organizationClinic.clinicName || organizationClinic.companyName || organizationClinic.email || ownerId),
-    })
-    return res.json({ success: true, data: { ownerId, status, vatRegistered: status === 'vat_registered' } })
-  } catch (error) {
-    console.error('Clinic tax profile review failed:', error?.message || error)
-    return res.status(500).json({ success: false, error: 'Could not save the clinic tax review. Please try again.' })
   }
 })
 
@@ -6512,7 +6424,7 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
 })
 
 // Public catalog reads use the trusted backend so published-center visibility
-// and reviewed tax-profile checks do not depend on customer Firestore rules.
+// does not depend on customer Firestore rules.
 app.get('/public/clinics/:branchId/catalog', async (req, res) => {
   const branchId = String(req.params?.branchId || '').trim()
   let stage = 'initialization'
@@ -6526,28 +6438,11 @@ app.get('/public/clinics/:branchId/catalog', async (req, res) => {
     if (!isClinicCustomerDiscoverable(clinic)) {
       return res.status(404).json({ success: false, error: 'Center unavailable.' })
     }
-    let clinicPolicy = {}
-    stage = 'clinic policy lookup'
-    try {
-      const policyResult = await getClinicPoliciesForBranch(firestore, branchId, clinic)
-      clinicPolicy = policyResult?.policy || {}
-    } catch (policyError) {
-      // Catalog visibility does not depend on policy availability. Fail closed
-      // for VAT-applicable listings until the reviewed tax status can be read.
-      console.error('Public clinic catalog policy lookup failed:', {
-        branchId,
-        code: policyError?.code || null,
-        message: policyError?.message || String(policyError),
-      })
-    }
     stage = 'catalog query'
     const postsSnap = await firestore.collection('productServicePosts').where('branchId', '==', branchId).get()
     const posts = postsSnap.docs
       .map((postSnap) => ({ id: postSnap.id, ...postSnap.data() }))
       .filter(isCustomerCareListing)
-      // Do not advertise legacy VAT prices that cannot be booked until an
-      // administrator has confirmed the clinic's BIR tax profile.
-      .filter((post) => clinicPolicy.vatRegistered === true || post.vatApplicable !== true)
     return res.json({ success: true, posts })
   } catch (error) {
     console.error('Public clinic catalog load failed:', {
