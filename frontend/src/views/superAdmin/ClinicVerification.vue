@@ -307,7 +307,7 @@
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 class="text-white font-semibold">Automatic Verification and OCR</h3>
-                <p class="text-xs text-slate-400">Image quality is checked before upload. OCR consistency checks run after the applicant submits the documents.</p>
+                <p class="text-xs text-slate-400">OCR consistency checks run after the applicant submits the documents. Low-confidence results require administrator review.</p>
               </div>
               <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
                 {{ selectedRecord.verificationStatus || 'Not processed' }}
@@ -357,10 +357,6 @@
                 <div class="mt-4 border-t border-slate-800 pt-3">
                   <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Assessment</p>
                   <p class="mt-1 text-xs leading-relaxed text-slate-300">{{ result.reason }}</p>
-                  <p v-if="result.checks.pageReviewReasons.length" class="mt-2 text-xs leading-relaxed text-amber-200">
-                    Page review: {{ result.checks.pageReviewReasons.join(' ') }}
-                  </p>
-                  <p v-if="result.checks.pageCount" class="mt-2 text-[11px] text-slate-400">Pages checked: {{ result.checks.pageCount }}</p>
                   <p v-if="result.checks.expiryDate" class="mt-2 text-xs" :class="result.checks.expiryWarning || result.checks.expiryAccountHold ? 'text-amber-200' : 'text-slate-400'">
                     Expiry: {{ result.checks.expiryDate }}<span v-if="result.checks.expiryDaysRemaining !== null"> · {{ result.checks.expiryDaysRemaining }} day{{ result.checks.expiryDaysRemaining === 1 ? '' : 's' }} remaining</span>
                   </p>
@@ -581,6 +577,14 @@ const verificationDocumentOrder = [
   'authorizationLetter',
 ]
 
+const normalizeVerificationReason = (reason) => {
+  const normalizedReason = String(reason || '').trim()
+  if (normalizedReason.toLowerCase().includes('current page-by-page review record is missing')) {
+    return 'This document requires administrator review.'
+  }
+  return normalizedReason || 'No verification explanation was returned.'
+}
+
 const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {})
   .sort(([firstKey], [secondKey]) => {
     const firstIndex = verificationDocumentOrder.indexOf(firstKey)
@@ -602,13 +606,9 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
     expiryDaysRemaining: Number.isFinite(Number(result.checks?.expiryDaysRemaining)) ? Number(result.checks.expiryDaysRemaining) : null,
     expiryAccountHold: result.checks?.expiryAccountHold === true,
     expiryWarning: result.checks?.expiryWarning === true,
-    pageCount: Number.isFinite(Number(result.checks?.pageCount)) ? Number(result.checks.pageCount) : 0,
-    pageReviewReasons: Array.isArray(result.checks?.pageReviewReasons)
-      ? result.checks.pageReviewReasons.map((reason) => String(reason || '').trim()).filter(Boolean)
-      : [],
   },
   scoreBreakdown: result.scoreBreakdown || null,
-  reason: String(result.reason || 'No verification explanation was returned.'),
+  reason: normalizeVerificationReason(result.reason),
   }))
 
 const formatDateValue = (value) => {

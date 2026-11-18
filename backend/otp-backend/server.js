@@ -2469,9 +2469,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         && String(preflight.extractedText || '').trim().length >= getRegistrationDocumentMinimumTextLength(docKey)
       let annotation = null
       let extractedText = hasReusablePreflight ? String(preflight.extractedText || '').trim() : ''
-      const pageReviewReasons = hasCurrentDocumentPolicy
-        ? (Array.isArray(preflight.quality?.pageReviewReasons) ? preflight.quality.pageReviewReasons : [])
-        : ['The current page-by-page review record is missing. Inspect the original document pages manually.']
       if (!hasReusablePreflight) {
         if (!visionClient) {
           result.reason = 'Automatic document processor is not configured.'
@@ -2556,8 +2553,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.checks = {
         readableText: hasReadableText,
         ocrConfidence,
-        pageCount: Number(preflight.quality?.pageCount || 0),
-        pageReviewReasons,
         nameMatch,
         ownerNameMatch,
         permitHolderNameMatch,
@@ -2600,7 +2595,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || confidence < MANUAL_REVIEW_THRESHOLD
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
-        : pageReviewReasons.length ? 'manual_review'
         : isAuthorizationDocument ? 'manual_review'
         : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
@@ -2615,8 +2609,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
       } else if (expiryAccountHold) {
         result.reason = `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
-      } else if (pageReviewReasons.length) {
-        result.reason = pageReviewReasons.join(' ')
       } else if (isAuthorizationDocument) {
         result.reason = 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
       } else if (requiresPermitHolderName && permitHolderNameMatch !== true) {
