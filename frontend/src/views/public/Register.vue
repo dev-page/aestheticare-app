@@ -372,18 +372,6 @@ const documentInputKeys = ref({
 // File upload rules
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
-const getDocumentUploadGuidance = (docKey) => {
-  if (docKey === 'governmentIdRepresentativeFront') {
-    return 'Upload only the front of your ID. Use one clear image or a single-page PDF (max 10 MB).'
-  }
-  if (docKey === 'governmentIdRepresentativeBack') {
-    return 'Upload only the back of the same ID. Use one clear image or a single-page PDF (max 10 MB).'
-  }
-  if (docKey === 'authorizationLetter') {
-    return 'Keep the signed letter and related proof of authority together in one PDF of up to 15 pages, or upload one image. Max 10 MB.'
-  }
-  return 'Upload the complete document as one PDF of up to 15 pages, or one image. Every page must belong to this document. Max 10 MB.'
-}
 
 const approvalRedirecting = ref(false)
 const approvalRedirectSeconds = ref(5)
@@ -1227,13 +1215,10 @@ const handleDocumentFileChange = async (key, event) => {
   }
 
   const docKey = key
-  documentUploadState.value[docKey] = { uploading: true, phase: 'quality', progress: 0, error: '' }
+  documentUploadState.value[docKey] = { uploading: true, progress: 0, error: '' }
   try {
-    await validateImageDimensions(selectedFile, docKey)
-    const qualityAssessment = await preflightRegistrationDocument(userUid.value, selectedFile, docKey)
-    documentUploadState.value[docKey] = { uploading: true, phase: 'upload', progress: 0, error: '' }
     const uploadPromise = uploadDocumentForClinic(userUid.value, selectedFile, docKey, (progress) => {
-      documentUploadState.value[docKey] = { uploading: progress < 100, phase: 'upload', progress, error: '' }
+      documentUploadState.value[docKey] = { uploading: progress < 100, progress, error: '' }
     })
     clinicDocumentUploadPromises.set(docKey, uploadPromise)
     const uploadedDocument = await uploadPromise
@@ -1245,15 +1230,13 @@ const handleDocumentFileChange = async (key, event) => {
     clinicDocumentUploadControllers.delete(docKey)
     clinicDocumentUploadControllers.set(docKey, uploadedDocument)
     documentPreviewUrls.value[docKey] = selectedFile.type.startsWith('image/') ? URL.createObjectURL(selectedFile) : ''
-    documentUploadState.value[docKey] = { uploading: false, phase: 'complete', progress: 100, error: '' }
-    toast.success(qualityAssessment?.manualReviewRecommended
-      ? 'Document uploaded. Some pages need an administrator to review their content.'
-      : 'Document passed the quality check and uploaded successfully.')
+    documentUploadState.value[docKey] = { uploading: false, progress: 100, error: '' }
+    toast.success('Document uploaded successfully.')
   } catch (err) {
     console.error(err)
     clinicDocumentUploadPromises.delete(docKey)
     const errorMessage = err?.message || 'Failed to upload document. Please try again.'
-    documentUploadState.value[docKey] = { uploading: false, phase: 'error', progress: 0, error: errorMessage }
+    documentUploadState.value[docKey] = { uploading: false, progress: 0, error: errorMessage }
     toast.error(errorMessage)
   } finally {
     if (event?.target) event.target.value = ''
@@ -2528,66 +2511,6 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
   }
 }
 
-const fileToDataUrl = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader()
-  reader.onload = () => resolve(String(reader.result || ''))
-  reader.onerror = () => reject(new Error('The selected file could not be read. Please choose it again.'))
-  reader.readAsDataURL(file)
-})
-
-const validateImageDimensions = async (file, documentKey) => {
-  if (!file.type.startsWith('image/')) return
-  let width = 0
-  let height = 0
-  if (typeof createImageBitmap === 'function') {
-    const bitmap = await createImageBitmap(file)
-    width = bitmap.width
-    height = bitmap.height
-    bitmap.close?.()
-  } else {
-    const previewUrl = URL.createObjectURL(file)
-    try {
-      const image = new Image()
-      await new Promise((resolve, reject) => {
-        image.onload = resolve
-        image.onerror = () => reject(new Error('This image cannot be opened. Save or scan it again as JPEG or PNG.'))
-        image.src = previewUrl
-      })
-      width = image.naturalWidth
-      height = image.naturalHeight
-    } finally {
-      URL.revokeObjectURL(previewUrl)
-    }
-  }
-  const longEdge = Math.max(width, height)
-  const shortEdge = Math.min(width, height)
-  const isGovernmentId = ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack'].includes(documentKey)
-  const minLongEdge = isGovernmentId ? 800 : 1024
-  const minShortEdge = isGovernmentId ? 480 : 768
-  if (!width || !height || longEdge < minLongEdge || shortEdge < minShortEdge) {
-    throw new Error(isGovernmentId
-      ? 'This ID image is too small to read. Upload a clear scan or photo at least 800 Ã— 480 pixels.'
-      : 'This document image is too small to read. Upload a clear scan or photo at least 1024 Ã— 768 pixels.')
-  }
-}
-
-const preflightRegistrationDocument = async (uid, file, documentKey) => {
-  const sessionUser = auth.currentUser
-  if (!sessionUser || sessionUser.uid !== uid) throw new Error('Your registration session expired. Please sign in again.')
-  const contentBase64 = await fileToDataUrl(file)
-  const token = await sessionUser.getIdToken()
-  const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ uid, docKey: documentKey, file: { name: file.name, type: file.type, size: file.size, contentBase64 } }),
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok || !payload?.success || payload?.data?.accepted !== true) {
-    throw new Error(payload?.error || 'The document did not pass the image-quality check. Please upload a clearer, complete copy.')
-  }
-  return payload.data.quality
-}
-
 const requestAutomaticClinicVerification = async (uid) => {
   if (!uid) throw new Error('Registration ID is missing.')
 
@@ -2695,8 +2618,6 @@ const submitDocuments = async () => {
       if (pending) {
         submittedDocumentsPayload[docKey] = await pending
       } else {
-        await validateImageDimensions(file, docKey)
-        await preflightRegistrationDocument(userUid.value, file, docKey)
         submittedDocumentsPayload[docKey] = await uploadDocumentForClinic(userUid.value, file, docKey)
       }
       clinicDocumentUploadControllers.set(docKey, submittedDocumentsPayload[docKey])
@@ -3377,8 +3298,7 @@ const handleRegistrationSubmit = () => {
                   <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
-                  <li>Upload clear, complete, and unexpired documents. Each file must be 10 MB or smaller. ID front and back must be uploaded separately as one-page files; other PDFs may contain up to 15 relevant pages.</li>
-                  <li>Pages with unclear or unrelated content may be sent for administrator review.</li>
+                  <li>Upload clear, complete, and unexpired documents. Each file must be 10 MB or smaller.</li>
                   <li>We will flag documents expiring within 30 days and email you a reminder. Documents expiring within 7 days require replacement before review; expired documents cannot be accepted.</li>
                 </ul>
               </div>
@@ -3400,7 +3320,6 @@ const handleRegistrationSubmit = () => {
                   </details>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeFront')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</p>
-                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance('governmentIdRepresentativeFront') }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeFront"
@@ -3413,7 +3332,7 @@ const handleRegistrationSubmit = () => {
                     </p>
                     <div v-if="documentUploadState.governmentIdRepresentativeFront.uploading" class="mt-3 space-y-1">
                       <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                        <span>{{ documentUploadState.governmentIdRepresentativeFront.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
+                        <span>Uploading...</span>
                         <span>{{ documentUploadState.governmentIdRepresentativeFront.progress || 0 }}%</span>
                       </div>
                       <div class="h-2 overflow-hidden rounded-full bg-gold-100">
@@ -3427,7 +3346,6 @@ const handleRegistrationSubmit = () => {
                   <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeFront }} will be kept from your previous submission.</div>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeBack')" class="upload-card">
                     <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
-                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance('governmentIdRepresentativeBack') }}</p>
                     <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeBack"
@@ -3440,7 +3358,7 @@ const handleRegistrationSubmit = () => {
                     </p>
                     <div v-if="documentUploadState.governmentIdRepresentativeBack.uploading" class="mt-3 space-y-1">
                       <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                        <span>{{ documentUploadState.governmentIdRepresentativeBack.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
+                        <span>Uploading...</span>
                         <span>{{ documentUploadState.governmentIdRepresentativeBack.progress || 0 }}%</span>
                       </div>
                       <div class="h-2 overflow-hidden rounded-full bg-gold-100">
@@ -3460,7 +3378,6 @@ const handleRegistrationSubmit = () => {
                 >
                   <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
                   <template v-if="documentsToUpload.includes(docKey)">
-                  <p class="mb-2 text-xs leading-relaxed text-charcoal-600">{{ getDocumentUploadGuidance(docKey) }}</p>
                   <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
 
                   <img
@@ -3474,7 +3391,7 @@ const handleRegistrationSubmit = () => {
                   </p>
                   <div v-if="documentUploadState[docKey]?.uploading" class="mt-3 space-y-1">
                     <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                      <span>{{ documentUploadState[docKey]?.phase === 'quality' ? 'Checking image quality...' : 'Uploading...' }}</span>
+                      <span>Uploading...</span>
                       <span>{{ documentUploadState[docKey]?.progress || 0 }}%</span>
                     </div>
                     <div class="h-2 overflow-hidden rounded-full bg-gold-100">

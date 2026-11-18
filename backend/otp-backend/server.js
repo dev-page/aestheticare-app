@@ -115,7 +115,7 @@ const rateLimitApi = (req, res, next) => {
     policy = API_RATE_LIMITS.publicAuth
     scope = 'public-auth'
   }
-  if (/\/(ocr|ocr-preflight|auto-verify|trigger-ocr|backup\/zip|attendance\/import|attendance\/imports)(\/|$)/.test(path)) {
+  if (/\/(ocr|auto-verify|trigger-ocr|backup\/zip|attendance\/import|attendance\/imports)(\/|$)/.test(path)) {
     policy = API_RATE_LIMITS.expensive
     scope = 'expensive'
   } else if (/\/(create|submit|approve|reject|cancel|checkout|payment|record|schedule|restore|close|connect|disconnect|upload|resend|verify|activate)(\/|$)/.test(path) || req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
@@ -224,298 +224,12 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
   'dohAccreditation',
 ])
 const GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS = new Set(['governmentIdRepresentativeFront'])
-const GOVERNMENT_ID_DOCUMENT_KEYS = new Set([
-  'governmentIdRepresentativeFront',
-  'governmentIdRepresentativeBack',
-])
-const REGISTRATION_DOCUMENT_MAX_PAGES = 15
 const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
-const REGISTRATION_DOCUMENT_PAGE_CUES = Object.freeze({
-  governmentIdRepresentativeFront: /\b(passport|driver'?s?\s+licen[cs]e|national\s+id|philsys|identification|identity\s+card|date\s+of\s+birth|birth\s+date)\b/i,
-  businessPermit: /\b(business|permit|mayor|municipal|municipality|barangay|license|licen[cs]e|registration)\b/i,
-  birRegistration: /\b(bir|2303|bureau\s+of\s+internal\s+revenue|taxpayer|tax\s+type|tin|certificate\s+of\s+registration)\b/i,
-  sanitaryCertificate: /\b(sanitary|health\s+certificate|health\s+permit|public\s+health|sanitation\s+inspection|sanitary\s+inspection)\b/i,
-  dohAccreditation: /\b(doh|department\s+of\s+health|license\s+to\s+operate|licen[cs]e\s+to\s+operate|health\s+facility)\b/i,
-  authorizationLetter: /\b(authori[sz]|authority|appoint|representative|power\s+of\s+attorney|proof\s+of\s+authority)\b/i,
-})
-const getRegistrationDocumentPageLimit = (docKey) =>
-  GOVERNMENT_ID_DOCUMENT_KEYS.has(String(docKey || '').trim()) ? 1 : REGISTRATION_DOCUMENT_MAX_PAGES
 const getRegistrationDocumentMinimumTextLength = (docKey) =>
   String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
-const extractDocumentAiPageText = (page, documentText) => {
-  const pageSegments = page?.layout?.textAnchor?.textSegments
-  const segments = Array.isArray(pageSegments) && pageSegments.length
-    ? pageSegments
-    : (Array.isArray(page?.tokens) ? page.tokens.flatMap((token) => token?.layout?.textAnchor?.textSegments || []) : [])
-  return segments.map((segment) => {
-    const start = Math.max(0, Number(segment?.startIndex || 0))
-    const end = Math.max(start, Number(segment?.endIndex || 0))
-    return end > start ? documentText.slice(start, end) : ''
-  }).join(' ').replace(/\s+/g, ' ').trim()
-}
-
-const getRegistrationPageReviewReasons = (docKey, pageTexts = []) => {
-  const key = String(docKey || '').trim()
-  const reasons = []
-  const pageCue = REGISTRATION_DOCUMENT_PAGE_CUES[key]
-  pageTexts.forEach((pageText, index) => {
-    const normalizedText = String(pageText || '').trim()
-    if (normalizedText.length < 12) {
-      reasons.push(`Page ${index + 1} has little readable text and needs visual review.`)
-    } else if (pageCue && !pageCue.test(normalizedText)) {
-      reasons.push(`Page ${index + 1} has no clear text cues for this document and needs visual review.`)
-    }
-  })
-  if (key === 'governmentIdRepresentativeBack') {
-    reasons.push('The ID back needs visual review against the front; OCR cannot confirm that both sides belong to the same ID.')
-  }
-  return [...new Set(reasons)].slice(0, REGISTRATION_DOCUMENT_MAX_PAGES + 1)
-}
 const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-const CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR = String(process.env.CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR || '').trim()
-const REGISTRATION_DOCUMENT_QUALITY_FLOOR = 0.5
-let registrationDocumentAiClient = null
-let registrationDocumentAiAuth = null
-
-const getDocumentAiClient = () => {
-  if (!/^projects\/[^/]+\/locations\/[^/]+\/processors\/[^/]+$/.test(CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR)) {
-    const error = new Error('Clinic document quality checking is not configured. Please contact support before submitting registration documents.')
-    error.code = 'DOCUMENT_AI_NOT_CONFIGURED'
-    error.statusCode = 503
-    throw error
-  }
-  if (!googleCloudCredential?.client_email || !googleCloudCredential?.private_key) {
-    const error = new Error('Clinic document quality checking is not available. Please contact support before submitting registration documents.')
-    error.code = 'DOCUMENT_AI_CREDENTIALS_MISSING'
-    error.statusCode = 503
-    throw error
-  }
-  if (!registrationDocumentAiAuth) {
-    registrationDocumentAiAuth = new google.auth.JWT({
-      email: googleCloudCredential.client_email,
-      key: googleCloudCredential.private_key,
-      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-    })
-  }
-  if (!registrationDocumentAiClient) {
-    registrationDocumentAiClient = google.documentai({ version: 'v1', auth: registrationDocumentAiAuth })
-  }
-  return registrationDocumentAiClient
-}
-
-const detectRegistrationDocumentMimeType = (bytes) => {
-  if (bytes?.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf'
-  if (bytes?.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
-  if (bytes?.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
-  return ''
-}
-
-const extractBirTaxTypeCandidate = (text) => {
-  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const nonVatLine = lines.find((line) => /\bnon\s*[- ]?\s*vat\b|\bnot\s+(?:a\s+)?vat\s+registered\b/i.test(line)) || ''
-  const taxTypeHeadingIndex = lines.findIndex((line) => /\btax\s+types?\b|\btaxes\s+registered\b/i.test(line))
-  const taxTypeLines = taxTypeHeadingIndex >= 0 ? lines.slice(taxTypeHeadingIndex, taxTypeHeadingIndex + 8) : []
-  const vatTypeLine = taxTypeLines.find((line) => /\bVAT\b/i.test(line) && !/\bnon\s*[- ]?\s*vat\b/i.test(line)) || ''
-  const explicitVatLine = lines.find((line) => /\bvat\s+registered\b|\bvalue\s+added\s+tax\s+registered\b|\bvat\s+taxpayer\b/i.test(line)) || ''
-  const taxLine = nonVatLine || explicitVatLine || vatTypeLine || lines.find((line) => /\bpercentage\s+tax\b/i.test(line)) || ''
-  if (!taxLine) return { status: 'unclear', evidence: '' }
-  const isNonVat = Boolean(nonVatLine)
-  const isVat = !isNonVat && Boolean(explicitVatLine || vatTypeLine)
-  const match = taxLine.match(/.{0,48}(?:non\s*[- ]?\s*vat|vat|value\s+added\s+tax|percentage\s+tax|vat\s+taxpayer).{0,48}/i)
-  return {
-    status: isNonVat ? 'non_vat_candidate' : isVat ? 'vat_candidate' : 'unclear',
-    evidence: String(match?.[0] || taxLine).replace(/\s+/g, ' ').slice(0, 140),
-  }
-}
-
-const assessRegistrationDocumentQuality = async ({ bytes, contentType, docKey }) => {
-  const actualType = detectRegistrationDocumentMimeType(bytes)
-  if (!actualType || actualType !== String(contentType || '').toLowerCase()) {
-    const error = new Error('The file content does not match its selected type. Choose a readable PDF, PNG, or JPEG document.')
-    error.statusCode = 400
-    throw error
-  }
-  if (bytes.length <= 0 || bytes.length > 10 * 1024 * 1024) {
-    const error = new Error('Document size is invalid. Upload a file up to 10 MB.')
-    error.statusCode = 400
-    throw error
-  }
-
-  const client = getDocumentAiClient()
-  let response
-  try {
-    const processorLocation = CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR.match(/^projects\/[^/]+\/locations\/([^/]+)\//)?.[1] || 'global'
-    const rootUrl = processorLocation === 'global'
-      ? 'https://documentai.googleapis.com/'
-      : `https://${processorLocation}-documentai.googleapis.com/`
-    response = await client.projects.locations.processors.process({
-      name: CLINIC_REGISTRATION_DOCUMENT_AI_PROCESSOR,
-      requestBody: {
-        rawDocument: { content: bytes.toString('base64'), mimeType: actualType },
-        processOptions: { ocrConfig: { enableImageQualityScores: true } },
-      },
-    }, { rootUrl })
-  } catch (error) {
-    const providerMessage = String(
-      error?.response?.data?.error?.message
-      || error?.errors?.[0]?.message
-      || error?.message
-      || ''
-    )
-    if (/page(?:s| count)?[^\n]*(?:exceed|limit|maximum|max)/i.test(providerMessage)) {
-      const pageLimitError = new Error(`PDFs may contain up to ${REGISTRATION_DOCUMENT_MAX_PAGES} pages. Split the document and upload only the pages that belong to it.`)
-      pageLimitError.statusCode = 422
-      throw pageLimitError
-    }
-    error.statusCode = 503
-    error.message = 'We could not check this document’s image quality right now. Please try again later. The file has not been accepted.'
-    throw error
-  }
-  const document = response?.data?.document || {}
-  const text = String(document.text || '').trim()
-  const pages = Array.isArray(document.pages) ? document.pages : []
-  const pageLimit = getRegistrationDocumentPageLimit(docKey)
-  const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
-  const pageTexts = pages.map((page) => extractDocumentAiPageText(page, text))
-  const pageReviewReasons = getRegistrationPageReviewReasons(docKey, pageTexts)
-  const pageQuality = pages.map((page, index) => {
-    const scores = page?.imageQualityScores || {}
-    const qualityScore = Number(scores.qualityScore)
-    const defects = (Array.isArray(scores.detectedDefects) ? scores.detectedDefects : []).map((defect) => ({
-      type: String(defect.type || defect.defectType || defect.name || '').trim().slice(0, 80),
-      confidence: Number(defect.confidence),
-    })).filter((defect) => defect.type)
-    return {
-      page: index + 1,
-      score: Number.isFinite(qualityScore) ? qualityScore : null,
-      defects,
-      readableTextLength: pageTexts[index].length,
-    }
-  })
-  const allPagesScored = pageQuality.length > 0 && pageQuality.every((page) => Number.isFinite(page.score))
-  const severeDefects = pageQuality.flatMap((page) => page.defects
-    .filter((defect) => defect.confidence >= 0.5 && /blur|cut.?off|cutoff|text.?too.?small|small.?text|low.?res|unreadable|text.?cutoff|noisy|dark|faint/i.test(defect.type))
-    .map((defect) => ({ page: page.page, type: defect.type })))
-  const score = allPagesScored ? Math.min(...pageQuality.map((page) => page.score)) : null
-  const tokenConfidences = pages.flatMap((page) => (Array.isArray(page.tokens) ? page.tokens : [])
-    .map((token) => Number(token?.layout?.confidence))
-    .filter((confidence) => Number.isFinite(confidence)))
-  const reasons = []
-  if (!pages.length) reasons.push('No pages could be read from this document.')
-  if (pages.length > pageLimit) {
-    reasons.push(GOVERNMENT_ID_DOCUMENT_KEYS.has(String(docKey || '').trim())
-      ? 'Upload only one side of the government ID in this field. Use the separate front and back fields.'
-      : `This document exceeds the ${REGISTRATION_DOCUMENT_MAX_PAGES}-page limit.`)
-  }
-  if (!allPagesScored) reasons.push('The image quality could not be checked for every page.')
-  if (score !== null && score < REGISTRATION_DOCUMENT_QUALITY_FLOOR) reasons.push('One or more pages are too difficult to read. Rescan them in focus with good lighting.')
-  if (severeDefects.length) reasons.push('One or more pages appear blurred, dark, cropped, or too small to read. Show the full page and try again.')
-  if (text.length < minimumTextLength) reasons.push('The document does not contain enough readable text. Make sure the full document is visible and in focus.')
-  const accepted = reasons.length === 0
-  const quality = {
-    pageCount: pageQuality.length,
-    minimumScore: score,
-    qualityFloor: REGISTRATION_DOCUMENT_QUALITY_FLOOR,
-    pages: pageQuality.map((page) => ({ page: page.page, score: page.score, defectTypes: page.defects.map((defect) => defect.type) })),
-    blockingDefects: severeDefects,
-    readableText: text.length >= minimumTextLength,
-    manualReviewRecommended: pageReviewReasons.length > 0,
-    pageReviewReasons,
-    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
-    accepted,
-    reason: reasons.join(' '),
-  }
-  return {
-    accepted,
-    quality,
-    extractedText: text,
-    ocrConfidence: tokenConfidences.length
-      ? tokenConfidences.reduce((sum, confidence) => sum + confidence, 0) / tokenConfidences.length
-      : null,
-    manualReviewRecommended: pageReviewReasons.length > 0,
-    pageReviewReasons,
-    taxTypeCandidate: extractBirTaxTypeCandidate(text),
-  }
-}
 
 const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
-
-const persistRegistrationDocumentPreflight = async ({ firestore, uid, docKey, bytes, contentType, fileName, storagePath = '' }) => {
-  const assessment = await assessRegistrationDocumentQuality({ bytes, contentType, docKey })
-  const hash = registrationDocumentHash(bytes)
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
-  const record = {
-    contentHash: hash,
-    contentType,
-    size: bytes.length,
-    fileName: String(fileName || '').slice(0, 255),
-    storagePath: String(storagePath || '').slice(0, 1024),
-    accepted: assessment.accepted,
-    quality: assessment.quality,
-    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
-    // This subcollection has no client read rule. Reuse OCR at final
-    // verification without exposing the extracted personal document text.
-    extractedText: assessment.extractedText.slice(0, 100000),
-    ocrConfidence: assessment.ocrConfidence,
-    ...(docKey === 'birRegistration' ? { taxTypeCandidate: assessment.taxTypeCandidate } : {}),
-    checkedAt: timestamp,
-    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * DAY_MS),
-  }
-  await firestore.collection('clinics').doc(uid).collection('documentPreflights').doc(docKey).set(record)
-  return { ...record, assessment }
-}
-
-const verifyRegistrationDocumentQualityAtSubmission = async ({ firestore, uid, docKey, document, bucketName }) => {
-  const storagePath = String(document?.path || document?.storagePath || '').trim()
-  const file = admin.storage().bucket(bucketName).file(storagePath)
-  const [bytes] = await file.download()
-  if (!bytes?.length || bytes.length > 10 * 1024 * 1024 || bytes.length !== Number(document.size || 0)) {
-    const error = new Error(`The ${registrationDocumentLabel(docKey)} file is incomplete or its size does not match. Please upload it again.`)
-    error.statusCode = 422
-    throw error
-  }
-  const actualType = detectRegistrationDocumentMimeType(bytes)
-  if (!actualType || actualType !== String(document.type || '').toLowerCase()) {
-    const error = new Error(`The ${registrationDocumentLabel(docKey)} file content does not match its file type. Please upload a valid PDF, PNG, or JPEG.`)
-    error.statusCode = 422
-    throw error
-  }
-
-  const hash = registrationDocumentHash(bytes)
-  const preflightRef = firestore.collection('clinics').doc(uid).collection('documentPreflights').doc(docKey)
-  const preflightSnap = await preflightRef.get()
-  const saved = preflightSnap.exists ? preflightSnap.data() || {} : {}
-  const expiresAt = getTimestampDate(saved.expiresAt)
-  let acceptedRecord = saved
-  if (saved.accepted !== true
-    || saved.contentHash !== hash
-    || Number(saved.policyVersion || saved.quality?.policyVersion || 0) !== REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION
-    || !expiresAt
-    || expiresAt.getTime() <= Date.now()) {
-    acceptedRecord = await persistRegistrationDocumentPreflight({
-      firestore, uid, docKey, bytes, contentType: actualType, fileName: document.name, storagePath,
-    })
-  }
-  if (acceptedRecord.accepted !== true) {
-    const error = new Error(`${registrationDocumentLabel(docKey)} needs to be replaced. ${String(acceptedRecord.quality?.reason || 'Upload a clearer, complete document.')}`)
-    error.statusCode = 422
-    error.docKey = docKey
-    throw error
-  }
-  if (acceptedRecord.storagePath !== storagePath) {
-    await preflightRef.set({ storagePath, checkedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
-  }
-  return {
-    checkedAt: acceptedRecord.checkedAt || admin.firestore.FieldValue.serverTimestamp(),
-    pageCount: Number(acceptedRecord.quality?.pageCount || 0),
-    minimumScore: acceptedRecord.quality?.minimumScore ?? null,
-    defectTypes: [...new Set((acceptedRecord.quality?.pages || []).flatMap((page) => page.defectTypes || []))],
-    manualReviewRecommended: acceptedRecord.quality?.manualReviewRecommended === true,
-    pageReviewReasons: Array.isArray(acceptedRecord.quality?.pageReviewReasons) ? acceptedRecord.quality.pageReviewReasons : [],
-    policyVersion: REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION,
-    method: 'document_ai',
-  }
-}
 
 // The registrant's legal name is captured in Step 1. OCR identity checks use
 // that name only; a clinic or business name must never substitute for the
@@ -2519,8 +2233,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     reason: '',
   }
   const expectedPrefix = `clinic-registration/${uid}/${docKey}/`
-  const isInMemoryPreflight = document?.preflight === true && typeof document?.contentBase64 === 'string'
-  if ((!storagePath || !storagePath.startsWith(expectedPrefix)) && !isInMemoryPreflight) {
+  if (!storagePath || !storagePath.startsWith(expectedPrefix)) {
     result.reason = 'Document storage path is missing or does not belong to this registration.'
     return result
   }
@@ -2540,9 +2253,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     return result
   }
   try {
-    const visionRequest = isInMemoryPreflight
-      ? { image: { content: document.contentBase64 } }
-      : await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
+    const visionRequest = await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
     const [visionResult] = await visionClient.documentTextDetection(visionRequest)
     const primaryError = getVisionResponseError(visionResult)
     if (primaryError) throw new Error(primaryError)
@@ -3163,20 +2874,36 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
     }
 
-    // Verify the actual stored bytes before accepting the submission. Existing
-    // registrations without preflight evidence are checked here and get the
-    // same per-document replacement path if a page is unreadable.
+    // Confirm each uploaded Storage object exists and matches its submitted
+    // size/type metadata before accepting the registration.
     const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
     if (!bucketName) {
       const error = new Error('Secure document storage is not configured. Please contact support before submitting.')
       error.statusCode = 503
       throw error
     }
+    const storageBucket = admin.storage().bucket(bucketName)
     for (const docKey of requiredKeys) {
-      const qualityAssessment = await verifyRegistrationDocumentQualityAtSubmission({
-        firestore, uid, docKey, document: submittedDocuments[docKey], bucketName,
-      })
-      submittedDocuments[docKey].qualityAssessment = qualityAssessment
+      const document = submittedDocuments[docKey]
+      let metadata
+      try {
+        const [storedMetadata] = await storageBucket.file(document.path).getMetadata()
+        metadata = storedMetadata
+      } catch (_error) {
+        const error = new Error(`The saved ${registrationDocumentLabel(docKey)} file is unavailable. Please upload it again.`)
+        error.statusCode = 422
+        throw error
+      }
+      const storedSize = Number(metadata?.size || 0)
+      const storedType = String(metadata?.contentType || '').toLowerCase()
+      if (!Number.isFinite(storedSize) || storedSize <= 0 || storedSize > 10 * 1024 * 1024
+        || storedSize !== Number(document.size)
+        || storedType !== document.type
+        || !['application/pdf', 'image/jpeg', 'image/png'].includes(storedType)) {
+        const error = new Error(`The saved ${registrationDocumentLabel(docKey)} file type or size is invalid. Please upload it again.`)
+        error.statusCode = 422
+        throw error
+      }
     }
 
     const registrationRequiresAgreement = clinic.isClinicRegistrationActive !== false
@@ -3594,46 +3321,6 @@ app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Upload-time OCR failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'OCR processing failed.' })
-  }
-})
-
-// Preflight checks the original file before the client uploads it to Storage.
-// Only compact, private quality evidence and the BIR tax-type candidate are
-// retained server-side; extracted OCR text is never returned to the browser.
-app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  const docKey = String(req.body?.docKey || '').trim()
-  const file = req.body?.file || {}
-  const contentBase64 = String(file.contentBase64 || '').replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '')
-  if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-  if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
-  const contentType = String(file.type || '').toLowerCase()
-  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)) return res.status(400).json({ success: false, error: 'Upload a PDF, PNG, or JPEG document.' })
-  const size = Number(file.size || 0)
-  if (!contentBase64 || size <= 0 || size > 10 * 1024 * 1024) return res.status(400).json({ success: false, error: 'Document content is invalid or too large.' })
-  try {
-    const firestore = admin.firestore()
-    const clinicSnap = await firestore.collection('clinics').doc(uid).get()
-    if (!clinicSnap.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
-    const bytes = Buffer.from(contentBase64, 'base64')
-    if (!bytes.length || bytes.length !== size || bytes.toString('base64').replace(/=+$/, '') !== contentBase64.replace(/=+$/, '')) {
-      return res.status(400).json({ success: false, error: 'The selected file could not be read completely. Please choose it again.' })
-    }
-    const preflight = await persistRegistrationDocumentPreflight({
-      firestore, uid, docKey, bytes, contentType, fileName: file.name,
-    })
-    if (!preflight.accepted) {
-      return res.status(422).json({
-        success: false,
-        error: preflight.quality.reason || 'This document is too difficult to read. Upload a clearer, complete copy.',
-        data: { accepted: false, quality: preflight.quality },
-      })
-    }
-    return res.json({ success: true, data: { accepted: true, quality: preflight.quality } })
-  } catch (error) {
-    console.error('Registration document quality preflight failed:', error?.code || error?.message || error)
-    const status = Number(error?.statusCode || 500)
-    return res.status(status).json({ success: false, error: error?.message || 'Document quality check failed. The file has not been uploaded.' })
   }
 })
 
