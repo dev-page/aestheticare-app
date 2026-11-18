@@ -2875,9 +2875,6 @@ const handleRegistrationSubmit = () => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
                   </svg>
                 </span>
-                <p class="mt-1 px-3 text-xs text-charcoal-500">
-                  Have an unfinished registration? Enter the email address you used to continue where you left off.
-                </p>
                 <p v-if="emailError" class="mt-1 text-xs text-red-600">{{ emailError }}</p>
                 <p v-else-if="emailAvailabilityMessage" aria-live="polite" class="mt-1 text-xs" :class="{
                   'text-emerald-700': emailAvailability === 'available',
