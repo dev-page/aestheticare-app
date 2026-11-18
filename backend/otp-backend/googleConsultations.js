@@ -116,9 +116,7 @@ export const registerGoogleConsultations = (app, deps) => {
         check(appointment, 'Appointment not found.', 404)
         check(appointment.customerId === req.user.uid, 'Only the booked customer may submit this code.', 403)
         check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
-        check(['paid', 'ready to start', 'scheduled'].includes(normalized(appointment.status)) && appointment.approvalStatus === 'Approved' && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'Approval, a signed contract, and the required payment are needed.', 409)
-        const window = consultationWindow(appointment)
-        check(Date.now() >= window.start.getTime() - 30 * 60000 && Date.now() < window.arrivalDeadline.getTime(), 'Submit your service code within 30 minutes of the consultation, before the arrival grace period ends.', 409)
+        check(['paid', 'ready to start', 'scheduled', 'ongoing'].includes(normalized(appointment.status)) && appointment.approvalStatus === 'Approved' && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'Approval, a signed contract, and the required payment are needed.', 409)
         const attempts = (await tx.get(attemptRef)).data() || {}
         check(!(attempts.count >= 5 && attempts.until > Date.now()), 'Too many incorrect codes. Try again in ten minutes.', 429)
         const code = String(req.body?.serviceKey || '').trim()
@@ -128,6 +126,7 @@ export const registerGoogleConsultations = (app, deps) => {
         }
         const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId
         check(practitionerId, 'A practitioner must be assigned first.', 409)
+        const meeting = (await tx.get(db.collection('appointmentMeetings').doc(ref.id))).data() || {}
         const readyAt = appointment.consultationCustomerReadyAt || stamp()
         const notificationRef = db.collection('notifications').doc(`meet-ready-${ref.id}`)
         const existingNotification = (await tx.get(notificationRef)).data()
@@ -141,13 +140,16 @@ export const registerGoogleConsultations = (app, deps) => {
         })
         if (!existingNotification) tx.set(notificationRef, {
           recipientUserId: practitionerId, branchId: appointment.branchId, title: 'Customer is in the virtual waiting room',
-          message: 'The customer checked in with their service code. Add a Google Meet link to send the invitation.',
+          message: 'The customer entered their service code for the online consultation.',
           link: '/crm/appointments?tab=queue&mode=online', read: false, deleted: false, createdAt: stamp(),
         })
-        return { queued: true }
+        const matchingMeeting = (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual')
+          && meeting.practitionerId === practitionerId && meeting.customerId === appointment.customerId
+          && meeting.scheduledStartAt === consultationWindow(appointment).start.toISOString()
+        return { queued: true, meetLink: matchingMeeting ? String(meeting.meetLink || '') : '' }
       })
       check(!result.invalid, 'Invalid service code.', 400)
-      res.json({ success: true, data: { queued: true } })
+      res.json({ success: true, data: result })
     } catch (error) { respondError(res, error) }
   })
 
@@ -232,11 +234,9 @@ export const registerGoogleConsultations = (app, deps) => {
         check(appointment, 'Online consultation not found.', 404)
         await authorizeClinicAction(req.user.uid, appointment.branchId, 'consultations:create')
         check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
-        check(appointment.consultationCodeVerifiedAt && appointment.consultationCodeVerifiedBy === appointment.customerId && appointment.consultationCustomerReadyAt, 'The customer must check in with their service key before receiving an invitation.', 409)
-        check(appointment.approvalStatus === 'Approved' && initialPaymentReceived(appointment) && normalized(appointment.contract?.status) === 'signed', 'Approval, payment, and a signed contract are required.', 409)
-        check(['paid', 'ready to start', 'scheduled'].includes(normalized(appointment.status)), 'This consultation is no longer waiting to start.', 409)
+        check(!['cancelled', 'rejected', 'completed', 'no-show', 'ongoing', 'awaiting customer confirmation'].includes(normalized(appointment.status)), 'This consultation is no longer waiting to start.', 409)
+        check(appointment.assignedPractitionerId || appointment.practitionerId, 'A practitioner must be assigned first.', 409)
         const window = consultationWindow(appointment)
-        check(Date.now() >= window.start.getTime() - 30 * 60000 && Date.now() < window.arrivalDeadline.getTime(), 'The consultation invitation window is closed.', 409)
         const invitedAt = appointment.consultationInviteAt || stamp()
         const previousMeeting = (await tx.get(meetingRef)).data() || {}
         tx.set(meetingRef, {
@@ -250,7 +250,7 @@ export const registerGoogleConsultations = (app, deps) => {
         tx.update(ref, { consultationInviteAt: invitedAt, consultationInviteSentBy: req.user.uid, consultationInviteEmailStatus: 'pending', updatedAt: stamp() })
         tx.set(customerNotificationRef, {
           recipientUserId: appointment.customerId, branchId: appointment.branchId, title: 'Your clinic shared a Google Meet link',
-          message: 'Your clinic added the consultation link. Open My Appointments and select Join Google Meet when it is time.',
+          message: 'Your clinic added a consultation link. Enter your service code in My Appointments to reveal it.',
           link: '/customer/appointments?tab=online', read: false, deleted: false, createdAt: stamp(),
         }, { merge: true })
         return {
@@ -271,8 +271,8 @@ export const registerGoogleConsultations = (app, deps) => {
           const delivery = await sendEmail({
             to: result.customerEmail,
             subject: 'Your online consultation link is ready',
-            text: `Hi ${name},\n\nYour clinic has shared the Google Meet link for your ${service} on ${dateTime}.\n\nJoin your consultation here: ${result.meetLink}\n\nYou can also open My Appointments in AesthetiCare to join. Keep your service key private; it is used for check-in.`,
-            html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408"><p>Hi ${name},</p><p>Your clinic has shared the Google Meet link for your <strong>${service}</strong> on ${dateTime}.</p><p><a href="${result.meetLink}">Join Google Meet</a></p><p>You can also open My Appointments in AesthetiCare. Keep your service key private; it is used for check-in.</p></div>`,
+            text: `Hi ${name},\n\nYour clinic has prepared the Google Meet link for your ${service} on ${dateTime}. Open My Appointments in AesthetiCare and enter your service code to reveal and copy the link.`,
+            html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408"><p>Hi ${name},</p><p>Your clinic has prepared the Google Meet link for your <strong>${service}</strong> on ${dateTime}.</p><p>Open My Appointments in AesthetiCare and enter your service code to reveal and copy the link.</p></div>`,
           })
           emailSent = delivery?.statusCode === 200
         } catch { emailSent = false }

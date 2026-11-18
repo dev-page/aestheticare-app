@@ -4534,7 +4534,7 @@ app.post('/owner/branches', requireAuth, async (req, res) => {
 const sendServiceCode = async ({ email, serviceKey, date, time }) => {
   if (!email) return { skipped: true, reason: 'Missing recipient email for the refreshed service code.' }
   if (!postmarkClient || !senderEmail) return { skipped: true, reason: 'Postmark not configured for the refreshed service code.' }
-  return sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments within 30 minutes before the scheduled start and before the arrival grace period ends. The clinic will add and send your Google Meet link after check-in. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
+  return sendPostmarkMessage({ to: email, subject: 'Your individual appointment code', text: `Your AesthetiCare appointment is on ${date} at ${time} (Philippine time). Your private service code is ${serviceKey}. For an on-site appointment, show this code to reception for check-in. For an online consultation, enter it in My Appointments to reveal the Google Meet link when the clinic has added it. The consultation timer starts when the practitioner verifies your presence and starts the consultation. This code applies only to your appointment. Keep it private.` })
 }
 let runAppointmentPaymentHoldSweep = async () => ({ expired: 0 })
 const safelySweepAppointmentPaymentHolds = async () => {

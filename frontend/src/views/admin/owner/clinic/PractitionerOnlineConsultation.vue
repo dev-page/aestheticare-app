@@ -5,7 +5,7 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
-        <p class="text-slate-400">Customers check in with their service code. Add the meeting link to the checked-in appointment, and AesthetiCare will notify the customer in the app and by email.</p>
+        <p class="text-slate-400">Create a Google Meet room and add its link. The customer can reveal it using their service code.</p>
       </div>
       <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -66,7 +66,6 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-60"
-                      :disabled="!canJoinConsultation(appointment)"
                       @click="copyMeetLink(appointment.meetLink)"
                       title="Copy link"
                     >
@@ -74,14 +73,14 @@
                     </button>
                   </div>
                   <span v-else class="text-slate-400 text-sm">
-                    {{ appointment.consultationMode === 'on-site' ? 'On-site consultation' : appointment.consultationCustomerReadyAt ? 'Customer is waiting for your invite' : 'Waiting for customer check-in' }}
+                    {{ appointment.consultationMode === 'on-site' ? 'On-site consultation' : 'No meeting link added' }}
                   </span>
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
 <p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-emerald-300">Customer checked in and is waiting for a Meet link.</p>
-<a v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt && canCreateMeetLink" href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">Create room in Google Meet</a>
-<button v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60" @click="openMeetLinkForm(appointment)">Add link & notify</button>
+<a v-if="!appointment.meetLink && canCreateMeetLink" href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">Create room in Google Meet</a>
+<button v-if="!appointment.meetLink && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60" @click="openMeetLinkForm(appointment)">Add link & notify</button>
 <p v-if="appointment.consultationInviteAt" class="text-sm text-slate-400">Invitation sent to the customer. Join using your Google account.</p>
 <button v-if="appointment.consultationInviteAt && appointment.consultationInviteEmailStatus === 'failed' && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg border border-amber-500 text-amber-200 text-xs hover:bg-amber-900/30" @click="openMeetLinkForm(appointment)">Retry email</button>
                     <button
@@ -145,7 +144,7 @@
       :close-on-backdrop="false"
       @close="closeMeetLinkForm"
     >
-      <p class="mb-4 text-sm text-slate-600">Create a room in Google Meet, copy its link, and paste it below. AesthetiCare will show it in the customer's appointment and send an email.</p>
+      <p class="mb-4 text-sm text-slate-600">Create a room in Google Meet, copy its link, and paste it below. The customer can reveal it with their service code.</p>
       <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="mb-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Create room in Google Meet</a>
       <label for="consultation-meet-link" class="mb-2 block text-sm font-semibold text-slate-700">Google Meet link</label>
       <input id="consultation-meet-link" v-model="meetLinkDraft" type="url" inputmode="url" autocomplete="url" placeholder="https://meet.google.com/abc-defg-hij" class="w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" />
@@ -335,7 +334,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const appointment = { id: snap.id, ...snap.data() }
         const meetingSnap = await getDoc(doc(db, 'appointmentMeetings', snap.id))
         const meeting = meetingSnap.data() || {}
-        return meetingSnap.exists() && (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual') && appointment.consultationCodeVerifiedAt && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && Date.parse(meeting.scheduledStartAt) === Date.parse(`${appointment.date}T${appointment.time}+08:00`) ? { ...appointment, ...meeting } : { ...appointment, meetLink: '' }
+        return meetingSnap.exists() && (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual') && meeting.practitionerId === (appointment.assignedPractitionerId || appointment.practitionerId) && Date.parse(meeting.scheduledStartAt) === Date.parse(`${appointment.date}T${appointment.time}+08:00`) ? { ...appointment, ...meeting } : { ...appointment, meetLink: '' }
       }))
       appointments.value = sortRecordsNewestFirst(records)
       refreshMeetPresence()
@@ -420,7 +419,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const openMeetLinkForm = appointment => {
-      if (!appointment?.id || !appointment.consultationCustomerReadyAt || (appointment.consultationInviteAt && appointment.consultationInviteEmailStatus !== 'failed') || !canCreateMeetLink.value) return
+      if (!appointment?.id || !canCreateMeetLink.value) return
       meetLinkAppointment.value = appointment
       meetLinkDraft.value = String(appointment.meetLink || '')
       meetLinkError.value = ''
@@ -434,7 +433,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const attachMeetLink = async (appointment) => {
-      if (!appointment?.id || invitingId.value || !appointment.consultationCustomerReadyAt || !canCreateMeetLink.value) return
+      if (!appointment?.id || invitingId.value || !canCreateMeetLink.value) return
       let normalizedLink = ''
       try {
         const parsed = new URL(meetLinkDraft.value.trim())

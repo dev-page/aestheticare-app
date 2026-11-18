@@ -184,8 +184,8 @@
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Meeting Link">
-                    <span class="table-secondary">{{ appt.meetLink ? 'Meet invitation ready' : appt.consultationCustomerReadyAt ? 'You are in the virtual waiting room' : 'Waiting for check-in' }}</span>
-                    <span v-if="appt.consultationCustomerReadyAt && !appt.consultationInviteAt" class="table-secondary">Your practitioner will invite you to Meet when ready.</span>
+                    <template v-if="appt.meetLink"><span class="table-secondary" style="overflow-wrap:anywhere">{{ appt.meetLink }}</span><button type="button" class="appointment-button appointment-button-secondary" @click="copyMeetLink(appt)">Copy link</button></template>
+                    <span v-else class="table-secondary">{{ appt.consultationCustomerReadyAt ? 'Waiting for the clinic to add a link' : 'Enter your service code to reveal the link' }}</span>
                     <span v-if="appt.serviceKey && normalizeAppointmentStatus(appt.contract?.status) === 'signed' && initialPaymentReceived(appt) && !appt.consultationCustomerReadyAt" class="appointment-menu-key">In-app check-in code: <strong class="font-mono text-base">{{ appt.serviceKey }}</strong></span>
                   </td>
                   <td data-label="Status">
@@ -607,9 +607,9 @@
             <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => selectedOnlineConsultation = selectedAppointmentDetails)">Consultation controls</button>
             <button v-if="selectedAppointmentDetails.contract && selectedAppointmentDetails.approvalStatus === 'Approved' && selectedAppointmentDetails.sameDayTreatmentStatus !== 'pending_clinical_clearance'" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => openContract(selectedAppointmentDetails))">{{ normalizeAppointmentStatus(selectedAppointmentDetails.contract.status) === 'signed' ? 'View contract' : 'Review and sign' }}</button>
             <button v-if="canPayAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => payAppointment(selectedAppointmentDetails))">Pay {{ formatBookingDue(selectedAppointmentDetails) }}</button>
-            <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails) && !selectedAppointmentDetails.meetLink && !selectedAppointmentDetails.consultationCustomerReadyAt" type="button" class="appointment-button appointment-button-secondary" :disabled="serviceKeyVerifying || isCancelledAppointment(selectedAppointmentDetails) || selectedAppointmentDetails.approvalStatus !== 'Approved' || selectedAppointmentDetails.contract?.status !== 'signed' || !initialPaymentReceived(selectedAppointmentDetails)" @click="runAppointmentDetailsAction(() => selectedAppointmentDetails.serviceKey ? submitServiceKey(selectedAppointmentDetails.serviceKey, selectedAppointmentDetails) : verifyServiceKey(selectedAppointmentDetails))">{{ selectedAppointmentDetails.serviceKey ? 'Check in with saved code' : 'Enter check-in code' }}</button>
-            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => openMeetLink(selectedAppointmentDetails))">Join Google Meet</button>
-            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => copyMeetLink(selectedAppointmentDetails))">Copy Meet link</button>
+            <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails) && !selectedAppointmentDetails.consultationCustomerReadyAt" type="button" class="appointment-button appointment-button-secondary" :disabled="serviceKeyVerifying || isCancelledAppointment(selectedAppointmentDetails) || selectedAppointmentDetails.approvalStatus !== 'Approved' || selectedAppointmentDetails.contract?.status !== 'signed' || !initialPaymentReceived(selectedAppointmentDetails)" @click="verifyServiceKey(selectedAppointmentDetails); closeAppointmentDetails()">Enter service code</button>
+            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="openMeetLink(selectedAppointmentDetails)">Join Google Meet</button>
+            <button v-if="selectedAppointmentDetails.meetLink" type="button" class="appointment-button appointment-button-secondary" @click="copyMeetLink(selectedAppointmentDetails)">Copy Meet link</button>
             <button v-if="selectedAppointmentDetails.status === 'Ongoing' && !selectedAppointmentDetails.consultationClientEndedAt" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => endConsultationParticipation(selectedAppointmentDetails))">End consultation participation</button>
             <button v-if="canConfirmCompletion(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => confirmCompletion(selectedAppointmentDetails))">Confirm service received</button>
             <button v-if="canRequestReschedule(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(selectedAppointmentDetails, 'reschedule')" @click="runAppointmentDetailsAction(() => openRequestModal('reschedule', selectedAppointmentDetails))">{{ isRequestPending(selectedAppointmentDetails, 'reschedule') ? 'Reschedule pending' : 'Request reschedule' }}</button>
@@ -631,7 +631,7 @@
     <ServiceKeyVerificationModal
       :visible="showServiceKeyModal"
       :loading="serviceKeyVerifying"
-      :description="isOnlineConsultationAppointment(selectedServiceKeyAppointment) ? 'Enter your emailed service code to check in. Your practitioner will send a Google Meet invitation when ready; the consultation timer starts only after the practitioner begins the session.' : 'Enter the service key for your appointment.'"
+      :description="isOnlineConsultationAppointment(selectedServiceKeyAppointment) ? 'Enter your service code to reveal the Google Meet link.' : 'Enter the service key for your appointment.'"
       @close="closeServiceKeyModal"
       @submit="submitServiceKey"
     />
@@ -1520,7 +1520,6 @@ const endConsultationParticipation = async appointment => {
 }
 
 const copyMeetLink = async (appointment) => {
-  if (!onlineAccessOpen(appointment)) { toast.info('Consultation access is closed.'); return }
   const meetLink = appointment.meetLink
   const url = String(meetLink || '').trim()
   if (!url) return
@@ -2113,8 +2112,9 @@ const submitServiceKey = async (serviceKey, appointmentOverride = null) => {
     if (isOnlineConsultationAppointment(appointment)) {
       const result = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/consultation-access`, { serviceKey })
       appointment.consultationCustomerReadyAt = new Date().toISOString()
-      appointment.meetLink = ''
-      toast.success('You are checked in. The clinic will add your Google Meet link and notify you when it is ready.')
+      appointment.consultationCodeVerifiedAt = new Date().toISOString()
+      appointment.meetLink = result.meetLink || ''
+      toast.success(appointment.meetLink ? 'Service code verified. You can now copy the Meet link.' : 'Service code verified. The link will appear when the clinic adds it.')
     } else {
       await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
       toast.success('Service key verified.')
