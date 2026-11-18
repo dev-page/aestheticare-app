@@ -41,10 +41,10 @@ const tabs = computed(() => [
 </template>
 
 <style scoped>
-.shift-tabs { display: flex; gap: 8px; margin: 24px 0; border-bottom: 1px solid #d7aa7d55; overflow-x: auto; }
-.shift-tab { flex-shrink: 0; padding: 12px 18px; border-bottom: 3px solid transparent; color: #a58a73; font-size: 14px; font-weight: 600; transition: color 150ms, border-color 150ms; }
-.shift-tab:hover { color: #91643f; }
-.shift-tab.is-active { color: #91643f; border-bottom-color: #b78055; }
-.shift-tab.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.shift-tabs { display: flex; gap: 8px; margin: 24px 0; border-bottom: 1px solid var(--ac-border-strong); overflow-x: auto; }
+.shift-tab { flex-shrink: 0; padding: 12px 18px; border-bottom: 3px solid transparent; color: var(--ac-text-secondary); font-size: 14px; font-weight: 600; transition: color 150ms, border-color 150ms; }
+.shift-tab:hover { color: var(--ac-text); }
+.shift-tab.is-active { color: var(--ac-text); border-bottom-color: var(--ac-accent); }
+.shift-tab.is-disabled { color: var(--ac-text-muted); cursor: not-allowed; }
 .shift-tab:focus-visible { outline: 2px solid #b78055; outline-offset: -2px; }
 </style>

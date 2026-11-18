@@ -45,10 +45,10 @@ const tabs = computed(() => [
 </template>
 
 <style scoped>
-.employee-tabs { display: flex; gap: 8px; margin: 24px 0; border-bottom: 1px solid #d7aa7d55; overflow-x: auto; }
-.employee-tab { flex-shrink: 0; padding: 12px 18px; border-bottom: 3px solid transparent; color: #a58a73; font-size: 14px; font-weight: 600; transition: color 150ms, border-color 150ms; }
-.employee-tab:hover { color: #91643f; }
-.employee-tab.is-active { color: #91643f; border-bottom-color: #b78055; }
-.employee-tab.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.employee-tabs { display: flex; gap: 8px; margin: 24px 0; border-bottom: 1px solid var(--ac-border-strong); overflow-x: auto; }
+.employee-tab { flex-shrink: 0; padding: 12px 18px; border-bottom: 3px solid transparent; color: var(--ac-text-secondary); font-size: 14px; font-weight: 600; transition: color 150ms, border-color 150ms; }
+.employee-tab:hover { color: var(--ac-text); }
+.employee-tab.is-active { color: var(--ac-text); border-bottom-color: var(--ac-accent); }
+.employee-tab.is-disabled { color: var(--ac-text-muted); cursor: not-allowed; }
 .employee-tab:focus-visible { outline: 2px solid #b78055; outline-offset: -2px; }
 </style>

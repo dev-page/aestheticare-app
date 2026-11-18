@@ -45,8 +45,11 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: [
       { type: 'section', label: 'PEOPLE & WORKFORCE' },
       { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'roles:manage' },
-      { label: 'Employee Management', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permissionsAny: ['staff:view', 'staff:create'] },
-      { label: 'Shift Management', icon: 'mdi:calendar-clock-outline', to: '/hr/shifts', feature: 'hr', permissionsAny: ['hr:create', 'hr:update'] },
+      { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permission: 'staff:view' },
+      { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/hr/employees/new', feature: 'staff_management', permission: 'staff:create' },
+      { label: 'Archived Accounts', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'staff:disable' },
+      { label: 'Add Shift', icon: 'mdi:calendar-clock-outline', to: '/hr/shifts?tab=add', feature: 'hr', permission: 'hr:create' },
+      { label: 'Shift Assignment', icon: 'mdi:calendar-account-outline', to: '/hr/shifts?tab=assignment', feature: 'hr', permission: 'hr:update' },
       { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'attendance:view' },
       { type: 'section', label: 'LEAVE & OVERTIME' },
       { label: 'Leave Management', icon: 'mdi:calendar-clock-outline', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
