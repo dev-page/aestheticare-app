@@ -67,42 +67,46 @@
           <section class="rounded-xl border border-slate-700 bg-slate-900/70 p-4"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold text-white">Inventory request details</h3><p class="mt-1 text-sm text-slate-400">The original supply request sent by Inventory.</p></div><span class="rounded-full bg-slate-700 px-3 py-1 text-xs text-slate-100">{{ relatedInventoryRequest(selectedProcurementRecord)?.number || 'Linked request' }}</span></div><dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt>Requested supplies</dt><dd>{{ requestLines(selectedProcurementRecord).map(line => `${line.name} × ${line.quantity} ${line.unit || 'units'}`).join(', ') || '—' }}</dd></div><div><dt>Category</dt><dd>{{ requestValue(selectedProcurementRecord, 'category') }}</dd></div><div><dt>Priority</dt><dd>{{ requestValue(selectedProcurementRecord, 'priority') }}</dd></div><div><dt>Required by</dt><dd>{{ requestValue(selectedProcurementRecord, 'requiredDate') }}</dd></div><div class="sm:col-span-2"><dt>Delivery location</dt><dd>{{ requestValue(selectedProcurementRecord, 'location') }}</dd></div><div class="sm:col-span-2"><dt>Reason for request</dt><dd>{{ requestValue(selectedProcurementRecord, 'reason') }}</dd></div></dl></section>
           <section v-if="selectedProcurementRecord.status === 'Received'" class="supply-quote-form space-y-4 rounded-xl border border-amber-500/35 bg-amber-950/15 p-4">
             <div><p class="supply-form-step">PROCUREMENT REVIEW</p><h3 class="mt-1 font-semibold text-white">Prepare purchase order</h3><p class="mt-1 text-sm text-slate-400">Record the supplier invoice and upload it for Finance to review with the purchase order.</p></div>
-            <label class="form-field">Supplier <b>*</b><select v-model="supplierByRecord[selectedProcurementRecord.id]" class="mt-1 w-full"><option value="">Choose a clinic supplier</option><option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.businessName || supplier.name }}</option></select></label>
-            <div class="grid gap-3 sm:grid-cols-2"><label class="form-field">Supplier invoice number <b>*</b><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].invoiceNumber" maxlength="120" required /></label><label class="form-field">Invoice date <b>*</b><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].invoiceDate" type="date" required /></label></div>
+            <label class="form-field"><span>Supplier <b>*</b></span><select v-model="supplierByRecord[selectedProcurementRecord.id]" class="w-full"><option value="">Choose a clinic supplier</option><option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.businessName || supplier.name }}</option></select></label>
+            <div class="grid gap-3 sm:grid-cols-2"><label class="form-field"><span>Supplier invoice number <b>*</b></span><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].invoiceNumber" maxlength="120" required /></label><label class="form-field"><span>Invoice date <b>*</b></span><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].invoiceDate" type="date" required /></label></div>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="form-field">Expected delivery date <b>*</b><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].deliveryDate" type="date" required /></label>
-              <label class="form-field">Delivery location <b>*</b><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].deliveryLocation" required /></label>
+              <label class="form-field"><span>Expected delivery date <b>*</b></span><input v-model="quoteDraftByRecord[selectedProcurementRecord.id].deliveryDate" type="date" required /></label>
+              <label class="form-field"><span>Delivery location <b>*</b></span><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].deliveryLocation" required /></label>
             </div>
             <div class="space-y-3"><div><h4 class="font-semibold text-white">Invoice item prices</h4><p class="mt-1 text-xs text-slate-400">Enter the unit price shown on the supplier invoice.</p></div>
               <div v-for="(line, index) in quoteDraftByRecord[selectedProcurementRecord.id].lines" :key="line.itemId" class="supply-quote-line rounded-lg border border-slate-700 bg-slate-900/60 p-3">
                 <div class="flex flex-wrap items-baseline justify-between gap-2"><p class="text-sm font-medium text-white">{{ line.name }}</p><span class="text-xs text-slate-400">{{ line.quantity }} {{ line.unit || 'units' }}</span></div>
-                <label class="form-field mt-3">Unit price (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].lines[index].unitPrice" type="number" min="0.01" step="0.01" required /></label>
+                <label class="form-field mt-3"><span>Unit price (PHP) <b>*</b></span><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].lines[index].unitPrice" type="number" min="0.01" step="0.01" required /></label>
               </div>
             </div>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="form-field">Tax on the invoice<select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Included in item prices</option><option value="separate">Listed separately</option><option value="not-applicable">No tax applies</option></select></label>
-              <label class="form-field">Invoice total (PHP) <b>*</b><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /></label>
+              <label class="form-field"><span>Tax on the invoice</span><select v-model="quoteDraftByRecord[selectedProcurementRecord.id].taxTreatment"><option value="included">Included in item prices</option><option value="separate">Listed separately</option><option value="not-applicable">No tax applies</option></select></label>
+              <label class="form-field"><span>Invoice total (PHP) <b>*</b></span><input v-model.number="quoteDraftByRecord[selectedProcurementRecord.id].statedTotal" type="number" min="0.01" step="0.01" required /></label>
             </div>
             <p v-if="quoteTotalMatches(selectedProcurementRecord)" role="status" class="supply-quote-status is-ready">The entered total matches the item prices and any listed charges.</p>
             <p v-else role="status" class="supply-quote-status is-warning">{{ quotePricingMessage(selectedProcurementRecord) }}</p>
             <details class="supply-quote-options rounded-lg border border-slate-700 bg-slate-900/60 p-3">
               <summary class="cursor-pointer text-sm font-semibold text-slate-200">Invoice charges, discounts, and payment terms</summary>
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <label class="form-field">Payment terms<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].paymentTerms" /></label>
-                <label class="form-field">Warranty<input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].warranty" /></label>
-                <label class="form-field sm:col-span-2">Purchase terms<textarea v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].terms" rows="2" /></label>
+                <label class="form-field"><span>Payment terms</span><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].paymentTerms" /></label>
+                <label class="form-field"><span>Warranty</span><input v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].warranty" /></label>
+                <label class="form-field sm:col-span-2"><span>Purchase terms</span><textarea v-model.trim="quoteDraftByRecord[selectedProcurementRecord.id].terms" rows="2" /></label>
               </div>
                 <div class="mt-4 space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><p class="text-sm font-semibold text-slate-200">Charges or discounts <span class="font-normal text-slate-400">(only if shown on the invoice)</span></p><button type="button" class="rounded border border-slate-600 px-3 py-2 text-sm text-white" @click="addQuoteAdjustment(selectedProcurementRecord)">Add amount</button></div>
                 <div v-for="(adjustment, index) in quoteDraftByRecord[selectedProcurementRecord.id].adjustments" :key="adjustment.id" class="grid gap-2 rounded border border-slate-700 p-3 sm:grid-cols-[1fr_1.5fr_1fr_auto]">
-                  <label class="form-field">Type<select v-model="adjustment.type"><option value="tax">Tax</option><option value="fee">Fee</option><option value="discount">Discount</option></select></label>
-                  <label class="form-field">Description<input v-model.trim="adjustment.label" maxlength="120" :placeholder="adjustment.type === 'tax' ? 'VAT' : adjustment.type === 'discount' ? 'Discount' : 'Delivery or handling'" /></label>
-                  <label class="form-field">Amount (PHP)<input v-model.number="adjustment.amount" type="number" min="0" step="0.01" /></label>
+                  <label class="form-field"><span>Type</span><select v-model="adjustment.type"><option value="tax">Tax</option><option value="fee">Fee</option><option value="discount">Discount</option></select></label>
+                  <label class="form-field"><span>Description</span><input v-model.trim="adjustment.label" maxlength="120" :placeholder="adjustment.type === 'tax' ? 'VAT' : adjustment.type === 'discount' ? 'Discount' : 'Delivery or handling'" /></label>
+                  <label class="form-field"><span>Amount (PHP)</span><input v-model.number="adjustment.amount" type="number" min="0" step="0.01" /></label>
                   <button type="button" class="self-end rounded border border-slate-600 px-3 py-2 text-sm" aria-label="Remove charge or discount" @click="removeQuoteAdjustment(selectedProcurementRecord, index)">Remove</button>
                 </div>
               </div>
               <dl class="mt-3 space-y-1 border-t border-slate-700 pt-3 text-sm"><div class="flex justify-between gap-3"><dt>Items subtotal</dt><dd>{{ currency(Math.round(quoteItemsSubtotal(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Tax and fees</dt><dd>{{ currency(Math.round(quotePositiveAdjustments(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3"><dt>Discounts</dt><dd>-{{ currency(Math.round(quoteDiscounts(selectedProcurementRecord) * 100)) }}</dd></div><div class="flex justify-between gap-3 border-t border-slate-700 pt-2 font-bold"><dt>Calculated total</dt><dd>{{ currency(Math.round(quoteTotal(selectedProcurementRecord) * 100)) }}</dd></div></dl>
             </details>
-            <label class="supply-quote-evidence form-field"><span>Supplier invoice file <b>*</b><small>PDF, PNG, or JPEG up to 5 MB. Finance can review this internal clinic record.</small></span><input type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" /><span v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="supply-evidence-list"><button v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id" type="button" @click="downloadDocument(document)">{{ document.name }}</button></span></label>
+            <div class="supply-quote-evidence">
+              <label class="form-field" for="supplier-invoice-file"><span>Supplier invoice file <b>*</b></span><small>PDF, PNG, or JPEG up to 5 MB. Finance can review this internal clinic record.</small></label>
+              <input id="supplier-invoice-file" type="file" accept="application/pdf,image/png,image/jpeg" :disabled="busy" @change="uploadQuotation(selectedProcurementRecord, $event)" />
+              <div v-if="evidenceByRecord[selectedProcurementRecord.id]?.length" class="supply-evidence-list"><button v-for="document in evidenceByRecord[selectedProcurementRecord.id]" :key="document.id" type="button" @click="downloadDocument(document)">{{ document.name }}</button></div>
+            </div>
             <label class="supply-quote-check rounded-lg border border-slate-700 bg-slate-900/60 p-3"><input type="checkbox" :checked="procurementQuoteVerified(selectedProcurementRecord.id)" :disabled="busy" @change="setProcurementQuoteVerified(selectedProcurementRecord.id, $event.target.checked)" /><span><strong>I checked the requested items, quantities, supplier availability, and prices against the invoice.</strong><small>This records the Procurement review before Finance approval.</small></span></label>
             <div v-if="financeReadinessItems(selectedProcurementRecord).length" role="status" class="supply-quote-status is-warning"><strong>Still needed</strong><ul class="mt-1 list-disc pl-5"><li v-for="item in financeReadinessItems(selectedProcurementRecord)" :key="item">{{ item }}</li></ul></div>
             <div v-else role="status" class="supply-quote-status is-ready">Ready to submit the purchase order and invoice to Finance.</div>
@@ -517,7 +521,6 @@ onUnmounted(() => clearInterval(requiredDateClock))
 .supply-quote-options { border-color:var(--ac-border); background:var(--ac-surface-soft); }
 .supply-quote-options summary { color:var(--ac-text-secondary); }
 .supply-quote-evidence { border:1px solid var(--ac-border); border-radius:.7rem; background:var(--ac-surface-soft); padding:.8rem; }
-.supply-quote-evidence > span:first-child small { display:block; margin-top:.2rem; }
 .supply-evidence-list { display:flex; flex-wrap:wrap; gap:.5rem; }
 .supply-evidence-list button { color:var(--ac-primary); text-decoration:underline; text-align:left; }
 .supply-quote-check { display:flex; align-items:flex-start; gap:.65rem; border-color:var(--ac-border); background:var(--ac-surface-soft); }
@@ -533,11 +536,23 @@ onUnmounted(() => clearInterval(requiredDateClock))
 :global(.procurement-modal-body) { background:var(--ac-surface) !important; color:var(--ac-text); }
 :global(.procurement-modal-body) dt { color:var(--ac-text-muted); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
 :global(.procurement-modal-body) dd { margin-top:.3rem; color:var(--ac-text); line-height:1.45; }
-:global(.procurement-modal-body) [class*="bg-slate-"] { background-color:var(--ac-surface-soft); }
-:global(.procurement-modal-body) [class*="border-slate-"] { border-color:var(--ac-border); }
-:global(.procurement-modal-body) [class~="text-white"], :global(.procurement-modal-body) [class~="text-slate-100"], :global(.procurement-modal-body) [class~="text-slate-200"], :global(.procurement-modal-body) [class~="text-slate-300"] { color:var(--ac-text-secondary); }
-:global(.procurement-modal-body) [class~="text-slate-400"], :global(.procurement-modal-body) [class~="text-slate-500"] { color:var(--ac-text-muted); }
+:global(.procurement-modal-body) [class*="bg-slate-"] { background:var(--ac-surface-soft) !important; }
+:global(.procurement-modal-body) [class*="border-slate-"] { border-color:var(--ac-border) !important; }
+:global(.procurement-modal-body) [class~="text-white"], :global(.procurement-modal-body) [class~="text-slate-100"], :global(.procurement-modal-body) [class~="text-slate-200"], :global(.procurement-modal-body) [class~="text-slate-300"] { color:var(--ac-text-secondary) !important; }
+:global(.procurement-modal-body) [class~="text-slate-400"], :global(.procurement-modal-body) [class~="text-slate-500"] { color:var(--ac-text-muted) !important; }
 :global(.procurement-modal-body) [class~="text-amber-200"], :global(.procurement-modal-body) [class~="text-amber-300"] { color:var(--ac-warning); }
 :global(.procurement-modal-body) input, :global(.procurement-modal-body) select, :global(.procurement-modal-body) textarea { border-color:var(--ac-border-strong); background:var(--ac-surface); color:var(--ac-text); }
 :global(.procurement-modal-body) input:focus, :global(.procurement-modal-body) select:focus, :global(.procurement-modal-body) textarea:focus { border-color:var(--ac-accent); }
+:global(.procurement-modal-body) .supply-quote-form { background:var(--ac-surface-soft) !important; border-color:var(--ac-border) !important; }
+:global(.procurement-modal-body) .form-field { display:flex; flex-direction:column; align-items:stretch; gap:.4rem; min-width:0; color:var(--ac-text-secondary); font-size:.875rem; font-weight:600; line-height:1.4; text-transform:none; letter-spacing:normal; }
+:global(.procurement-modal-body) .form-field b { color:var(--ac-danger); }
+:global(.procurement-modal-body) .form-field small { color:var(--ac-text-muted); font-size:.75rem; font-weight:400; line-height:1.4; }
+:global(.procurement-modal-body) .form-field :is(input, select, textarea), :global(.procurement-modal-body) .supply-quote-evidence input[type="file"] { box-sizing:border-box; width:100%; min-width:0; min-height:2.75rem; padding:.65rem .75rem; font:inherit; }
+:global(.procurement-modal-body) .form-field textarea { min-height:5rem; resize:vertical; }
+:global(.procurement-modal-body) .supply-quote-evidence { display:flex; flex-direction:column; gap:.65rem; min-width:0; }
+:global(.procurement-modal-body) .supply-quote-evidence input[type="file"] { font-size:.875rem; }
+:global(.procurement-modal-body) .supply-quote-check { background:var(--ac-surface) !important; color:var(--ac-text-secondary); text-transform:none; letter-spacing:normal; }
+:global(.procurement-modal-body) .supply-quote-options summary { color:var(--ac-text-secondary) !important; }
+:global(.procurement-modal-body) .supply-quote-form > button { background:var(--ac-primary) !important; color:var(--ac-on-primary) !important; }
+:global(.procurement-modal-body) .supply-quote-form > button:disabled { background:var(--ac-surface-muted) !important; color:var(--ac-text-secondary) !important; border:1px solid var(--ac-border-strong); opacity:1; }
 </style>
