@@ -246,7 +246,6 @@ const selectedBranchId = ref('')
 const selectedRole = ref('all')
 const selectedEmployeeId = ref('')
 const selectedWeekStart = ref('')
-const currentWeekStart = ref(getMondayDate())
 const saving = ref(false)
 const weeklyTargetHours = ref('')
 const capacitySchedules = ref([])
@@ -279,6 +278,8 @@ const getMondayDate = () => {
   monday.setDate(now.getDate() - diffToMonday)
   return toDateInput(monday)
 }
+
+const currentWeekStart = ref(getMondayDate())
 
 const formatFullName = (data = {}) =>
   String(data.fullName || '').trim() ||
