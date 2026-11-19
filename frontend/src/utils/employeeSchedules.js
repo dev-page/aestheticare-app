@@ -78,7 +78,7 @@ export const hasAnyAssignedShift = (scheduleDocs = []) =>
     }))
   })
 
-export const parseShiftDurationHours = (shift = {}) => {
+const parseShiftElapsedMinutes = (shift = {}) => {
   const start = String(shift?.start || '').trim()
   const end = String(shift?.end || '').trim()
   if (!start || !end) return 0
@@ -90,7 +90,17 @@ export const parseShiftDurationHours = (shift = {}) => {
   const startTotal = startHour * 60 + startMinute
   const endTotal = endHour * 60 + endMinute
   if (endTotal <= startTotal) return 0
-  const elapsedMinutes = endTotal - startTotal
+  return endTotal - startTotal
+}
+
+// Clock span includes the meal break. Use this for shift-type matching, where
+// the scheduled window determines whether a template is full-time or part-time.
+export const parseShiftScheduledHours = (shift = {}) =>
+  parseShiftElapsedMinutes(shift) / 60
+
+export const parseShiftDurationHours = (shift = {}) => {
+  const elapsedMinutes = parseShiftElapsedMinutes(shift)
+  if (!elapsedMinutes) return 0
   const explicitBreak = Number(shift?.unpaidMealBreakMinutes ?? shift?.mealBreakMinutes)
   // Older shift templates have no break field. Keep their previous payroll
   // behavior: infer one unpaid hour only when the scheduled span exceeds 8h.
@@ -125,7 +135,7 @@ export const normalizeEmploymentType = (value = '') => {
 }
 
 export const classifyShiftEmploymentType = (shift = {}, thresholdHours = 8) => {
-  const durationHours = parseShiftDurationHours(shift)
+  const durationHours = parseShiftScheduledHours(shift)
   if (!durationHours) return ''
   return durationHours >= thresholdHours ? 'full-time' : 'part-time'
 }

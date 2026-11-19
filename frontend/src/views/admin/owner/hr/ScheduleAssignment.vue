@@ -226,6 +226,7 @@ import {
   createAssignmentsMap,
   normalizeEmploymentType,
   parseShiftDurationHours,
+  parseShiftScheduledHours,
   normalizeAssignments,
   resolveRecurringScheduleVersion,
   withRecurringScheduleVersion,
@@ -365,10 +366,10 @@ const displayShiftTemplates = computed(() => {
     const bMatch = b.scheduleType === scheduleType ? 0 : 1
     if (aMatch !== bMatch) return aMatch - bMatch
     if (Boolean(a.isArchived) !== Boolean(b.isArchived)) return Number(Boolean(a.isArchived)) - Number(Boolean(b.isArchived))
-    if (a.durationHours !== b.durationHours) {
+    if (a.scheduledHours !== b.scheduledHours) {
       return scheduleType === 'part-time'
-        ? a.durationHours - b.durationHours
-        : b.durationHours - a.durationHours
+        ? a.scheduledHours - b.scheduledHours
+        : b.scheduledHours - a.scheduledHours
     }
     return String(a.label || '').localeCompare(String(b.label || ''))
   })
@@ -555,6 +556,7 @@ const hydrateBranchShifts = async () => {
       const start = String(data.start || '').trim()
       const end = String(data.end || '').trim()
       const durationHours = parseShiftDurationHours({ start, end })
+      const scheduledHours = parseShiftScheduledHours({ start, end })
       return {
         id: snap.id,
         label: `${shiftType} || ${start} - ${end}`,
@@ -565,6 +567,7 @@ const hydrateBranchShifts = async () => {
         capacity: Math.max(1, Number(data.capacity) || 1),
         isArchived: data.isArchived === true,
         durationHours,
+        scheduledHours,
         scheduleType: classifyShiftEmploymentType({ start, end })
       }
     })
