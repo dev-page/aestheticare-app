@@ -747,13 +747,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <p class="employee-edit-caption">This employee reference does not grant system access. Pharmacy access comes from the assigned role; appointment practitioner types and service approvals are managed separately.</p>
               <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
               <template v-if="showLicenseField">
-                <label for="employee-edit-license">Credential / license number</label><input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="OCR suggestion appears here; review or enter it" />
+                <div class="employee-license-fields">
+                  <div class="employee-license-field">
+                    <label for="employee-edit-license">Credential / license number</label>
+                    <input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="Type a number or use an OCR suggestion" />
+                  </div>
+                  <div class="employee-license-field">
+                    <label for="employee-edit-license-file">Replacement credential image (optional)</label>
+                    <input id="employee-edit-license-file" type="file" accept="image/jpeg,image/png" @change="handleLicenseFile" />
+                    <p v-if="currentStaff.practitionerLicenseName && !licenseFile" class="employee-edit-caption">Current document: {{ currentStaff.practitionerLicenseName }}</p>
+                    <a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a>
+                  </div>
+                </div>
+                <p class="employee-edit-caption">The image is optional when editing. Upload one JPEG or PNG image (up to 5MB) to run OCR; review the number and verify the credential manually.</p>
                 <p class="employee-edit-caption">Changing professional details or the uploaded document requires a new credential review by the clinic owner.</p>
-                <p v-if="currentStaff.practitionerLicenseName && !licenseFile" class="employee-edit-caption">Current document: {{ currentStaff.practitionerLicenseName }}</p>
-                <a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a>
-                <label for="employee-edit-license-file" class="employee-license-upload-label">Upload a replacement license image (optional)</label>
-                <input id="employee-edit-license-file" type="file" accept="image/jpeg,image/png" @change="handleLicenseFile" />
-                <p class="employee-edit-caption">One JPEG or PNG image, up to 5MB. OCR only suggests a number; check the image and verify the credential manually.</p>
                 <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
                 <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></div>
               </template>
@@ -794,8 +801,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-professional-fields legend { padding: 0 6px; font-size: 14px; font-weight: 600; color: #3d281d; }
 .employee-professional-fields label { display: block; margin-top: 12px; }
 .employee-professional-fields input[type="file"] { padding: 8px; background: #fffaf3 !important; color: #5d4536 !important; }
+.employee-license-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; margin-top: 12px; }
+.employee-license-field { min-width: 0; }
+.employee-license-field label { margin-top: 0 !important; }
+.employee-license-field input[type="file"] { box-sizing: border-box; min-height: 44px; }
 .employee-license-link { display: inline-block; margin-top: 6px; color: #805337; font-size: 12px; text-decoration: underline; }
-.employee-license-upload-label { margin-top: 14px !important; }
 .employee-license-ocr { margin-top: 10px; padding: 12px; border: 1px solid #e8c99f; border-radius: 9px; background: #fbf1df; color: #5d4536; font-size: 12px; }
 .employee-license-ocr strong { color: #805337; }
 .employee-license-ocr p { margin-top: 5px; }
@@ -807,7 +817,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-edit-save { border: 1px solid #8d5a3b; background: #8d5a3b; color: #fffdf9; }
 .employee-edit-save:hover { background: #74462d; }
 .employee-edit-cancel:disabled, .employee-edit-save:disabled { opacity: .55; cursor: not-allowed; }
-@media(max-width: 540px) { .employee-edit-choices { grid-template-columns: 1fr; } .employee-edit-form { padding: 0; } }
+@media(max-width: 540px) { .employee-edit-choices, .employee-license-fields { grid-template-columns: 1fr; } .employee-edit-form { padding: 0; } }
 .staff-management-main {
   background: radial-gradient(circle at 90% 0%, rgba(126, 78, 46, 0.14), transparent 32rem);
 }
