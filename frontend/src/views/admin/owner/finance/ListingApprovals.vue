@@ -20,7 +20,13 @@
         <div class="listing-review-table-wrap overflow-x-auto">
           <table class="w-full text-left"><thead><tr><th scope="col">Listing</th><th scope="col">Branch</th><th scope="col" class="listing-review-price">Price</th><th scope="col">Payment terms</th><th scope="col">Review status</th><th scope="col">Action</th></tr></thead>
             <tbody><tr v-for="post in visiblePosts" :key="post.id">
-              <td class="listing-review-name"><strong>{{ post.title || 'Untitled listing' }}</strong><span class="listing-review-type">{{ post.postType === 'Package' ? 'Service package' : post.postType }}</span></td>
+              <td class="listing-review-name"><div class="listing-review-identity">
+                <div class="listing-review-thumbnail">
+                  <img v-if="hasListingImage(post, 'row')" :src="listingImageUrl(post)" :alt="`${post.title || 'Listing'} image`" loading="lazy" decoding="async" @error="markListingImageFailed(post, 'row')" />
+                  <span v-else class="listing-review-image-placeholder">{{ listingImageFallback(post) }}</span>
+                </div>
+                <div class="listing-review-identity-copy"><strong>{{ post.title || 'Untitled listing' }}</strong><span class="listing-review-type">{{ post.postType === 'Package' ? 'Service package' : post.postType }}</span><small v-if="listingSubject(post)">{{ listingSubject(post) }}</small></div>
+              </div></td>
               <td>{{ branchName(post.branchId) }}</td>
               <td class="listing-review-price"><strong>{{ formatPrice(post.price) }}</strong><small>{{ ['Service', 'Consultation', 'Package'].includes(post.postType) ? (post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout') : 'Not applicable to product orders' }}</small><small v-if="post.consultationFee">Consultation: {{ formatPrice(post.consultationFee) }}</small><small v-if="post.discountPercent">Discount: {{ post.discountPercent }}%</small><small v-if="post.discountAmount">Discount: {{ formatPrice(post.discountAmount) }}</small></td>
               <td><span class="listing-review-policy">Clinic payment policy</span><small class="listing-review-policy-note">Applies to this listing</small></td>
@@ -32,12 +38,24 @@
       </section>
     </main>
     <Modal :is-open="Boolean(selectedPost)" panel-class="finance-dialog listing-review-modal" body-class="listing-review-modal-body" @close="selectedPost = null">
-      <template #header><div class="listing-review-modal-heading"><p>Listing details</p><h2>{{ selectedPost?.title || 'Untitled listing' }}</h2></div></template>
+      <template #header><div class="listing-review-modal-heading"><p>Finance review</p><h2>Listing preview</h2></div></template>
       <template #body><div v-if="selectedPost" class="listing-review-modal-content">
-        <dl class="listing-review-modal-overview"><div><dt>Listing type</dt><dd>{{ selectedPost.postType === 'Package' ? 'Service package' : selectedPost.postType }}</dd></div><div><dt>Branch</dt><dd>{{ branchName(selectedPost.branchId) }}</dd></div><div><dt>Price</dt><dd>{{ formatPrice(selectedPost.price) }}</dd></div><div><dt>VAT treatment</dt><dd>{{ ['Service', 'Consultation', 'Package'].includes(selectedPost.postType) ? (selectedPost.vatPriceMode === 'inclusive' ? 'Includes fixed 12% VAT' : 'Fixed 12% VAT added at checkout') : 'Not applicable to product orders' }}</dd></div><div><dt>Review status</dt><dd><span class="listing-review-status" :class="'is-' + listingStatus(selectedPost)">{{ reviewStatusLabel(selectedPost) }}</span></dd></div></dl>
-        <section><h3>Description</h3><p>{{ selectedPost.description || 'No description provided.' }}</p></section>
+        <article class="listing-review-post-card">
+          <div class="listing-review-post-image">
+            <img v-if="hasListingImage(selectedPost, 'preview')" :src="listingImageUrl(selectedPost)" :alt="`${selectedPost.title || 'Listing'} image`" decoding="async" @error="markListingImageFailed(selectedPost, 'preview')" />
+            <span v-else class="listing-review-post-placeholder"><span aria-hidden="true">✦</span>{{ listingImageFallback(selectedPost) }}</span>
+          </div>
+          <div class="listing-review-post-body">
+            <div class="listing-review-post-badges"><span class="listing-review-type-badge">{{ selectedPost.postType === 'Package' ? 'Service package' : selectedPost.postType || 'Listing' }}</span><span class="listing-review-status" :class="'is-' + listingStatus(selectedPost)">{{ reviewStatusLabel(selectedPost) }}</span></div>
+            <p v-if="listingSubject(selectedPost)" class="listing-review-post-subject">{{ listingSubject(selectedPost) }}</p>
+            <h3>{{ selectedPost.title || 'Untitled listing' }}</h3>
+            <p class="listing-review-post-description">{{ selectedPost.description || 'No description provided.' }}</p>
+            <div class="listing-review-post-price"><span>Listed price</span><strong>{{ formatPrice(selectedPost.price) }}</strong></div>
+          </div>
+        </article>
+        <dl class="listing-review-modal-overview"><div><dt>Branch</dt><dd>{{ branchName(selectedPost.branchId) }}</dd></div><div><dt>VAT treatment</dt><dd>{{ ['Service', 'Consultation', 'Package'].includes(selectedPost.postType) ? (selectedPost.vatPriceMode === 'inclusive' ? 'Includes fixed 12% VAT' : 'Fixed 12% VAT added at checkout') : 'Not applicable to product orders' }}</dd></div><div v-if="selectedPost.consultationFee"><dt>Consultation fee</dt><dd>{{ formatPrice(selectedPost.consultationFee) }}</dd></div><div v-if="selectedPost.discountPercent"><dt>Discount</dt><dd>{{ selectedPost.discountPercent }}%</dd></div><div v-if="selectedPost.discountAmount"><dt>Discount amount</dt><dd>{{ formatPrice(selectedPost.discountAmount) }}</dd></div></dl>
         <section v-if="selectedPost.termsAndConditions"><h3>Recorded contract terms</h3><p>{{ selectedPost.termsAndConditions }}</p></section>
-        <section v-if="selectedPost.financeReview?.note"><h3>Review note</h3><p>{{ selectedPost.financeReview.note }}</p></section>
+        <section v-if="selectedPost.financeReview?.note" class="listing-review-note"><h3>Finance review note</h3><p>{{ selectedPost.financeReview.note }}</p></section>
       </div></template>
     </Modal>
   </div>
@@ -61,12 +79,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 const posts = ref([]), branches = ref([]), selectedBranchId = ref('all'), filter = ref('all'), error = ref(''), busy = ref(''), loading = ref(true), search = ref('')
 const selectedPost = ref(null)
+const failedListingImages = ref(new Set())
 const { userRole, isClinicAdminOwner } = usePermissions()
 const canReviewListings = computed(() => isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'finance')
 const formatPrice = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 const reviewStatusLabel = post => ({ pending: 'Pending', approved: 'Approved', rejected: 'Changes Requested' })[listingStatus(post)] || 'Not reviewed'
 const listingStatus = (post) => String(post?.financeStatus || 'draft').trim().toLowerCase() || 'draft'
 const branchName = (branchId) => branches.value.find((branch) => branch.id === String(branchId || '').trim())?.name || 'Branch'
+const listingImageUrl = post => String(post?.imageUrl || post?.imageURL || post?.image || '').trim()
+const listingImageKey = (post, location) => `${location}:${post?.id || ''}:${listingImageUrl(post)}`
+const hasListingImage = (post, location) => Boolean(listingImageUrl(post) && !failedListingImages.value.has(listingImageKey(post, location)))
+const markListingImageFailed = (post, location) => { const failed = new Set(failedListingImages.value); failed.add(listingImageKey(post, location)); failedListingImages.value = failed }
+const listingImageFallback = post => listingImageUrl(post) ? 'Image unavailable' : 'No image provided'
+const listingSubject = post => String(post?.productName || post?.serviceName || post?.consultationName || post?.packageName || '').trim()
 const branchPosts = computed(() => posts.value.filter(post => ['pending', 'approved', 'rejected'].includes(listingStatus(post)) && (selectedBranchId.value === 'all' || post.branchId === selectedBranchId.value)))
 const visiblePosts = computed(() => branchPosts.value.filter((post) =>
   (selectedBranchId.value === 'all' || post.branchId === selectedBranchId.value) &&

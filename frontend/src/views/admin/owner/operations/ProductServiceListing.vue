@@ -201,6 +201,7 @@ import ClientContractDocument from '@/components/common/ClientContractDocument.v
 import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
 import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
 import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateTreatmentCourseComposition } from '../../../../../../shared/treatmentCourse.js'
+import { onlinePolicy } from '../../../../../../shared/onlineConsultation.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
 import { createClientContractPdf } from '@/utils/clientContractPdf'
 
@@ -271,7 +272,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       sameDayConsultationAllowed: false,
       sameDayConsultationBufferMinutes: 15,
       consultationFee: 0,
-      consultationModes: ['on-site'], consultationGraceMinutes: 15, consultationBufferMinutes: 20,
+      consultationModes: ['on-site'], consultationGraceMinutes: 15,
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -312,6 +313,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       sameDayConsultationBufferMinutes: 15,
       consultationFee: 0,
       consultationModes: ['on-site'],
+      consultationGraceMinutes: 15,
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -341,11 +343,43 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const normalizeConsultationMode = (value) =>
       String(value || '').trim().toLowerCase() === 'on-site' ? 'on-site' : 'online'
+    const validConsultationModes = (modes) => Array.isArray(modes)
+      ? [...new Set(modes.map(value => String(value || '').trim().toLowerCase()).filter(mode => ['online', 'on-site'].includes(mode)))]
+      : []
     const normalizeConsultationModes = (modes, legacyMode = 'online') => {
-      const normalized = Array.isArray(modes)
-        ? [...new Set(modes.map(normalizeConsultationMode).filter(mode => ['online', 'on-site'].includes(mode)))]
-        : []
+      const normalized = validConsultationModes(modes)
       return normalized.length ? normalized : [normalizeConsultationMode(legacyMode)]
+    }
+    const consultationPolicyForGrace = (values) => {
+      const rawGrace = values?.consultationGraceMinutes
+      const graceMinutes = rawGrace === '' || rawGrace === null || rawGrace === undefined ? 15 : Number(rawGrace)
+      const policy = onlinePolicy({ graceMinutes })
+      return { version: policy.version, graceMinutes: policy.graceMinutes }
+    }
+    const validateRequiredListingFields = (values, { name, selectedProduct = null, imageReady = true, requiresNewImage = false } = {}) => {
+      const postType = values?.postType
+      if (!['Product', 'Service', 'Consultation', 'Package'].includes(postType)) return 'Choose a post type.'
+      if (!String(name || '').trim()) return 'Enter a listing name.'
+      if (!String(values.description || '').trim()) return 'Enter a description.'
+      if (postType === 'Product' && !selectedProduct) return 'Select a valid product from inventory.'
+      if (requiresNewImage && !imageReady) return 'Upload one image.'
+      if (postType !== 'Product' && !['inclusive', 'exclusive'].includes(values.vatPriceMode)) return 'Choose how the listed price is shown.'
+      if (postType === 'Consultation') {
+        const modes = validConsultationModes(values.consultationModes)
+        if (!modes.length) return 'Choose at least one consultation mode.'
+        const fee = Number(values.consultationFee)
+        if (!Number.isFinite(fee) || fee <= 0) return 'Enter a consultation fee greater than zero.'
+        const duration = Number(values.durationMinutes)
+        if (!Number.isInteger(duration) || duration <= 0) return 'Enter a whole-number consultation duration greater than zero.'
+        if (modes.includes('online') && (duration < 5 || duration > 240)) return 'Online consultation duration must be a whole number from 5 to 240 minutes.'
+        const rawGrace = values.consultationGraceMinutes
+        if (rawGrace !== '' && rawGrace !== null && rawGrace !== undefined && (!Number.isInteger(Number(rawGrace)) || Number(rawGrace) < 0 || Number(rawGrace) > 30)) return 'Arrival grace must be a whole number from 0 to 30 minutes.'
+      }
+      if (postType === 'Service') {
+        const duration = Number(values.durationMinutes)
+        if (!Number.isInteger(duration) || duration <= 0) return 'Enter a whole-number service duration greater than zero.'
+      }
+      return ''
     }
     const sameDayConfigurationError = values => {
       if (values.sameDayConsultationAllowed !== true) return ''
@@ -445,6 +479,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         sameDayConsultationBufferMinutes: 15,
         consultationFee: 0,
         consultationModes: ['on-site'],
+        consultationGraceMinutes: 15,
         followUpAllowed: false,
         followUpWindowDays: 14,
         staffingRequirements: [],
@@ -481,6 +516,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         sameDayConsultationBufferMinutes: 15,
         consultationFee: 0,
         consultationModes: ['on-site'],
+        consultationGraceMinutes: 15,
         followUpAllowed: false,
         followUpWindowDays: 14,
         durationMinutes: 60,
@@ -638,28 +674,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const packageDiscountPercent = postType === 'Package' ? Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) : 0
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
 
-      if (!selectedName?.trim() || !form.value.description?.trim()) {
-        toast.error('Please complete all required fields.')
-        return
-      }
-      if (postType === 'Product' && !selectedProduct) {
-        toast.error('Please select a valid product from inventory.')
-        return
-      }
+      const requiredFieldsError = validateRequiredListingFields(form.value, { name: selectedName, selectedProduct, imageReady: Boolean(imageFile.value), requiresNewImage: true })
+      if (requiredFieldsError) { toast.error(requiredFieldsError); return }
       const numericError = validateListingNumbers(form.value)
       if (numericError) { toast.error(numericError); return }
-      if (!imageFile.value) {
-        toast.error('Please upload one image.')
-        return
-      }
       if (!currentBranchId.value || !currentUserId.value) {
         toast.error('User branch is not available.')
-        return
-      }
-      if (form.value.postType === 'Consultation' && (!Array.isArray(form.value.consultationModes) || !form.value.consultationModes.length)) { toast.error('Choose at least one consultation mode.'); return }
-      if (form.value.postType === 'Consultation' && normalizeConsultationModes(form.value.consultationModes).includes('online') && (!Number.isInteger(Number(form.value.durationMinutes)) || Number(form.value.durationMinutes) < 5 || Number(form.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
-      if (postType !== 'Product' && Number(form.value.durationMinutes) <= 0) {
-        toast.error('Please enter a valid duration.')
         return
       }
       if (postType === 'Package') {
@@ -679,10 +699,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       const sameDayError = sameDayConfigurationError(form.value)
       if (sameDayError) { toast.error(sameDayError); return }
-      if (postType === 'Consultation' && Number(form.value.consultationFee) <= 0) {
-        toast.error('Please enter a valid consultation fee.')
-        return
-      }
 
       loading.value = true
       try {
@@ -739,7 +755,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : postType === 'Package' && packageFollowUpComponents.length
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
-          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 15))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 15) + 5, Number(form.value.consultationBufferMinutes ?? 20))) },
+          consultationPolicy: consultationPolicyForGrace(form.value),
           staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
           sessionCount: postType === 'Package' ? treatmentCourseVisitCount(courseSteps) : 1,
           sessionIntervalDays: postType === 'Package' ? Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
@@ -801,7 +817,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         sameDayConsultationAllowed: post.sameDayConsultationAllowed === true,
         sameDayConsultationBufferMinutes: Number.isInteger(Number(post.sameDayConsultationBufferMinutes)) ? Number(post.sameDayConsultationBufferMinutes) : 15,
         consultationFee: Number(post.consultationFee || post.price || 0),
-        consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 15, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 20,
+        consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 15,
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
@@ -850,10 +866,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('User branch is not available.')
         return
       }
-      if (!editForm.value.description?.trim() || !editForm.value.name?.trim()) {
-        toast.error('Please complete all required fields.')
-        return
-      }
+      const selectedProduct = editForm.value.postType === 'Product'
+        ? inventoryProducts.value.find(item => item.name === editForm.value.name) || null
+        : null
+      const currentPost = posts.value.find(post => post.id === editTargetId.value)
+      const requiredFieldsError = validateRequiredListingFields(editForm.value, { name: editForm.value.name, selectedProduct })
+      if (requiredFieldsError) { toast.error(requiredFieldsError); return }
       const editCourseSteps = editForm.value.postType === 'Package' ? normalizeTreatmentCourseSteps(editForm.value.treatmentCourseSteps) : []
       const editPackageComponents = editForm.value.postType === 'Package' ? courseComponentsForSteps(editCourseSteps) : []
       const editPackageSubtotal = editForm.value.postType === 'Package' ? packageSubtotalForSteps(editCourseSteps) : 0
@@ -878,21 +896,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       const sameDayError = sameDayConfigurationError(editForm.value)
       if (sameDayError) { toast.error(sameDayError); return }
-      if (editForm.value.postType === 'Consultation' && Number(editForm.value.consultationFee) <= 0) {
-        toast.error('Please enter a valid consultation fee.')
-        return
-      }
-      if (editForm.value.postType === 'Consultation' && (!Array.isArray(editForm.value.consultationModes) || !editForm.value.consultationModes.length)) { toast.error('Choose at least one consultation mode.'); return }
-      if (editForm.value.postType === 'Consultation' && normalizeConsultationModes(editForm.value.consultationModes).includes('online') && (!Number.isInteger(Number(editForm.value.durationMinutes)) || Number(editForm.value.durationMinutes) < 5 || Number(editForm.value.durationMinutes) > 240)) { toast.error('Online consultation duration must be a whole number from 5 to 240 minutes.'); return }
-      if (editForm.value.postType !== 'Product' && Number(editForm.value.durationMinutes) <= 0) {
-        toast.error('Please enter a valid duration.')
-        return
-      }
-
       loading.value = true
       try {
         let nextImageUrl = ''
-        const currentPost = posts.value.find((post) => post.id === editTargetId.value)
         if (currentPost) nextImageUrl = currentPost.imageUrl || ''
 
         if (editImageFile.value) {
@@ -903,7 +909,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           nextImageUrl = await getDownloadURL(imageRef)
         }
 
-        const selectedProduct = inventoryProducts.value.find((item) => item.name === editForm.value.name) || null
         const payload = {
           title: editForm.value.name.trim(),
           description: editForm.value.description.trim(),
@@ -948,7 +953,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
-          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(editForm.value.consultationGraceMinutes ?? 15))), bufferMinutes: Math.min(45, Math.max(Number(editForm.value.consultationGraceMinutes ?? 15) + 5, Number(editForm.value.consultationBufferMinutes ?? 20))) },
+          consultationPolicy: consultationPolicyForGrace(editForm.value),
           staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
           sessionCount: editForm.value.postType === 'Package' ? treatmentCourseVisitCount(editCourseSteps) : 1,
           sessionIntervalDays: editForm.value.postType === 'Package' ? Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,

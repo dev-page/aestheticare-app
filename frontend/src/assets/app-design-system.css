@@ -2199,9 +2199,16 @@ html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
 html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
   .purchase-order-body, .procurement-modal-body, .purchase-order-info,
   .purchase-order-pricing, .purchase-order-table-wrap, .purchase-order-total,
-  .listing-review-modal-overview, .listing-review-records, .listing-review-records-heading
+  .listing-review-modal-overview, .listing-review-post-card, .listing-review-post-image,
+  .listing-review-records, .listing-review-records-heading
 ) {
   background: var(--ac-surface-soft) !important;
+}
+
+html[data-ac-theme="dark"] .app-modal-panel.finance-dialog .listing-review-type-badge {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
 }
 
 html[data-ac-theme="dark"] .app-modal-panel.finance-dialog :is(
