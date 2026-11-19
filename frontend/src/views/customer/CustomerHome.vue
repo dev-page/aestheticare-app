@@ -213,8 +213,10 @@
           </div>
 
           <div v-else class="state-panel">
-            <p class="state-title">No centers match your current filters.</p>
-            <p class="state-copy">Try clearing one or two filters to see more clinics.</p>
+            <p class="state-title">
+              {{ centers.length ? 'No centers match your current filters.' : 'No centers are currently available.' }}
+            </p>
+            <p v-if="centers.length" class="state-copy">Try clearing one or two filters to see more clinics.</p>
           </div>
         </section>
       </div>

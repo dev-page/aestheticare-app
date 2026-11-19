@@ -321,9 +321,12 @@
         </div>
 
         <div v-else class="state-panel">
-          <p class="state-title">No centers match your current filters.</p>
-          <p class="state-copy">Try clearing one or two filters to broaden the results and explore more clinics across Cavite.</p>
+          <p class="state-title">
+            {{ centers.length ? 'No centers match your current filters.' : 'No centers are currently available.' }}
+          </p>
+          <p v-if="centers.length" class="state-copy">Try clearing one or two filters to broaden the results and explore more clinics across Cavite.</p>
           <button
+            v-if="centers.length"
             type="button"
             class="mt-5 inline-flex rounded-2xl bg-gold-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gold-800"
             @click="clearFilters"
