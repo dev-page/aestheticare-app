@@ -47,3 +47,34 @@ test('payroll and paid-leave policy settings are only writable through validated
     assert.match(block(rules, marker), /allow (?:create, update|create|read, write):\s*if\s+false\s*;/, `${marker} must be backend-managed`)
   }
 })
+
+test('applicants cannot write the server-owned clinic OCR job state', () => {
+  const rules = read('firestore.rules')
+  const verificationFields = block(rules, 'function applicantCannotChangeVerificationFields()')
+  assert.match(verificationFields, /'verificationJob'/)
+})
+
+test('clinic OCR recovery cron requires the configured bearer secret', () => {
+  const source = read('backend/otp-backend/server.js')
+  const start = source.indexOf("app.all('/cron/clinic-registration-ocr'")
+  assert.notEqual(start, -1)
+  const end = source.indexOf("app.all('/cron/appointment-reminders'", start)
+  const route = source.slice(start, end)
+  assert.match(route, /process\.env\.CRON_SECRET/)
+  assert.match(route, /Bearer \$\{secret\}/)
+  assert.match(route, /recoverClinicVerificationJobs\(\)/)
+})
+
+test('expired OCR work recovers on review and the production schedule runs every fifteen minutes', () => {
+  const source = read('backend/otp-backend/server.js')
+  const start = source.indexOf("app.get('/admin/clinic-review/:uid'")
+  const end = source.indexOf("app.post('/admin/document/verify'", start)
+  const route = source.slice(start, end)
+  assert.match(route, /jobNeedsRecovery/)
+  assert.match(route, /recoverClinicVerificationJobs\(\{ uid \}\)/)
+
+  const config = JSON.parse(read('vercel.json'))
+  assert.equal(config.schedules['clinic-registration-ocr-recovery'].schedule, '*/15 * * * *')
+  assert.equal(config.schedules['clinic-registration-ocr-recovery'].path, '/api/cron/clinic-registration-ocr')
+  assert.equal(config.functions['api/[...path].js'].maxDuration, 300)
+})

@@ -306,12 +306,35 @@
           <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 class="text-white font-semibold">Automatic Verification and OCR</h3>
-                <p class="text-xs text-slate-400">OCR consistency checks run after the applicant submits the documents. Low-confidence results require administrator review.</p>
+                <h3 class="text-white font-semibold">Document comparison and OCR</h3>
+                <p class="text-xs text-slate-400">Compare the entered details with the extracted values and the original documents. An administrator must review and approve the registration.</p>
               </div>
-              <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
-                {{ selectedRecord.verificationStatus || 'Not processed' }}
-              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
+                  {{ selectedRecord.verificationStatus || 'Not processed' }}
+                </span>
+                <button
+                  v-if="isPendingRecord(selectedRecord)"
+                  type="button"
+                  class="rounded-lg border border-sky-500/50 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="processing || isAwaitingResubmission(selectedRecord) || isVerificationJobActive(selectedRecord)"
+                  @click="runClinicVerification"
+                >{{ isVerificationJobActive(selectedRecord) ? selectedRecord.verificationJob.status === 'queued' ? 'OCR queued' : 'OCR processing…' : processing ? 'Processing…' : selectedRecord.verificationResults?.length ? 'Run OCR again' : 'Run OCR' }}</button>
+              </div>
+            </div>
+            <div v-if="selectedRecord.verificationJob" class="mt-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span class="font-semibold uppercase tracking-wide text-slate-300">Processing status</span>
+                <span class="capitalize text-slate-200">{{ selectedRecord.verificationJob.status }}</span>
+              </div>
+              <p class="mt-1 text-xs text-slate-400">
+                {{ Number(selectedRecord.verificationJob.processedDocuments || 0) }} of {{ Number(selectedRecord.verificationJob.totalDocuments || 0) }} documents processed
+                <span v-if="selectedRecord.verificationJob.updatedAt"> · Updated {{ formatDateValue(selectedRecord.verificationJob.updatedAt) }}</span>
+              </p>
+              <div v-if="selectedRecord.verificationJob.status === 'processing' || selectedRecord.verificationJob.status === 'queued'" class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-700">
+                <div class="h-full rounded-full bg-sky-400 transition-all" :style="{ width: (selectedRecord.verificationJob.totalDocuments ? Math.round((selectedRecord.verificationJob.processedDocuments || 0) / selectedRecord.verificationJob.totalDocuments * 100) : 0) + '%' }"></div>
+              </div>
+              <p v-if="selectedRecord.verificationJob.error" class="mt-2 text-xs text-rose-300">{{ selectedRecord.verificationJob.error }}</p>
             </div>
             <p class="mt-2 text-xs text-slate-400">
               Processed: {{ formatDateValue(selectedRecord.verificationProcessedAt) }}
@@ -333,16 +356,37 @@
             <div v-if="selectedRecord.verificationResults?.length" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <article v-for="result in selectedRecord.verificationResults" :key="result.key" class="rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-sm">
                 <div class="flex items-start justify-between gap-3">
-                  <p class="text-sm font-medium text-slate-100">{{ documentLabel(result.key) }}</p>
+                  <div>
+                    <p class="text-sm font-medium text-slate-100">{{ documentLabel(result.key) }}</p>
+                    <a v-if="documentUrl(selectedRecord, result.key)" :href="documentUrl(selectedRecord, result.key)" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs text-sky-300 underline hover:text-sky-200">Open original document</a>
+                    <p v-else class="mt-1 text-xs text-slate-500">Original document unavailable</p>
+                  </div>
                   <div class="flex flex-wrap justify-end gap-1.5">
                     <span v-if="result.checks.expiryWarning" class="rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200">Expiring soon</span>
                     <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize" :class="result.status === 'verified' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'">{{ result.status }}</span>
                   </div>
                 </div>
+                <div class="mt-4 border-t border-slate-800 pt-3">
+                  <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Step 1 comparison</p>
+                  <div v-if="result.comparisons.length" class="mt-2 space-y-3">
+                    <div v-for="comparison in result.comparisons" :key="comparison.field" class="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-semibold text-slate-100">{{ comparison.label }}</p>
+                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="comparison.status === 'match' ? 'bg-emerald-500/15 text-emerald-300' : comparison.status === 'mismatch' ? 'bg-red-500/15 text-red-200' : 'bg-amber-500/15 text-amber-200'">{{ comparison.status === 'match' ? 'Match' : comparison.status === 'mismatch' ? 'Possible mismatch' : 'Needs review' }}</span>
+                      </div>
+                      <dl class="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                        <div><dt class="text-slate-400">Entered by applicant</dt><dd class="mt-0.5 break-words text-slate-100">{{ comparison.enteredValue || 'Not provided' }}</dd></div>
+                        <div><dt class="text-slate-400">Read from document</dt><dd class="mt-0.5 break-words text-slate-100">{{ comparison.detectedValue || 'Not identified — inspect the document' }}</dd></div>
+                      </dl>
+                    </div>
+                  </div>
+                  <p v-else class="mt-2 text-xs leading-relaxed text-slate-400">Field comparisons are not available for this result. Inspect the original document; run OCR again to obtain updated comparisons where applicable.</p>
+                </div>
                 <div class="mt-4 flex items-end justify-between gap-3">
                   <div>
                     <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Document score</p>
                     <p class="mt-1 text-2xl font-semibold text-white">{{ result.confidence }}<span class="text-base text-slate-400">%</span></p>
+                    <p v-if="result.ocrConfidence !== null" class="mt-1 text-xs text-slate-400">OCR text confidence {{ result.ocrConfidence }}%</p>
                   </div>
                   <div class="w-24 pb-1">
                     <div class="h-2 overflow-hidden rounded-full bg-slate-700">
@@ -397,6 +441,10 @@
             Resubmission was requested. Verification actions will be available again after the applicant submits replacement documents.
           </div>
 
+          <div v-if="isVerificationJobActive(selectedRecord)" class="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+            OCR is still processing. Review decisions will be available after the current run finishes.
+          </div>
+
           <section v-if="isPendingRecord(selectedRecord)" class="mb-4">
             <label class="block text-xs text-slate-400 mb-1">Review remark (required for resubmission or rejection)</label>
             <textarea
@@ -411,7 +459,7 @@
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="processing || isAwaitingResubmission(selectedRecord)"
+              :disabled="processing || isAwaitingResubmission(selectedRecord) || isVerificationJobActive(selectedRecord)"
               @click="approveSelected"
             >
               {{ processing ? 'Processing...' : 'Approve' }}
@@ -420,7 +468,7 @@
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="processing || isAwaitingResubmission(selectedRecord)"
+              :disabled="processing || isAwaitingResubmission(selectedRecord) || isVerificationJobActive(selectedRecord)"
               @click="requestResubmission"
             >
               {{ processing ? 'Processing...' : 'Request Resubmission' }}
@@ -428,7 +476,7 @@
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="processing || isAwaitingResubmission(selectedRecord)"
+              :disabled="processing || isAwaitingResubmission(selectedRecord) || isVerificationJobActive(selectedRecord)"
               @click="rejectSelected"
             >
               {{ processing ? 'Processing...' : 'Reject' }}
@@ -485,6 +533,8 @@ const isAwaitingResubmission = (record) => {
   const status = String(record?.approvalStatus || record?.status || '').trim().toLowerCase()
   return Boolean(record?.resubmissionRequired) && status.includes('pending documents')
 }
+
+const isVerificationJobActive = (record) => ['queued', 'processing'].includes(String(record?.verificationJob?.status || '').toLowerCase())
 
 const formatApplicantName = (user = {}, fallback = {}) => {
   const getValue = (...keys) => keys.map((key) => user[key] || fallback[key]).find(Boolean) || ''
@@ -562,7 +612,14 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   key,
   status: String(result.status || 'manual_review').replaceAll('_', ' '),
   confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
-  ocrConfidence: Number.isFinite(Number(result.ocrConfidence)) ? Math.round(Number(result.ocrConfidence) * 100) : null,
+  ocrConfidence: result.ocrConfidence == null || !Number.isFinite(Number(result.ocrConfidence)) ? null : Math.round(Number(result.ocrConfidence) * 100),
+  comparisons: Array.isArray(result.comparisons) ? result.comparisons.map((comparison = {}) => ({
+    field: String(comparison.field || ''),
+    label: String(comparison.label || comparison.field || 'Registration detail'),
+    enteredValue: String(comparison.enteredValue || '').trim(),
+    detectedValue: String(comparison.detectedValue || '').trim(),
+    status: ['match', 'mismatch', 'needs_review'].includes(comparison.status) ? comparison.status : 'needs_review',
+  })) : [],
   checks: {
     readableText: result.checks?.readableText ?? null,
     nameMatch: result.checks?.nameMatch ?? null,
@@ -579,7 +636,12 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
 
 const formatDateValue = (value) => {
   if (!value) return '-'
-  const date = value?.toDate ? value.toDate() : new Date(value)
+  const seconds = Number(value?._seconds ?? value?.seconds)
+  const date = value?.toDate
+    ? value.toDate()
+    : Number.isFinite(seconds)
+      ? new Date(seconds * 1000)
+      : new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString()
 }
 
@@ -592,6 +654,8 @@ const documentLabel = (key) => ({
   sanitaryCertificate: 'Sanitary Certificate',
   authorizationLetter: 'Authorization Letter / Proof of Authority',
 }[key] || key)
+
+const documentUrl = (record, key) => record?.documents?.find((document) => document.key === key)?.url || ''
 
 const getOverallConfidence = (results = []) => {
   const scores = results.map((result) => Number(result.confidence)).filter((score) => Number.isFinite(score))
@@ -728,12 +792,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             const ownerLookupId = clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.branchAdminId || clinic.id
             const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
+            const ocrSnapshot = clinic.registrationOcrSnapshot || {}
+            const reviewerUser = {
+              ...user,
+              firstName: ocrSnapshot.firstName || user.firstName,
+              midName: ocrSnapshot.middleName || user.midName || user.middleName,
+              lastName: ocrSnapshot.lastName || user.lastName,
+              suffix: ocrSnapshot.suffix || user.suffix,
+            }
             const clinicName = String(
               clinic.ownerName || clinic.registrantName || clinic.fullName || clinic.applicantName || clinic.branchAdminName || ''
             ).trim()
             const clinicFirstName = String(clinic.firstName || '').trim()
             const clinicLastName = String(clinic.lastName || '').trim()
-            const fullName = formatApplicantName(user, clinic).replace('Unnamed User', '').trim()
+            const fullName = formatApplicantName(reviewerUser, clinic).replace('Unnamed User', '').trim()
               || clinicName
               || `${clinicFirstName} ${clinicLastName}`.trim()
               || 'Unnamed Owner'
@@ -749,15 +821,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             return {
               id: clinic.id,
               approvalStatus: clinic.approvalStatus || 'Approved',
-              clinicName: clinic.clinicName || clinic.clinicBranch || '',
+              clinicName: ocrSnapshot.businessName || clinic.clinicName || clinic.clinicBranch || '',
               clinicBranch: clinic.clinicBranch || '',
               clinicLocation: clinic.clinicLocation || clinic.clinicLocationAddress || clinic.clinicBranch || '',
-              middleName: user.midName || user.middleName || '',
-              suffix: user.suffix || '',
-              birthDate: user.birthDate || null,
+              middleName: ocrSnapshot.middleName || user.midName || user.middleName || '',
+              suffix: ocrSnapshot.suffix || user.suffix || '',
+              birthDate: ocrSnapshot.birthDate || user.birthDate || null,
               contactNumber: user.contactNumber || clinic.contactNumber || '',
               authorizedRepPosition: clinic.authorizedRepPosition || user.authorizedRepPosition || '',
-              companyName: clinic.companyName || user.companyName || clinic.clinicName || '',
+              companyName: ocrSnapshot.businessName || clinic.companyName || user.companyName || clinic.clinicName || '',
               companyType: clinic.companyType || user.companyType || '',
               clinicLocationAddress: clinic.clinicLocationAddress || '',
               clinicBuildingNumber: clinic.clinicBuildingNumber || '',
@@ -778,14 +850,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               approvedAt: approvedAt || null,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
               platformAgreementAcceptances: Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : [],
-              permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
-              permitHolderName: clinic.permitHolderName || '',
-              permitHolderRelationship: clinic.permitHolderRelationship || '',
+              permitHolderIsRegistrant: typeof ocrSnapshot.permitHolderIsRegistrant === 'boolean' ? ocrSnapshot.permitHolderIsRegistrant : typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
+              permitHolderName: ocrSnapshot.permitHolderName || clinic.permitHolderName || '',
+              permitHolderRelationship: ocrSnapshot.permitHolderRelationship || clinic.permitHolderRelationship || '',
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
               verificationProcessedAt: clinic.verificationProcessedAt || null,
               verificationResults: mapVerificationResults(clinic.verificationResults),
+              verificationJob: clinic.verificationJob || null,
               complaintCount: complaintsSnap.size,
             }
           })
@@ -844,6 +917,40 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}. Ensure otp-backend is running.`)
     })
 
+    const refreshSelectedVerification = async (token) => {
+      const uid = selectedRecord.value?.id
+      if (!uid) throw new Error('The selected clinic registration is no longer available.')
+      const response = await fetchFromBackend(`/admin/clinic-review/${encodeURIComponent(uid)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Could not refresh OCR progress.')
+      const clinic = payload.data?.clinic || {}
+      selectedRecord.value = {
+        ...selectedRecord.value,
+        approvalStatus: clinic.approvalStatus || selectedRecord.value.approvalStatus,
+        registrationStatus: clinic.registrationStatus || selectedRecord.value.registrationStatus,
+        resubmissionRequired: Boolean(clinic.resubmissionRequired),
+        verificationStatus: clinic.verificationStatus || 'Not processed',
+        verificationThreshold: clinic.verificationThreshold ?? null,
+        verificationProcessedAt: clinic.verificationProcessedAt || null,
+        verificationResults: mapVerificationResults(clinic.verificationResults),
+        verificationJob: clinic.verificationJob || null,
+      }
+      return clinic.verificationJob || null
+    }
+
+    const waitForSelectedVerification = async (token, runId) => {
+      for (let attempt = 0; attempt < 160; attempt += 1) {
+        const job = await refreshSelectedVerification(token)
+        if (job?.runId !== runId) throw new Error('A newer OCR run replaced this job.')
+        if (job.status === 'completed') return job
+        if (job.status === 'failed') throw new Error(job.error || 'Clinic document OCR failed. You can run it again.')
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+      throw new Error('OCR is still processing. The progress and retry status are saved on this registration.')
+    }
+
     const loadPendingClinics = () => {
       if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
@@ -891,12 +998,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             const ownerLookupId = clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.branchAdminId || clinic.id
             const userSnap = await getDoc(doc(db, 'users', ownerLookupId))
             const user = userSnap.exists() ? userSnap.data() : {}
+            const ocrSnapshot = clinic.registrationOcrSnapshot || {}
+            const reviewerUser = {
+              ...user,
+              firstName: ocrSnapshot.firstName || user.firstName,
+              midName: ocrSnapshot.middleName || user.midName || user.middleName,
+              lastName: ocrSnapshot.lastName || user.lastName,
+              suffix: ocrSnapshot.suffix || user.suffix,
+            }
             const clinicName = String(
               clinic.ownerName || clinic.registrantName || clinic.fullName || clinic.applicantName || clinic.branchAdminName || ''
             ).trim()
             const clinicFirstName = String(clinic.firstName || '').trim()
             const clinicLastName = String(clinic.lastName || '').trim()
-            const fullName = formatApplicantName(user, clinic).replace('Unnamed User', '').trim()
+            const fullName = formatApplicantName(reviewerUser, clinic).replace('Unnamed User', '').trim()
               || clinicName
               || `${clinicFirstName} ${clinicLastName}`.trim()
               || 'Unnamed User'
@@ -966,15 +1081,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               fullName,
               email: normalizedEmail,
               resubmissionCount,
-              middleName: user.midName || user.middleName || '',
-              suffix: user.suffix || '',
-              birthDate: user.birthDate || null,
+              middleName: ocrSnapshot.middleName || user.midName || user.middleName || '',
+              suffix: ocrSnapshot.suffix || user.suffix || '',
+              birthDate: ocrSnapshot.birthDate || user.birthDate || null,
               contactNumber: user.contactNumber || clinic.contactNumber || '',
               authorizedRepPosition: clinic.authorizedRepPosition || user.authorizedRepPosition || '',
-              companyName: clinic.companyName || user.companyName || clinic.clinicName || '',
+              companyName: ocrSnapshot.businessName || clinic.companyName || user.companyName || clinic.clinicName || '',
               companyType: clinic.companyType || user.companyType || '',
               statusLabel: normalizeStatusLabel(clinic.registrationStatus || user.registrationStatus, clinic.approvalStatus, user.status),
-              clinicName: clinic.clinicName || clinic.companyName || user.companyName || '',
+              clinicName: ocrSnapshot.businessName || clinic.clinicName || clinic.companyName || user.companyName || '',
               clinicLocation: clinic.clinicLocation || clinic.clinicLocationAddress || '',
               clinicLocationAddress: clinic.clinicLocationAddress || '',
               clinicBuildingNumber: clinic.clinicBuildingNumber || '',
@@ -989,14 +1104,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               paymentStatus: resolvedPayment,
               platformAgreementAcceptance: clinic.platformAgreementAcceptance || null,
               platformAgreementAcceptances: Array.isArray(clinic.platformAgreementAcceptances) ? clinic.platformAgreementAcceptances : [],
-              permitHolderIsRegistrant: typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
-              permitHolderName: clinic.permitHolderName || '',
-              permitHolderRelationship: clinic.permitHolderRelationship || '',
+              permitHolderIsRegistrant: typeof ocrSnapshot.permitHolderIsRegistrant === 'boolean' ? ocrSnapshot.permitHolderIsRegistrant : typeof clinic.permitHolderIsRegistrant === 'boolean' ? clinic.permitHolderIsRegistrant : null,
+              permitHolderName: ocrSnapshot.permitHolderName || clinic.permitHolderName || '',
+              permitHolderRelationship: ocrSnapshot.permitHolderRelationship || clinic.permitHolderRelationship || '',
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
               verificationStatus: clinic.verificationStatus || 'Not processed',
               verificationThreshold: clinic.verificationThreshold || null,
               verificationProcessedAt: clinic.verificationProcessedAt || null,
               verificationResults: mapVerificationResults(clinic.verificationResults),
+              verificationJob: clinic.verificationJob || null,
               createdAt: clinic.createdAt || user.createdAt || null,
             }
           })
@@ -1139,8 +1255,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!selectedRecord.value) return
 
       const result = await systemAdminSwal.fire({
-        title: 'Run Automatic Verification?',
-        text: 'The clinic documents will be processed with OCR. Low-confidence results will remain for manual review.',
+        title: 'Run document OCR?',
+        text: 'The submitted documents will be processed again. An administrator must review the results and decide whether to approve the registration.',
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: 'Run verification',
@@ -1162,18 +1278,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         })
         const payload = await response.json().catch(() => null)
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification failed.')
+        const job = payload.data?.verificationJob
+        if (!job?.runId) throw new Error('The OCR job was not queued correctly.')
+        selectedRecord.value = { ...selectedRecord.value, verificationJob: job, verificationStatus: 'Queued for OCR' }
+        await waitForSelectedVerification(token, job.runId)
 
         await systemAdminSwal.fire({
           title: 'Verification Complete',
-          text: payload.data?.status === 'Automatically Verified'
-            ? 'All clinic documents passed the automatic verification threshold.'
-            : 'The documents require manual review because one or more confidence scores were below the threshold.',
-          icon: payload.data?.status === 'Automatically Verified' ? 'success' : 'info',
+          text: 'OCR processing finished. Review the updated comparisons and original documents before making a decision.',
+          icon: 'info',
           confirmButtonText: 'Continue',
         })
-        closeModal()
-        await loadPendingClinics()
-        await loadVerifiedClinics(true)
+        await Promise.all([loadPendingClinics(), loadVerifiedClinics(true)])
       } catch (err) {
         console.error('Failed to run clinic document verification:', err)
         error.value = err?.message || 'Automatic verification failed. Please try again.'
@@ -1391,6 +1507,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       paginatedVerifiedClinics,
       isPendingRecord,
       isAwaitingResubmission,
+      isVerificationJobActive,
       loadingVerifiedClinics,
       showModal,
       selectedRecord,
@@ -1411,6 +1528,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       runClinicVerification,
       formatDateValue,
       documentLabel,
+      documentUrl,
       getOverallConfidence,
       statusClass: (value) => {
         const normalized = String(value || '').trim().toLowerCase()

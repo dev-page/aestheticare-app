@@ -2511,27 +2511,6 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
   }
 }
 
-const requestAutomaticClinicVerification = async (uid) => {
-  if (!uid) throw new Error('Registration ID is missing.')
-
-  // Auth can still be restoring its persisted session immediately after a refresh.
-  if (typeof auth.authStateReady === 'function') {
-    await auth.authStateReady()
-  }
-  const currentUser = auth.currentUser
-  if (!currentUser) throw new Error('Your registration session expired. Please sign in again to process the documents.')
-
-  const token = await currentUser.getIdToken(true)
-  const response = await fetch(`${OTP_API_BASE}/registration/auto-verify-documents`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ uid, applicantType: 'clinic' }),
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification could not be started.')
-  return payload.data
-}
-
 const claimPrepaidSubscriptionPayment = async () => {
   let paymentId = String(route.query.paymentId || '').trim()
   if (!paymentId) {
@@ -2682,13 +2661,6 @@ const submitDocuments = async () => {
       }
     }
 
-    // Verification is a server-side follow-up. Show submission success as soon
-    // as the durable Firestore write completes instead of holding the applicant
-    // on this screen while OCR processes every document.
-    requestAutomaticClinicVerification(userUid.value).catch((verificationError) => {
-      console.error('Automatic clinic verification was not completed:', verificationError)
-    })
-
     existingSubmittedDocuments.value = submittedDocumentsPayload
     syncExistingDocumentPreviews()
     // Stop Firestore listeners while the registration session is still
@@ -2697,12 +2669,12 @@ const submitDocuments = async () => {
     await signOut(auth).catch(() => {})
     pendingApprovalMode.value = true
     approvalReviewState.value = 'reviewing'
-    approvalReviewMessage.value = 'Your registration was submitted and is waiting for document verification and administrator review.'
+    approvalReviewMessage.value = 'Your documents were submitted. The server is processing them for administrator review.'
 
     currentStep.value = 4
     setStoredOtpRecipientEmail('')
     stopOtpCountdown()
-    toast.success('Documents submitted. Please wait for approval.')
+    toast.success('Documents submitted. OCR is processing them for administrator review.')
   } catch (err) {
     console.error(err)
     toast.error('Failed to submit documents. Please try again.')

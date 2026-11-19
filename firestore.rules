@@ -54,7 +54,7 @@ service cloud.firestore {
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'ownerId', 'organizationOwnerId',
-        'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults',
+        'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults', 'verificationJob', 'registrationOcrSnapshot',
         'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
         'subscriptionPlan', 'plan', 'paymentStatus', 'paymentId',

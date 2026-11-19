@@ -36,6 +36,7 @@ import { prepareBooking } from './bookingResources.js'
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 import { paymentDue, initialPaymentReceived, afterPaymentStatus, normalized, assertWorkflow, resetAppointmentAccess, bookingOrderReadyForPayment } from './bookingWorkflow.js'
 import express from 'express'
+import { waitUntil } from '@vercel/functions'
 import { registerPublicContact } from './publicContact.js'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -57,6 +58,7 @@ import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgree
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { defaultClinicRolePermissions } from '../../shared/clinicRoleDefaults.js'
+import { compareRegistrationFields } from './registrationComparisons.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
 // Keep the same fallback used by the backend maintenance scripts so OTP requests do not fail.
@@ -173,7 +175,6 @@ const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
-const MANUAL_REVIEW_THRESHOLD = Math.max(0.5, Math.min(AUTO_VERIFICATION_THRESHOLD, Number(process.env.MANUAL_REVIEW_THRESHOLD || 0.5)))
 // A 30-day window gives administrators and registrants advance notice. Only
 // documents with seven or fewer days remaining require replacement before
 // review; already expired documents remain rejected.
@@ -222,48 +223,10 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
   'sanitaryCertificate',
   'dohAccreditation',
 ])
-const GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS = new Set(['governmentIdRepresentativeFront'])
 const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
 const getRegistrationDocumentMinimumTextLength = (docKey) =>
   String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
-const normalizeOcrComparable = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-
 const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
-
-// The registrant's legal name is captured in Step 1. OCR identity checks use
-// that name only; a clinic or business name must never substitute for the
-// government-ID holder's name.
-const getRegistrationOwnerNameTokensForOcr = (application = {}, user = {}) => {
-  const firstName = normalizeOcrComparable(user.firstName || application.firstName)
-  const lastName = normalizeOcrComparable(user.lastName || application.lastName)
-  const middleName = normalizeOcrComparable(user.midName || user.middleName || application.midName || application.middleName)
-  // IDs often print the surname first and may abbreviate or omit the middle
-  // name. Requiring first and last name still gives a reliable identity check.
-  return [firstName, lastName, middleName].filter((token, index) => token.length >= 2 && (index < 2 || token.length >= 3))
-}
-
-const doesOcrTextMatchRegistrationOwner = (textComparable, application = {}, user = {}) => {
-  const tokens = getRegistrationOwnerNameTokensForOcr(application, user)
-  if (tokens.length < 2) return null
-  return tokens.slice(0, 2).every((token) => textComparable.includes(token))
-}
-
-const getPermitHolderNameForOcr = (application = {}, user = {}) => application.permitHolderIsRegistrant === true
-  ? [user.firstName || application.firstName, user.midName || user.middleName || application.midName, user.lastName || application.lastName]
-    .map((part) => String(part || '').trim()).filter(Boolean).join(' ')
-  : String(application.permitHolderName || '').trim()
-
-const doesOcrTextMatchPermitHolder = (textComparable, application = {}, user = {}) => {
-  const holderName = normalizeOcrComparable(getPermitHolderNameForOcr(application, user))
-  const tokens = holderName.split(' ').filter((token) => token.length >= 2)
-  if (tokens.length < 2) return null
-  const matchedTokens = tokens.filter((token) => textComparable.includes(token))
-  return matchedTokens.length >= 2
-}
-
-const getRegistrationBusinessNameForOcr = (application = {}, user = {}) => normalizeOcrComparable(
-  application.businessName || application.clinicName || application.companyName || user.companyName || ''
-)
 
 const normalizeRegistrationDateForOcr = (value) => {
   if (!value) return ''
@@ -2214,6 +2177,21 @@ const loadAttendanceSchedule = async (employeeId, dateKey) => {
   }
 }
 
+const getRegistrationComparisonMatch = (comparisons, field) => {
+  const comparison = comparisons.find((item) => item.field === field)
+  if (!comparison) return null
+  if (comparison.status === 'match') return true
+  if (comparison.status === 'mismatch') return false
+  return null
+}
+
+const getRegistrationComparisonNameMatch = (comparisons) => {
+  const nameComparisons = comparisons.filter((item) => item.field !== 'birthDate')
+  if (!nameComparisons.length) return null
+  if (nameComparisons.some((item) => item.status === 'mismatch')) return false
+  return nameComparisons.every((item) => item.status === 'match') ? true : null
+}
+
 const processUploadedRegistrationDocument = async ({ uid, docKey, document, application, user }) => {
   const storagePath = String(document?.path || document?.storagePath || '').trim()
   const result = {
@@ -2262,32 +2240,20 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
       annotation = fallback?.fullTextAnnotation || annotation
     }
-    const comparableText = normalizeOcrComparable(extractedText)
     const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
     const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
-    const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront' || isAuthorizationDocument
-    const requiresPermitHolderName = application.permitHolderIsRegistrant === false
-      && (docKey === 'businessPermit' || isAuthorizationDocument)
-    const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
-    const ownerNameMatch = doesOcrTextMatchRegistrationOwner(comparableText, application, user)
-    const permitHolderNameMatch = requiresPermitHolderName
-      ? doesOcrTextMatchPermitHolder(comparableText, application, user)
-      : null
-    const businessNameMatch = expectedBusinessName.length >= 3 ? comparableText.includes(expectedBusinessName) : null
-    const requiresName = requiresBusinessName || requiresRegistrantName || requiresPermitHolderName
-    const nameMatch = isAuthorizationDocument
-      ? ownerNameMatch === true && permitHolderNameMatch === true
-      : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
     const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
     const readableText = extractedText.length >= minimumTextLength
     const hasSomeText = extractedText.length > 0
     const ocrConfidence = getVisionWordConfidence(annotation)
+    const comparisons = compareRegistrationFields({ docKey, text: extractedText, application, user, confidence: ocrConfidence })
+    const ownerNameMatch = getRegistrationComparisonMatch(comparisons, 'registrantName')
+    const permitHolderNameMatch = getRegistrationComparisonMatch(comparisons, 'permitHolderName')
+    const businessNameMatch = getRegistrationComparisonMatch(comparisons, 'businessName')
+    const nameMatch = getRegistrationComparisonNameMatch(comparisons)
     const detectedDates = extractOcrDates(extractedText)
-    const requiresBirthDate = GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
+    const birthDateMatch = getRegistrationComparisonMatch(comparisons, 'birthDate')
     const expectedBirthDate = getRegistrationBirthDateForOcr(application, user)
-    const birthDateMatch = requiresBirthDate && expectedBirthDate
-      ? detectedDates.includes(expectedBirthDate)
-      : null
     const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
     const requiresNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
     const requiresExpiry = EXPIRY_DATE_REQUIREMENTS.has(docKey)
@@ -2318,30 +2284,21 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       expiryWarning: requiresExpiry && expiryValidation.daysRemaining > REGISTRATION_EXPIRY_HOLD_DAYS
         && expiryValidation.daysRemaining <= REGISTRATION_EXPIRY_WARNING_DAYS,
     }
-    // Automatic approval requires the Step 1 registrant name to be found in
-    // the extracted text. Documents that have an expiry date also require a
-    // valid, non-expired date; a missing match is sent to a human, not called
-    // unreadable and not automatically accepted on score alone.
-    const automaticChecksPassed = (!requiresName || nameMatch === true)
-      && (!requiresPermitHolderName || permitHolderNameMatch === true)
-      && (!requiresBirthDate || birthDateMatch === true)
+    // Document-level OCR verification requires all labeled comparisons to
+    // match. The clinic still requires a separate administrator decision.
+    const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
       && (!requiresExpiry || expiryValid === true)
-    const requiredNameMismatch = !isAuthorizationDocument && requiresName && nameMatch === false
-    const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
     const expiredDocument = requiresExpiry && expiryValidation.expired
     const invalidValidityRange = requiresExpiry && expiryValidation.invalidRange
     const expiryAccountHold = requiresExpiry && expiryValidation.accountHold
-    result.status = !readableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || score < MANUAL_REVIEW_THRESHOLD
+    result.comparisons = comparisons
+    result.status = expiredDocument || invalidValidityRange
       ? 'rejected'
       : expiryAccountHold ? 'held_pending'
       : isAuthorizationDocument ? 'manual_review'
-      : score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
+      : readableText && score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
-      ? 'The text is unclear or unreadable. Please upload a clearer, well-lit, uncropped image or readable PDF.'
-      : requiredNameMismatch
-        ? `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
-      : requiredBirthDateMismatch
-        ? 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
+      ? 'OCR could not read enough text to compare the document. An administrator must inspect the original file.'
       : expiredDocument
         ? `This document expired on ${expiryDate}. Please upload a current document.`
       : invalidValidityRange
@@ -2350,14 +2307,10 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
         ? `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
       : isAuthorizationDocument
         ? 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
-      : requiresPermitHolderName && permitHolderNameMatch !== true
-        ? 'OCR could not confidently match the declared permit holder. This document requires manual review rather than automatic rejection.'
-      : result.status === 'rejected'
-        ? 'This document did not meet the minimum OCR verification score. Please upload a clearer file.'
-        : requiresName && nameMatch !== true
-          ? `OCR completed, but the ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
-          : requiresBirthDate && birthDateMatch !== true
-            ? 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
+      : comparisons.some((item) => item.status === 'mismatch')
+        ? 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
+        : comparisons.some((item) => item.status === 'needs_review')
+          ? 'OCR could not confidently compare every entered value. Inspect the original document before making a decision.'
           : requiresExpiry && expiryValid !== true
             ? 'OCR completed, but a labelled validity period or expiry date could not be confirmed. This document requires manual review.'
         : result.status === 'verified'
@@ -2380,7 +2333,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
   return result
 }
 
-const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy }) => {
+const runRegistrationDocumentVerification = async ({ uid, applicantType, processedBy, runId }) => {
   if (String(applicantType || '').trim().toLowerCase() !== 'clinic') {
     throw new Error('Only clinic registration verification is supported.')
   }
@@ -2395,11 +2348,85 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const application = applicationSnap.data() || {}
   const user = userSnap.exists ? userSnap.data() || {} : {}
   const documents = application.submittedDocuments || {}
-  const uploadOcrResults = application.draftDocumentOcr || {}
   const requiredKeys = getRegistrationDocumentRequirements(normalizedType, application)
+  const expectedRunId = String(runId || '').trim()
+  if (!expectedRunId) throw new Error('A clinic verification job ID is required.')
+  await firestore.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(applicationRef)
+    if (!currentSnapshot.exists) throw new Error('Registration application not found.')
+    const currentApplication = currentSnapshot.data() || {}
+    const job = currentApplication.verificationJob || {}
+    if (job.runId !== expectedRunId || job.status !== 'queued') {
+      throw Object.assign(new Error('This clinic verification job is no longer queued.'), {
+        statusCode: 409,
+        jobAlreadyClaimed: job.runId === expectedRunId && job.status === 'processing',
+      })
+    }
+    const approvalStatus = String(currentApplication.approvalStatus || '').trim().toLowerCase()
+    if (approvalStatus.includes('approved') || approvalStatus.includes('rejected')
+      || (approvalStatus.includes('pending documents') && currentApplication.resubmissionRequired === true)) {
+      throw Object.assign(new Error('This clinic registration is no longer available for OCR review.'), { statusCode: 409 })
+    }
+    const ocrSnapshot = currentApplication.registrationOcrSnapshot || {
+      firstName: String(currentApplication.firstName || user.firstName || '').trim(),
+      middleName: String(currentApplication.midName || currentApplication.middleName || user.midName || user.middleName || '').trim(),
+      lastName: String(currentApplication.lastName || user.lastName || '').trim(),
+      suffix: String(currentApplication.suffix || user.suffix || '').trim(),
+      birthDate: currentApplication.birthDate || user.birthDate || null,
+      businessName: String(currentApplication.businessName || currentApplication.clinicName || currentApplication.companyName || user.companyName || '').trim(),
+      permitHolderIsRegistrant: currentApplication.permitHolderIsRegistrant !== false,
+      permitHolderName: String(currentApplication.permitHolderName || '').trim(),
+      permitHolderRelationship: String(currentApplication.permitHolderRelationship || '').trim(),
+      source: 'legacy-review-time',
+      capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    if (!currentApplication.registrationOcrSnapshot) {
+      application.registrationOcrSnapshot = ocrSnapshot
+    }
+    transaction.set(applicationRef, {
+      verificationStatus: 'Processing OCR',
+      ...(!currentApplication.registrationOcrSnapshot ? { registrationOcrSnapshot: ocrSnapshot } : {}),
+      verificationJob: {
+        ...job,
+        status: 'processing',
+        processedDocuments: 0,
+        totalDocuments: requiredKeys.length,
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        leaseExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + CLINIC_VERIFICATION_JOB_LEASE_MS),
+      },
+    }, { merge: true })
+  })
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
   const visionClient = createVisionClient()
   const results = {}
+  const persistDocumentProgress = async () => {
+    const processedDocuments = Object.keys(results).length
+    await firestore.runTransaction(async (transaction) => {
+      const currentSnapshot = await transaction.get(applicationRef)
+      if (!currentSnapshot.exists) throw Object.assign(new Error('Clinic registration was removed during OCR.'), { statusCode: 409 })
+      const currentApplication = currentSnapshot.data() || {}
+      const job = currentApplication.verificationJob || {}
+      if (job.runId !== expectedRunId || job.status !== 'processing') {
+        throw Object.assign(new Error('This clinic verification job was superseded.'), { statusCode: 409 })
+      }
+      const approvalStatus = String(currentApplication.approvalStatus || '').trim().toLowerCase()
+      if (approvalStatus.includes('approved') || approvalStatus.includes('rejected')
+        || (approvalStatus.includes('pending documents') && currentApplication.resubmissionRequired === true)) {
+        throw Object.assign(new Error('A reviewer changed the registration while OCR was running.'), { statusCode: 409 })
+      }
+      transaction.set(applicationRef, {
+        verificationResults: results,
+        verificationJob: {
+          ...job,
+          processedDocuments,
+          totalDocuments: requiredKeys.length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          leaseExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + CLINIC_VERIFICATION_JOB_LEASE_MS),
+        },
+      }, { merge: true })
+    })
+  }
 
   for (const docKey of requiredKeys) {
     const document = documents?.[docKey] || {}
@@ -2425,30 +2452,22 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       processedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
 
-    const uploadedResult = uploadOcrResults?.[docKey]
-    const requiresFreshComplianceCheck = EXPIRY_DATE_REQUIREMENTS.has(docKey)
-      || GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
-    if (uploadedResult
-      && Number(uploadedResult.policyVersion || 0) === REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION
-      && !requiresFreshComplianceCheck
-      && String(uploadedResult.storagePath || '') === storagePath) {
-      results[docKey] = { ...uploadedResult, processedAt: admin.firestore.FieldValue.serverTimestamp() }
-      continue
-    }
-
     if (!storagePath || !storagePath.startsWith(expectedPrefix)) {
       result.reason = 'Document storage path is missing or does not belong to this application.'
       results[docKey] = result
+      await persistDocumentProgress()
       continue
     }
     if (!document.type || !['application/pdf', 'image/jpeg', 'image/png'].includes(String(document.type).toLowerCase())) {
       result.reason = 'Unsupported document type.'
       results[docKey] = result
+      await persistDocumentProgress()
       continue
     }
     if (Number(document.size || 0) <= 0 || Number(document.size || 0) > 10 * 1024 * 1024) {
       result.reason = 'Document size is invalid.'
       results[docKey] = result
+      await persistDocumentProgress()
       continue
     }
 
@@ -2469,6 +2488,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         if (!visionClient) {
           result.reason = 'Automatic document processor is not configured.'
           results[docKey] = result
+          await persistDocumentProgress()
           continue
         }
         const visionRequest = await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
@@ -2492,22 +2512,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
           }
         }
       }
-      const textComparable = normalizeOcrComparable(extractedText)
       const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
       const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
-      const requiresRegistrantName = docKey === 'governmentIdRepresentativeFront' || isAuthorizationDocument
-      const requiresPermitHolderName = application.permitHolderIsRegistrant === false
-        && (docKey === 'businessPermit' || isAuthorizationDocument)
-      const expectedBusinessName = getRegistrationBusinessNameForOcr(application, user)
-      const ownerNameMatch = doesOcrTextMatchRegistrationOwner(textComparable, application, user)
-      const permitHolderNameMatch = requiresPermitHolderName
-        ? doesOcrTextMatchPermitHolder(textComparable, application, user)
-        : null
-      const businessNameMatch = expectedBusinessName.length >= 3 ? textComparable.includes(expectedBusinessName) : null
-      const requiresName = requiresBusinessName || requiresRegistrantName || requiresPermitHolderName
-      const nameMatch = isAuthorizationDocument
-        ? ownerNameMatch === true && permitHolderNameMatch === true
-        : requiresBusinessName ? businessNameMatch : requiresRegistrantName ? ownerNameMatch : permitHolderNameMatch
       const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
       const hasReadableText = extractedText.length >= minimumTextLength
       const hasSomeText = extractedText.length > 0
@@ -2515,13 +2521,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const ocrConfidence = hasReusablePreflight
         ? Number.isFinite(preflightOcrConfidence) ? preflightOcrConfidence : null
         : getVisionWordConfidence(annotation)
+      const comparisons = compareRegistrationFields({ docKey, text: extractedText, application, user, confidence: ocrConfidence })
+      const ownerNameMatch = getRegistrationComparisonMatch(comparisons, 'registrantName')
+      const permitHolderNameMatch = getRegistrationComparisonMatch(comparisons, 'permitHolderName')
+      const businessNameMatch = getRegistrationComparisonMatch(comparisons, 'businessName')
+      const nameMatch = getRegistrationComparisonNameMatch(comparisons)
       const expiryApplicable = EXPIRY_DATE_REQUIREMENTS.has(docKey)
-      const detectedDates = extractOcrDates(extractedText)
-      const requiresBirthDate = GOVERNMENT_ID_BIRTHDATE_REQUIREMENTS.has(docKey)
       const expectedBirthDate = getRegistrationBirthDateForOcr(application, user)
-      const birthDateMatch = requiresBirthDate && expectedBirthDate
-        ? detectedDates.includes(expectedBirthDate)
-        : null
+      const birthDateMatch = getRegistrationComparisonMatch(comparisons, 'birthDate')
       const expiryValidation = getOcrExpiryValidation(extractedText, expiryApplicable)
       const expiryValid = expiryValidation.valid
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
@@ -2546,6 +2553,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.numberMatch = numberMatch
       result.detectedDocumentNumber = detectedDocumentNumber
       result.ocrConfidence = ocrConfidence
+      result.comparisons = comparisons
       result.checks = {
         readableText: hasReadableText,
         ocrConfidence,
@@ -2579,26 +2587,18 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         },
       }
       result.confidence = confidence
-      const automaticChecksPassed = (!requiresName || nameMatch === true)
-        && (!requiresPermitHolderName || permitHolderNameMatch === true)
-        && (!requiresBirthDate || birthDateMatch === true)
+      const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
         && (!expiryApplicable || expiryValid)
-      const requiredNameMismatch = !isAuthorizationDocument && requiresName && nameMatch === false
-      const requiredBirthDateMismatch = requiresBirthDate && birthDateMatch === false
       const expiredDocument = expiryApplicable && expiryValidation.expired
       const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
       const expiryAccountHold = expiryApplicable && expiryValidation.accountHold
-      result.status = !hasReadableText || requiredNameMismatch || requiredBirthDateMismatch || expiredDocument || invalidValidityRange || confidence < MANUAL_REVIEW_THRESHOLD
+      result.status = expiredDocument || invalidValidityRange
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
         : isAuthorizationDocument ? 'manual_review'
-        : confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
+        : hasReadableText && confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
-      } else if (requiredNameMismatch) {
-        result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} does not match this document. Please upload the correct document.`
-      } else if (requiredBirthDateMismatch) {
-        result.reason = 'The birth date on the government-issued ID does not match the birth date entered in Step 1. Please upload the correct ID.'
       } else if (expiredDocument) {
         result.reason = `This document expired on ${expiryValidation.validTo}. Please upload a current document.`
       } else if (invalidValidityRange) {
@@ -2607,12 +2607,10 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
       } else if (isAuthorizationDocument) {
         result.reason = 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
-      } else if (requiresPermitHolderName && permitHolderNameMatch !== true) {
-        result.reason = 'OCR could not confidently match the declared permit holder. This document requires manual review rather than automatic rejection.'
-      } else if (requiresName && nameMatch !== true) {
-        result.reason = `The ${requiresBusinessName ? 'clinic/business name' : 'registrant name from Step 1'} could not be matched. This document requires manual review.`
-      } else if (requiresBirthDate && birthDateMatch !== true) {
-        result.reason = 'OCR completed, but the birth date on the government-issued ID could not be matched. This document requires manual review.'
+      } else if (comparisons.some((item) => item.status === 'mismatch')) {
+        result.reason = 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
+      } else if (comparisons.some((item) => item.status === 'needs_review')) {
+        result.reason = 'OCR could not confidently compare every entered value. Inspect the original document before making a decision.'
       } else if (expiryApplicable && expiryValid !== true) {
         result.reason = 'A labelled validity period or expiry date could not be confirmed. This document requires manual review.'
       } else if (requiresDocumentNumber && !documentNumberDetected) {
@@ -2628,6 +2626,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.reason = error?.message || 'Automatic document processing failed.'
     }
     results[docKey] = result
+    await persistDocumentProgress()
   }
 
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
@@ -2681,26 +2680,28 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
-  const batch = firestore.batch()
-  batch.set(applicationRef, verificationPayload, { merge: true })
-  batch.set(userRef, {
-    status: approvalStatus,
-    approvalStatus,
-    registrationStatus: requiresDocumentResubmission
-        ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
-        : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
-    verificationStatus,
+  const historyRef = applicationRef.collection('verificationHistory').doc()
+  const notificationRef = firestore.collection('notifications').doc(`${normalizedType}-registration-${uid}`)
+  const verificationJob = {
+    runId: expectedRunId,
+    status: 'completed',
+    processedDocuments: requiredKeys.length,
+    totalDocuments: requiredKeys.length,
+    processedBy: processedBy || 'automatic_processor',
+    completedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true })
-  batch.set(applicationRef.collection('verificationHistory').doc(), {
+    leaseExpiresAt: admin.firestore.FieldValue.delete(),
+    error: admin.firestore.FieldValue.delete(),
+  }
+  const historyEntry = {
     action: allVerified ? 'ocr-verified-pending-approval' : requiresDocumentResubmission ? 'ocr-resubmission-required' : 'manual-review-required',
     applicantType: normalizedType,
     results,
     processedBy: processedBy || 'automatic_processor',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  })
+  }
   const notificationLabel = 'Clinic'
-  batch.set(firestore.collection('notifications').doc(`${normalizedType}-registration-${uid}`), {
+  const notification = {
     recipientRole: 'Superadmin',
     senderId: uid,
     type: `${normalizedType}_registration_verification`,
@@ -2713,8 +2714,42 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     link: '/superadmin/clinics/verification',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true })
-  await batch.commit()
+  }
+  await firestore.runTransaction(async (transaction) => {
+    const latestSnapshot = await transaction.get(applicationRef)
+    if (!latestSnapshot.exists) throw Object.assign(new Error('Registration application was removed before OCR completed.'), { statusCode: 409 })
+    const latest = latestSnapshot.data() || {}
+    const latestJob = latest.verificationJob || {}
+    if (latestJob.runId !== expectedRunId || latestJob.status !== 'processing') {
+      throw Object.assign(new Error('This clinic verification job was superseded before completion.'), { statusCode: 409 })
+    }
+    const latestApprovalStatus = String(latest.approvalStatus || '').trim().toLowerCase()
+    if (latestApprovalStatus.includes('approved') || latestApprovalStatus.includes('rejected')
+      || (latestApprovalStatus.includes('pending documents') && latest.resubmissionRequired === true)) {
+      throw Object.assign(new Error('A reviewer changed the registration while OCR was running.'), { statusCode: 409 })
+    }
+    const latestDocuments = latest.submittedDocuments || {}
+    const documentsChanged = requiredKeys.some((docKey) => {
+      const originalPath = String(documents?.[docKey]?.path || documents?.[docKey]?.storagePath || '').trim()
+      const currentPath = String(latestDocuments?.[docKey]?.path || latestDocuments?.[docKey]?.storagePath || '').trim()
+      return originalPath !== currentPath
+    })
+    if (documentsChanged) {
+      throw Object.assign(new Error('Submitted documents changed while OCR was running. Run verification again.'), { statusCode: 409 })
+    }
+    transaction.set(applicationRef, { ...verificationPayload, verificationJob }, { merge: true })
+    transaction.set(userRef, {
+      status: approvalStatus,
+      approvalStatus,
+      registrationStatus: requiresDocumentResubmission
+        ? CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED
+        : CLINIC_REGISTRATION_STATUS.PENDING_REVIEW,
+      verificationStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+    transaction.set(historyRef, historyEntry)
+    transaction.set(notificationRef, notification, { merge: true })
+  })
 
   let expiryHoldEmailSent = false
   let expiryWarningEmailSent = false
@@ -2770,7 +2805,206 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     }
   }
 
-  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent, expiryWarningEmailSent }
+  return { status: verificationStatus, approvalStatus, allVerified, hasRejectedDocument, results, expiryResubmissionExpiresAt, expiryHoldEmailSent, expiryWarningEmailSent, verificationJob }
+}
+
+const activeClinicVerificationRunIds = new Set()
+const CLINIC_VERIFICATION_JOB_LEASE_MS = 15 * 60 * 1000
+
+const markClinicVerificationJobFailed = async ({ uid, runId, error }) => {
+  const applicationRef = admin.firestore().collection('clinics').doc(uid)
+  await admin.firestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(applicationRef)
+    if (!snapshot.exists) return
+    const application = snapshot.data() || {}
+    const job = application.verificationJob || {}
+    if (job.runId !== runId || job.status !== 'processing') return
+    transaction.set(applicationRef, {
+      verificationStatus: 'OCR Processing Failed',
+      verificationJob: {
+        ...job,
+        status: 'failed',
+        error: String(error?.message || error || 'OCR processing failed').slice(0, 500),
+        failedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        leaseExpiresAt: admin.firestore.FieldValue.delete(),
+      },
+    }, { merge: true })
+  })
+}
+
+const executeClinicVerificationJob = async ({ uid, runId, processedBy }) => {
+  try {
+    return await runRegistrationDocumentVerification({
+      uid,
+      applicantType: 'clinic',
+      processedBy,
+      runId,
+    })
+  } catch (error) {
+    if (!error?.jobAlreadyClaimed) {
+      try {
+        await markClinicVerificationJobFailed({ uid, runId, error })
+      } catch (persistError) {
+        console.error('Could not persist clinic OCR job failure:', persistError)
+      }
+    }
+    throw error
+  }
+}
+
+const scheduleClinicVerificationJob = ({ uid, runId, processedBy = 'automatic_processor' }) => {
+  if (!uid || !runId || activeClinicVerificationRunIds.has(runId)) return
+  activeClinicVerificationRunIds.add(runId)
+  const run = () => executeClinicVerificationJob({ uid, runId, processedBy })
+      .catch((error) => console.error('Clinic OCR job failed:', uid, error?.message || error))
+      .finally(() => activeClinicVerificationRunIds.delete(runId))
+  if (process.env.VERCEL) {
+    // Vercel may freeze a serverless function as soon as the response is sent.
+    // waitUntil keeps this job alive within the function's configured duration.
+    waitUntil(run())
+  } else {
+    setImmediate(() => { void run() })
+  }
+}
+
+const queueClinicVerificationRetry = async ({ uid, processedBy }) => {
+  const firestore = admin.firestore()
+  const applicationRef = firestore.collection('clinics').doc(uid)
+  const runId = crypto.randomUUID()
+  let jobSummary = null
+  await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(applicationRef)
+    if (!snapshot.exists) throw Object.assign(new Error('Registration application not found.'), { statusCode: 404 })
+    const application = snapshot.data() || {}
+    const approvalStatus = String(application.approvalStatus || '').trim().toLowerCase()
+    if (approvalStatus.includes('approved') || approvalStatus.includes('rejected')) {
+      throw Object.assign(new Error('A completed clinic registration cannot be reprocessed.'), { statusCode: 409 })
+    }
+    if (approvalStatus.includes('pending documents') && application.resubmissionRequired === true) {
+      throw Object.assign(new Error('OCR is unavailable while replacement documents are being requested.'), { statusCode: 409 })
+    }
+    const priorJob = application.verificationJob || {}
+    const leaseExpiresAt = getTimestampDate(priorJob.leaseExpiresAt)
+    if (priorJob.status === 'queued'
+      || (priorJob.status === 'processing' && leaseExpiresAt && leaseExpiresAt.getTime() > Date.now())) {
+      throw Object.assign(new Error('Clinic OCR is already queued or processing.'), { statusCode: 409 })
+    }
+    const requiredKeys = getRegistrationDocumentRequirements('clinic', application)
+    const missing = requiredKeys.filter((key) => {
+      const document = application.submittedDocuments?.[key] || {}
+      return !String(document.path || document.storagePath || '').trim()
+    })
+    if (missing.length) {
+      throw Object.assign(new Error(`Required submitted documents are missing: ${missing.map(registrationDocumentLabel).join(', ')}.`), { statusCode: 409 })
+    }
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const job = {
+      runId,
+      status: 'queued',
+      processedDocuments: 0,
+      totalDocuments: requiredKeys.length,
+      processedBy: processedBy || 'automatic_processor',
+      queuedAt: timestamp,
+      updatedAt: timestamp,
+    }
+    transaction.set(applicationRef, {
+      verificationStatus: 'Queued for OCR',
+      verificationResults: {},
+      verificationProcessedAt: admin.firestore.FieldValue.delete(),
+      verificationProcessedBy: admin.firestore.FieldValue.delete(),
+      verificationJob: job,
+      updatedAt: timestamp,
+    }, { merge: true })
+    jobSummary = {
+      runId,
+      status: 'queued',
+      processedDocuments: 0,
+      totalDocuments: requiredKeys.length,
+      processedBy: processedBy || 'automatic_processor',
+    }
+  })
+  return jobSummary
+}
+
+const recoverClinicVerificationJobs = async ({ uid = '' } = {}) => {
+  if (!adminReady) return { ok: false, scheduled: 0, recovered: 0 }
+  let scheduled = 0
+  let recoveredCount = 0
+  try {
+    const firestore = admin.firestore()
+    let queuedDocuments = []
+    let processingDocuments = []
+    if (uid) {
+      const applicationSnapshot = await firestore.collection('clinics').doc(uid).get()
+      const status = String(applicationSnapshot.data()?.verificationJob?.status || '').toLowerCase()
+      if (status === 'queued') queuedDocuments = [applicationSnapshot]
+      if (status === 'processing') processingDocuments = [applicationSnapshot]
+    } else {
+      const [queuedSnapshot, processingSnapshot] = await Promise.all([
+        firestore.collection('clinics').where('verificationJob.status', '==', 'queued').limit(50).get(),
+        firestore.collection('clinics').where('verificationJob.status', '==', 'processing').limit(50).get(),
+      ])
+      queuedDocuments = queuedSnapshot.docs
+      processingDocuments = processingSnapshot.docs
+    }
+    for (const documentSnapshot of queuedDocuments) {
+      const application = documentSnapshot.data() || {}
+      const job = application.verificationJob || {}
+      if (job.runId) {
+        scheduleClinicVerificationJob({ uid: documentSnapshot.id, runId: job.runId, processedBy: job.processedBy })
+        scheduled += 1
+      }
+    }
+    for (const documentSnapshot of processingDocuments) {
+      const application = documentSnapshot.data() || {}
+      const job = application.verificationJob || {}
+      const leaseExpiresAt = getTimestampDate(job.leaseExpiresAt)
+      if (leaseExpiresAt && leaseExpiresAt.getTime() > Date.now()) continue
+
+      const applicationRef = documentSnapshot.ref
+      const replacementRunId = crypto.randomUUID()
+      let recovered = false
+      await firestore.runTransaction(async (transaction) => {
+        const latestSnapshot = await transaction.get(applicationRef)
+        if (!latestSnapshot.exists) return
+        const latest = latestSnapshot.data() || {}
+        const latestJob = latest.verificationJob || {}
+        const currentLease = getTimestampDate(latestJob.leaseExpiresAt)
+        if (latestJob.runId !== job.runId
+          || latestJob.status !== 'processing'
+          || (currentLease && currentLease.getTime() > Date.now())) return
+        transaction.set(applicationRef, {
+          verificationStatus: 'Queued for OCR',
+          verificationResults: {},
+          verificationJob: {
+            ...latestJob,
+            runId: replacementRunId,
+            status: 'queued',
+            processedDocuments: 0,
+            totalDocuments: getRegistrationDocumentRequirements('clinic', latest).length,
+            queuedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            leaseExpiresAt: admin.firestore.FieldValue.delete(),
+            recoveredFromRunId: latestJob.runId,
+          },
+        }, { merge: true })
+        recovered = true
+      })
+      if (recovered) {
+        recoveredCount += 1
+        scheduleClinicVerificationJob({
+          uid: documentSnapshot.id,
+          runId: replacementRunId,
+          processedBy: job.processedBy || 'automatic_processor',
+        })
+      }
+    }
+    return { ok: true, scheduled, recovered: recoveredCount }
+  } catch (error) {
+    console.error('Could not recover queued clinic OCR jobs:', error?.message || error)
+    return { ok: false, scheduled, recovered: recoveredCount }
+  }
 }
 
 app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) => {
@@ -2781,6 +3015,13 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
   const permitHolderIsRegistrant = req.body?.permitHolderIsRegistrant
   if (permitHolderIsRegistrant !== true && permitHolderIsRegistrant !== false) {
     return res.status(400).json({ success: false, error: 'Confirm who is named on the business permit.' })
+  }
+  const submittedPermitHolderName = String(req.body?.permitHolderName || '').trim().slice(0, 200)
+  const submittedPermitHolderRelationship = permitHolderIsRegistrant
+    ? 'Self'
+    : String(req.body?.permitHolderRelationship || '').trim().slice(0, 200)
+  if (!permitHolderIsRegistrant && (!submittedPermitHolderName || !submittedPermitHolderRelationship)) {
+    return res.status(400).json({ success: false, error: 'Enter the business permit holder name and your relationship to them.' })
   }
 
   try {
@@ -2811,6 +3052,7 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       ...clinic,
       permitHolderIsRegistrant,
     })
+    const verificationRunId = crypto.randomUUID()
     const expiryDeadline = getTimestampDate(clinic.expiryResubmissionExpiresAt)
     const expiryHoldKeys = Array.isArray(clinic.expiryHoldDocuments)
       ? [...new Set(clinic.expiryHoldDocuments.filter((key) => requiredKeys.includes(key)))]
@@ -3010,14 +3252,15 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
     try {
       await firestore.runTransaction(async (transaction) => {
       committedAgreementAcceptance = null
-      const [latestClinicSnapshot, policySnapshot] = await Promise.all([
-        transaction.get(clinicRef), transaction.get(policyRef),
+      const [latestClinicSnapshot, policySnapshot, latestUserSnapshot] = await Promise.all([
+        transaction.get(clinicRef), transaction.get(policyRef), transaction.get(userRef),
       ])
       if (!latestClinicSnapshot.exists) {
         throw Object.assign(new Error('Clinic registration account was not found.'), { statusCode: 404 })
       }
       const latestClinic = latestClinicSnapshot.data() || {}
       const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+      const latestUser = latestUserSnapshot.exists ? latestUserSnapshot.data() || {} : {}
       if (isExpiryPartialResubmission) {
         const latestDeadline = getTimestampDate(latestClinic.expiryResubmissionExpiresAt)
         const latestHeldKeys = Array.isArray(latestClinic.expiryHoldDocuments)
@@ -3075,6 +3318,34 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
           throw Object.assign(new Error('The signed Clinic Platform Agreement is required before document submission.'), { statusCode: 400 })
         }
       }
+      const ownerParts = [
+        latestUser.firstName || latestClinic.firstName,
+        latestUser.midName || latestUser.middleName || latestClinic.midName || latestClinic.middleName,
+        latestUser.lastName || latestClinic.lastName,
+        latestUser.suffix || latestClinic.suffix,
+      ].map((part) => String(part || '').trim()).filter(Boolean)
+      const submittedHolderName = permitHolderIsRegistrant
+        ? ownerParts.join(' ') || String(latestUser.fullName || latestClinic.fullName || submittedPermitHolderName).trim()
+        : submittedPermitHolderName
+      const ocrSnapshot = latestClinic.registrationOcrSnapshot || {
+        firstName: String(latestUser.firstName || latestClinic.firstName || '').trim(),
+        middleName: String(latestUser.midName || latestUser.middleName || latestClinic.midName || latestClinic.middleName || '').trim(),
+        lastName: String(latestUser.lastName || latestClinic.lastName || '').trim(),
+        suffix: String(latestUser.suffix || latestClinic.suffix || '').trim(),
+        birthDate: latestUser.birthDate || latestClinic.birthDate || null,
+        businessName: String(latestClinic.businessName || latestClinic.clinicName || latestClinic.companyName || latestUser.companyName || '').trim(),
+        permitHolderIsRegistrant,
+        permitHolderName: submittedHolderName,
+        permitHolderRelationship: submittedPermitHolderRelationship,
+        source: 'submission',
+        capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
+      if (latestClinic.registrationOcrSnapshot
+        && (ocrSnapshot.permitHolderIsRegistrant !== permitHolderIsRegistrant
+          || String(ocrSnapshot.permitHolderName || '').trim().toLowerCase() !== submittedHolderName.trim().toLowerCase()
+          || String(ocrSnapshot.permitHolderRelationship || '').trim().toLowerCase() !== submittedPermitHolderRelationship.trim().toLowerCase())) {
+        throw Object.assign(new Error('The registrant and permit-holder details cannot be changed after the initial document submission.'), { statusCode: 409 })
+      }
       const agreementHistoryEntries = []
       if (committedAgreementAcceptance && latestClinic.isClinicRegistrationActive !== false) {
         const latestAcceptance = latestClinic.platformAgreementAcceptance
@@ -3089,13 +3360,25 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       transaction.set(clinicRef, {
         approvalStatus: 'Pending Approval',
         registrationStatus: 'Pending Review',
+        verificationStatus: 'Queued for OCR',
+        verificationResults: {},
+        verificationProcessedAt: admin.firestore.FieldValue.delete(),
+        verificationProcessedBy: admin.firestore.FieldValue.delete(),
+        verificationJob: {
+          runId: verificationRunId,
+          status: 'queued',
+          processedDocuments: 0,
+          totalDocuments: requiredKeys.length,
+          processedBy: 'automatic_processor',
+          queuedAt: timestamp,
+          updatedAt: timestamp,
+        },
         documentsSubmittedAt: timestamp,
         submittedDocuments,
+        registrationOcrSnapshot: ocrSnapshot,
         permitHolderIsRegistrant,
-        permitHolderName: String(req.body?.permitHolderName || '').trim().slice(0, 200),
-        permitHolderRelationship: permitHolderIsRegistrant
-          ? 'Self'
-          : String(req.body?.permitHolderRelationship || '').trim().slice(0, 200),
+        permitHolderName: submittedHolderName,
+        permitHolderRelationship: submittedPermitHolderRelationship,
         authorizationReviewRequired: permitHolderIsRegistrant === false,
         submissionAttemptCount,
         ...(committedAgreementAcceptance && latestClinic.isClinicRegistrationActive !== false
@@ -3146,7 +3429,19 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       await admin.storage().bucket(bucketName).file(newAgreementSignaturePath).delete({ ignoreNotFound: true }).catch(() => {})
     }
     if (lockedUntil) return res.status(429).json(clinicSubmissionLockPayload(lockedUntil))
-    return res.json({ success: true, data: { submissionAttemptCount } })
+    scheduleClinicVerificationJob({ uid, runId: verificationRunId, processedBy: 'automatic_processor' })
+    return res.json({
+      success: true,
+      data: {
+        submissionAttemptCount,
+        verificationJob: {
+          runId: verificationRunId,
+          status: 'queued',
+          processedDocuments: 0,
+          totalDocuments: requiredKeys.length,
+        },
+      },
+    })
   } catch (error) {
     const status = Number(error?.statusCode || 500)
     if (status >= 400 && status < 500) return res.status(status).json({ success: false, error: error.message })
@@ -3277,11 +3572,17 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
   if (applicantType !== 'clinic') return res.status(400).json({ success: false, error: 'Only clinic registration verification is supported.' })
   try {
-    const data = await runRegistrationDocumentVerification({ uid, applicantType, processedBy: 'automatic_processor' })
-    return res.json({ success: true, data })
+    const clinicSnapshot = await admin.firestore().collection('clinics').doc(uid).get()
+    if (!clinicSnapshot.exists) return res.status(404).json({ success: false, error: 'Registration application not found.' })
+    let job = clinicSnapshot.data()?.verificationJob || null
+    if (!job || !['queued', 'processing', 'completed'].includes(job.status)) {
+      job = await queueClinicVerificationRetry({ uid, processedBy: 'automatic_processor' })
+      scheduleClinicVerificationJob({ uid, runId: job.runId, processedBy: job.processedBy })
+    }
+    return res.status(job.status === 'queued' || job.status === 'processing' ? 202 : 200).json({ success: true, data: { verificationJob: job } })
   } catch (error) {
     console.error('Automatic registration verification failed:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Automatic verification failed' })
   }
 })
 
@@ -3332,18 +3633,23 @@ app.post('/admin/trigger-clinic-registration-verification', requireAuth, require
   }
 
   try {
-    const data = await runRegistrationDocumentVerification({ uid, applicantType: 'clinic', processedBy: req.user.uid })
-    await writeSystemAdminActivity(req, {
-      action: 'Reran clinic document OCR',
-      module: 'Clinic Verification',
-      details: `Reran automatic verification for clinic ${uid}; result: ${data.status}.`,
-      targetId: uid,
-      targetName: uid,
-    })
-    return res.json({ success: true, data })
+    const job = await queueClinicVerificationRetry({ uid, processedBy: req.user.uid })
+    scheduleClinicVerificationJob({ uid, runId: job.runId, processedBy: req.user.uid })
+    try {
+      await writeSystemAdminActivity(req, {
+        action: 'Queued clinic document OCR',
+        module: 'Clinic Verification',
+        details: `Queued a clinic document OCR run for clinic ${uid}.`,
+        targetId: uid,
+        targetName: uid,
+      })
+    } catch (activityError) {
+      console.warn('Could not record clinic OCR retry activity:', activityError?.message || activityError)
+    }
+    return res.status(202).json({ success: true, data: { verificationJob: job } })
   } catch (error) {
     console.error('Clinic document verification rerun failed:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Automatic verification failed' })
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Automatic verification failed' })
   }
 })
 
@@ -4497,6 +4803,15 @@ app.post('/auth/ensure-welcome-notification', requireAuth, async (req, res) => {
   }
 })
 
+app.all('/cron/clinic-registration-ocr', async (req, res) => {
+  const secret = String(process.env.CRON_SECRET || '').trim()
+  if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) {
+    return res.status(401).json({ success: false, error: 'Unauthorized.' })
+  }
+  const result = await recoverClinicVerificationJobs()
+  return res.status(result.ok ? 200 : 503).json({ success: result.ok, ...result })
+})
+
 app.all('/cron/appointment-reminders', async (req, res) => {
   const secret = String(process.env.CRON_SECRET || '').trim()
   if (!secret || String(req.get('authorization') || '') !== `Bearer ${secret}`) return res.status(401).json({ success: false, error: 'Unauthorized.' })
@@ -4787,22 +5102,40 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
     const firestore = admin.firestore()
     const userRef = firestore.collection('users').doc(uid)
     const clinicRef = firestore.collection('clinics').doc(uid)
-    const [userSnapshot, clinicSnapshot] = await Promise.all([userRef.get(), clinicRef.get()])
-    if (!userSnapshot.exists || !clinicSnapshot.exists) {
-      return res.status(404).json({ success: false, error: 'Clinic registration account was not found' })
-    }
-
-    const userData = userSnapshot.data() || {}
-    const clinicData = clinicSnapshot.data() || {}
-    const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
-    const applicantName = String(userData.firstName || clinicData.ownerFirstName || '').trim() || 'Applicant'
+    let userData = {}
+    let clinicData = {}
+    let recipient = ''
+    let applicantName = 'Applicant'
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
-    const resubmissionCount = Number(clinicData.resubmissionCount || 0) + 1
-    const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
+    let resubmissionCount = 0
     let lockoutApplied = false
     let lockoutUntil = null
 
     await firestore.runTransaction(async (transaction) => {
+      lockoutApplied = false
+      lockoutUntil = null
+      const [userSnapshot, clinicSnapshot] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(clinicRef),
+      ])
+      if (!userSnapshot.exists || !clinicSnapshot.exists) {
+        throw Object.assign(new Error('Clinic registration account was not found.'), { statusCode: 404 })
+      }
+      userData = userSnapshot.data() || {}
+      clinicData = clinicSnapshot.data() || {}
+      const approvalStatus = String(clinicData.approvalStatus || '').trim().toLowerCase()
+      const userStatus = String(userData.approvalStatus || userData.registrationStatus || userData.status || '').trim().toLowerCase()
+      if (approvalStatus.includes('approved') || approvalStatus.includes('rejected')
+        || userStatus.includes('approved') || userStatus.includes('rejected') || userStatus === 'pending activation') {
+        throw Object.assign(new Error('This clinic registration already has a final decision.'), { statusCode: 409 })
+      }
+      if (clinicData.resubmissionRequired === true || approvalStatus.includes('pending documents') || userStatus.includes('pending documents')) {
+        throw Object.assign(new Error('Replacement documents have already been requested for this registration.'), { statusCode: 409 })
+      }
+      recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
+      applicantName = String(userData.firstName || clinicData.ownerFirstName || '').trim() || 'Applicant'
+      resubmissionCount = Number(clinicData.resubmissionCount || 0) + 1
+      const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
       const policySnapshot = await transaction.get(submissionPolicyRef)
       const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
       const previousLock = getTimestampDate(policy.lockedUntil)
@@ -4811,6 +5144,15 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
         Number(clinicData.submissionAttemptCount || 0),
         Number(clinicData.resubmissionCount || 0) + (clinicData.documentsSubmittedAt ? 1 : 0)
       )
+      const priorJob = clinicData.verificationJob || {}
+      const cancelActiveJob = priorJob.status === 'queued' || priorJob.status === 'processing'
+      const cancelledJob = cancelActiveJob ? {
+        ...priorJob,
+        status: 'cancelled',
+        cancelledAt: timestamp,
+        updatedAt: timestamp,
+        leaseExpiresAt: admin.firestore.FieldValue.delete(),
+      } : undefined
       if (submissionAttemptCount >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
         lockoutUntil = new Date(Date.now() + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
         lockoutApplied = true
@@ -4830,8 +5172,10 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
         transaction.set(clinicRef, {
           approvalStatus: 'Pending Documents',
           registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
+          verificationStatus: 'Resubmission Required',
           registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
           resubmissionRequired: true,
+          ...(cancelledJob ? { verificationJob: cancelledJob } : {}),
           updatedAt: timestamp,
         }, { merge: true })
         return
@@ -4855,6 +5199,7 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
         resubmissionRequestedAt: timestamp,
         resubmissionCount,
         reviewedBy,
+        ...(cancelledJob ? { verificationJob: cancelledJob } : {}),
         submittedDocuments: {},
         documentsSubmittedAt: admin.firestore.FieldValue.delete(),
         expiryHoldDocuments: admin.firestore.FieldValue.delete(),
@@ -4929,7 +5274,7 @@ app.post('/admin/request-clinic-resubmission', requireAuth, requireRole(['supera
     return res.json({ success: true, data: { uid, emailSent, resubmissionCount } })
   } catch (error) {
     console.error('Failed to request clinic document resubmission:', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to request document resubmission' })
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Failed to request document resubmission' })
   }
 })
 
@@ -4957,67 +5302,94 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
     const firestore = admin.firestore()
     const userRef = firestore.collection('users').doc(uid)
     const clinicRef = firestore.collection('clinics').doc(uid)
-    const [userBeforeRejection, clinicBeforeRejection] = await Promise.all([userRef.get(), clinicRef.get()])
-    const userData = userBeforeRejection.exists ? userBeforeRejection.data() || {} : {}
-    const clinicData = clinicBeforeRejection.exists ? clinicBeforeRejection.data() || {} : {}
-    const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
-    const applicantName = [userData.firstName, userData.midName || userData.middleName, userData.lastName, userData.suffix].filter(Boolean).join(' ').trim() || 'Applicant'
+    const rejectionHistoryRef = firestore.collection('registrationRejectionHistory').doc()
+    let userData = {}
+    let clinicData = {}
+    let recipient = ''
+    let applicantName = 'Applicant'
     let lockoutUntil = null
-    if (recipient) {
-      const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
-      const policySnapshot = await submissionPolicyRef.get()
-      const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
-      const submissionAttemptCount = Math.max(
-        Number(policy.submissionAttemptCount || 0),
-        Number(clinicData.submissionAttemptCount || 0),
-        Number(clinicData.resubmissionCount || 0) + (clinicData.documentsSubmittedAt ? 1 : 0)
-      )
-      if (submissionAttemptCount >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
-        lockoutUntil = new Date(Date.now() + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
-        await submissionPolicyRef.set({
-          email: recipient,
-          submissionAttemptCount,
-          lockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true })
+    let rejectionRecorded = false
+    await firestore.runTransaction(async (transaction) => {
+      rejectionRecorded = false
+      const [userSnapshot, clinicSnapshot] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(clinicRef),
+      ])
+      userData = userSnapshot.exists ? userSnapshot.data() || {} : {}
+      clinicData = clinicSnapshot.exists ? clinicSnapshot.data() || {} : {}
+      recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
+      applicantName = [userData.firstName, userData.midName || userData.middleName, userData.lastName, userData.suffix].filter(Boolean).join(' ').trim() || 'Applicant'
+      if (!userSnapshot.exists && !clinicSnapshot.exists) return
+
+      const clinicStatus = String(clinicData.approvalStatus || clinicData.registrationStatus || '').trim().toLowerCase()
+      const userStatus = String(userData.approvalStatus || userData.registrationStatus || userData.status || '').trim().toLowerCase()
+      if (clinicStatus.includes('approved') || userStatus.includes('approved') || userStatus === 'pending activation') {
+        throw Object.assign(new Error('This clinic registration is already approved and cannot be rejected.'), { statusCode: 409 })
       }
-    }
+      if (clinicStatus.includes('rejected') || userStatus.includes('rejected')) return
 
-    await firestore.collection('registrationRejectionHistory').add({
-      email: recipient,
-      applicantType: 'clinic',
-      originalUid: uid,
-      applicantName,
-      clinicName: clinicData.clinicName || clinicData.companyName || '',
-      reason: rejectionReason,
-      ...(lockoutUntil ? { registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil) } : {}),
-      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-      reviewedBy,
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      lockoutUntil = null
+      if (recipient) {
+        const submissionPolicyRef = clinicSubmissionPolicyRef(firestore, recipient)
+        const policySnapshot = await transaction.get(submissionPolicyRef)
+        const policy = policySnapshot.exists ? policySnapshot.data() || {} : {}
+        const submissionAttemptCount = Math.max(
+          Number(policy.submissionAttemptCount || 0),
+          Number(clinicData.submissionAttemptCount || 0),
+          Number(clinicData.resubmissionCount || 0) + (clinicData.documentsSubmittedAt ? 1 : 0)
+        )
+        if (submissionAttemptCount >= CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS) {
+          lockoutUntil = new Date(Date.now() + CLINIC_REGISTRATION_LOCKOUT_DAYS * DAY_MS)
+          transaction.set(submissionPolicyRef, {
+            email: recipient,
+            submissionAttemptCount,
+            lockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil),
+            updatedAt: timestamp,
+          }, { merge: true })
+        }
+      }
+
+      const priorJob = clinicData.verificationJob || {}
+      const verificationJob = priorJob.status === 'queued' || priorJob.status === 'processing'
+        ? {
+            ...priorJob,
+            status: 'cancelled',
+            cancelledAt: timestamp,
+            updatedAt: timestamp,
+            leaseExpiresAt: admin.firestore.FieldValue.delete(),
+          }
+        : undefined
+      transaction.set(userRef, {
+        status: 'Rejected',
+        approvalStatus: 'Rejected',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
+        rejectionReason,
+        rejectedAt: timestamp,
+        reviewedBy,
+      }, { merge: true })
+      transaction.set(clinicRef, {
+        approvalStatus: 'Rejected',
+        registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
+        verificationStatus: 'Rejected',
+        ...(verificationJob ? { verificationJob } : {}),
+        rejectionReason,
+        rejectedAt: timestamp,
+        reviewedBy,
+      }, { merge: true })
+      transaction.set(rejectionHistoryRef, {
+        email: recipient,
+        applicantType: 'clinic',
+        originalUid: uid,
+        applicantName,
+        clinicName: clinicData.clinicName || clinicData.companyName || '',
+        reason: rejectionReason,
+        ...(lockoutUntil ? { registrationLockedUntil: admin.firestore.Timestamp.fromDate(lockoutUntil) } : {}),
+        rejectedAt: timestamp,
+        reviewedBy,
+      })
+      rejectionRecorded = true
     })
-
-    // Write rejection audit fields first, then hard delete docs.
-    await Promise.all([
-      userRef.set(
-        {
-          status: 'Rejected',
-          registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
-          rejectionReason,
-          rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-          reviewedBy,
-        },
-        { merge: true }
-      ),
-      clinicRef.set(
-        {
-          approvalStatus: 'Rejected',
-          registrationStatus: CLINIC_REGISTRATION_STATUS.REJECTED,
-          rejectionReason,
-          rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-          reviewedBy,
-        },
-        { merge: true }
-      ),
-    ])
 
     await Promise.all([
       userRef.delete(),
@@ -5032,16 +5404,18 @@ app.post('/admin/reject-clinic-registration', requireAuth, requireRole(['superad
       }
     }
 
-    await writeSystemAdminActivity(req, {
-      action: 'Rejected clinic registration',
-      module: 'Clinic Verification',
-      details: `Rejected ${applicantName}'s clinic registration. Reason: ${rejectionReason}`,
-      targetId: uid,
-      targetName: applicantName,
-    })
+    if (rejectionRecorded) {
+      await writeSystemAdminActivity(req, {
+        action: 'Rejected clinic registration',
+        module: 'Clinic Verification',
+        details: `Rejected ${applicantName}'s clinic registration. Reason: ${rejectionReason}`,
+        targetId: uid,
+        targetName: applicantName,
+      })
+    }
 
     let emailSent = false
-    if (recipient && postmarkClient && senderEmail) {
+    if (rejectionRecorded && recipient && postmarkClient && senderEmail) {
       try {
         const registrationUrl = `${EMAIL_WEBSITE_URL}/clinic/register`
         const subject = 'AesthetiCare - Clinic Registration Update'
@@ -5081,221 +5455,21 @@ The AesthetiCare Team`
       data: { uid, deleted: true, emailSent },
     })
   } catch (error) {
-    return res.status(500).json({
+    return res.status(Number(error?.statusCode || 500)).json({
       success: false,
       error: error?.message || 'Failed to reject and delete account',
     })
   }
 })
 
-// Admin-triggered OCR processing for clinic registration documents (production-safe)
-app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
-  // Production: require authenticated admin role instead of a static secret
-  if (!adminReady) {
-    return res.status(500).json({ success: false, error: adminInitError || 'firebase-admin not ready' })
-  }
-
-  const { uid, docKey, storagePath, force } = req.body ?? {}
-  if (!uid || !docKey || !storagePath) {
-    return res.status(400).json({ success: false, error: 'uid, docKey and storagePath are required' })
-  }
-
-  try {
-    const firestore = admin.firestore()
-    const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
-    if (!bucketName) return res.status(500).json({ success: false, error: 'Storage bucket not configured' })
-
-    const reviewRef = firestore.collection('clinics').doc(uid).collection('documentReviews').doc(docKey)
-    const reviewSnap = await reviewRef.get()
-    const alreadyProcessed = reviewSnap.exists && reviewSnap.data()?.processedAt
-    if (alreadyProcessed && !force) {
-      return res.status(409).json({ success: false, error: 'Document already processed', processedAt: reviewSnap.data()?.processedAt })
-    }
-
-    // Mark as processing to avoid concurrent duplicate runs
-    await reviewRef.set({ processing: true, processingStartedAt: admin.firestore.FieldValue.serverTimestamp(), processedBy: req.user?.uid || null }, { merge: true })
-
-    const visionClient = createVisionClient()
-    if (!visionClient) {
-      return res.status(503).json({
-        success: false,
-        error: 'OCR is not configured. Add a valid Firebase service-account credential to the backend environment.',
-      })
-    }
-    const gcsUri = `gs://${bucketName}/${String(storagePath || '').replace(/^\/+/, '')}`
-
-    // Use an explicit Cloud Storage source so provider errors cannot be
-    // mistaken for unreadable document text.
-    let fullText = ''
-    try {
-      const visionRequest = createVisionGcsImageRequest(gcsUri)
-      const [result] = await visionClient.documentTextDetection(visionRequest)
-      const primaryError = getVisionResponseError(result)
-      if (primaryError) throw new Error(primaryError)
-      fullText = String(result?.fullTextAnnotation?.text || '')
-    } catch (visionErr) {
-      console.warn('Vision documentTextDetection failed, attempting textDetection as fallback', visionErr?.message || visionErr)
-      try {
-        const [result2] = await visionClient.textDetection(createVisionGcsImageRequest(gcsUri))
-        const fallbackError = getVisionResponseError(result2)
-        if (fallbackError) throw new Error(fallbackError)
-        fullText = String(result2?.textAnnotations?.[0]?.description || '')
-      } catch (visionErr2) {
-        console.error('Vision OCR failed for', gcsUri, visionErr2?.message || visionErr2)
-        await reviewRef.set({
-          storagePath,
-          error: String(visionErr2?.message || visionErr?.message || 'Vision OCR failed'),
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          confidence: 0,
-          processing: false,
-        }, { merge: true })
-        // add audit entry
-        await firestore.collection('clinics').doc(uid).collection('reviewHistory').add({ action: 'ocr-failed', docKey, processedBy: req.user?.uid || null, error: String(visionErr2?.message || visionErr?.message || 'Vision OCR failed'), ts: admin.firestore.FieldValue.serverTimestamp() })
-        return res.status(500).json({ success: false, error: 'OCR processing failed' })
-      }
-    }
-
-    // Keep manual OCR reruns on the same labelled expiry-date policy as the
-    // applicant upload flow; an arbitrary date on a document is not an expiry.
-    const expiryValidation = getOcrExpiryValidation(fullText, EXPIRY_DATE_REQUIREMENTS.has(docKey))
-    const expiryFound = Boolean(expiryValidation.validTo)
-    const expiryMatches = expiryFound ? [expiryValidation.validTo] : []
-
-    const clinicRef = firestore.collection('clinics').doc(uid)
-    const userRef = firestore.collection('users').doc(uid)
-    const [clinicSnap, userSnap] = await Promise.all([clinicRef.get(), userRef.get()])
-    const clinicData = clinicSnap.exists ? clinicSnap.data() || {} : {}
-    const userData = userSnap.exists ? userSnap.data() || {} : {}
-
-    const clinicName = String(clinicData.clinicName || clinicData.companyName || '').toLowerCase()
-    const ownerName = `${String(userData.firstName || '')} ${String(userData.lastName || '')}`.trim().toLowerCase()
-    const textLower = fullText.toLowerCase()
-
-    let nameMatches = 0
-    if (clinicName && clinicName.length >= 3 && textLower.includes(clinicName)) nameMatches++
-    if (ownerName && ownerName.length >= 3 && textLower.includes(ownerName)) nameMatches++
-    const nameScore = Math.min(1, nameMatches / 2)
-
-    // Combine heuristics into a confidence score [0..1]
-    let confidence = 0.5 + (nameScore * 0.25) + (expiryFound ? 0.25 : 0)
-    confidence = Math.max(0, Math.min(1, confidence))
-
-    const ocrRecord = {
-      uid,
-      docKey,
-      storagePath,
-      extractedText: fullText ? fullText.slice(0, 10000) : '',
-      expiryFound,
-      expiryMatches,
-      expiryDate: expiryValidation.validTo,
-      expiryDaysRemaining: expiryValidation.daysRemaining,
-      expiryAccountHold: expiryValidation.accountHold,
-      nameScore,
-      confidence,
-      processedAt: admin.firestore.FieldValue.serverTimestamp(),
-      processedBy: req.user?.uid || null,
-    }
-
-    await reviewRef.set(ocrRecord, { merge: true })
-
-    // Update clinics.<uid>.submittedDocuments.<docKey> with ocr metadata and verified flag when confident
-    const clinicDataLatest = clinicSnap.exists ? (clinicSnap.data() || {}) : {}
-    const submittedDocs = clinicDataLatest.submittedDocuments || {}
-    const existingDocEntry = submittedDocs[docKey] || {}
-    const updatedDocEntry = {
-      ...existingDocEntry,
-      ocr: {
-        confidence,
-        nameScore,
-        expiryFound,
-        expiryDate: expiryValidation.validTo,
-        expiryDaysRemaining: expiryValidation.daysRemaining,
-        expiryAccountHold: expiryValidation.accountHold,
-        processedAt: new Date().toISOString(),
-      },
-      processing: false,
-    }
-    if (confidence >= (Number(process.env.OCR_AUTO_APPROVE_THRESHOLD || 0.85))) {
-      updatedDocEntry.verified = true
-      updatedDocEntry.verifiedAt = admin.firestore.FieldValue.serverTimestamp()
-    }
-
-    submittedDocs[docKey] = updatedDocEntry
-    await clinicRef.set({ submittedDocuments: submittedDocs }, { merge: true })
-
-    // add audit entry for OCR processing
-    await clinicRef.collection('reviewHistory').add({ action: 'ocr-processed', docKey, processedBy: req.user?.uid || null, confidence, force: !!force, ts: admin.firestore.FieldValue.serverTimestamp() })
-    await writeSystemAdminActivity(req, {
-      action: 'Processed registration document OCR',
-      module: 'Clinic Verification',
-      details: `Processed ${docKey} for ${userData.fullName || userData.email || uid} with ${(confidence * 100).toFixed(1)}% confidence.`,
-      targetId: uid,
-      targetName: userData.fullName || userData.email || uid,
-    })
-
-    // If all submitted documents are verified, auto-approve the clinic
-    const allDocKeys = getRegistrationDocumentRequirements('clinic', clinicDataLatest)
-    const allVerified = allDocKeys.every((k) => Boolean(submittedDocs[k]?.verified))
-    const expiryAccountHold = Boolean(clinicData.expiryAccountHold) || expiryValidation.accountHold || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
-    if (allVerified && !expiryAccountHold) {
-      await clinicRef.set({
-        approvalStatus: 'Approved',
-        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
-        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-        resubmissionRequired: false,
-        resubmissionReason: admin.firestore.FieldValue.delete(),
-        clinicSetupRequired: true,
-      }, { merge: true })
-      await userRef.set({
-        status: 'Pending Activation',
-        registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
-        clinicSetupRequired: true,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
-
-      // Send welcome email to clinic owner (best-effort)
-      const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
-      if (recipient && postmarkClient && senderEmail) {
-        try {
-          const loginUrl = `${EMAIL_WEBSITE_URL}/login`
-          const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
-          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nThank you for joining AesthetiCare.`
-          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>.</p><p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p><p>Thank you for joining AesthetiCare.</p></div>`
-          await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
-          await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
-        } catch (emailErr) {
-          console.warn('Failed to send clinic welcome email (auto-approve):', emailErr?.message || emailErr)
-        }
-      }
-    }
-
-    if (expiryAccountHold) {
-      await clinicRef.set({
-        approvalStatus: 'Pending Documents',
-        registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
-        verificationStatus: 'Pending - Expiry Hold',
-        expiryAccountHold: true,
-        expiryHoldPolicy: `Document expires within ${REGISTRATION_EXPIRY_HOLD_DAYS} calendar days.`,
-        resubmissionRequired: true,
-        resubmissionReason: `Replace the near-expiry document: ${registrationDocumentLabel(docKey)}.`,
-      }, { merge: true })
-    }
-
-    return res.json({ success: true, data: { uid, docKey, confidence, autoApproved: Boolean(allVerified && !expiryAccountHold), expiryAccountHold } })
-  } catch (error) {
-    console.error('OCR processing error:', error)
-    // best-effort: unset processing flag so future retries can proceed
-    try {
-      const firestore = admin.firestore()
-      await firestore.collection('clinics').doc(uid).collection('documentReviews').doc(docKey).set({ processing: false, processingError: String(error?.message || error), processedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
-      await firestore.collection('clinics').doc(uid).collection('reviewHistory').add({ action: 'ocr-failed', docKey, processedBy: req.user?.uid || null, error: String(error?.message || error), ts: admin.firestore.FieldValue.serverTimestamp() })
-    } catch (e) {
-      console.warn('Failed to write OCR failure metadata:', e?.message || e)
-    }
-    return res.status(500).json({ success: false, error: error?.message || 'OCR processing failed' })
-  }
+// The legacy per-file OCR endpoint used a separate heuristic and could approve
+// a clinic without a reviewer decision. Use the tracked registration job above.
+app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'The legacy per-file OCR path is disabled. Run clinic registration OCR from the review page.',
+  })
 })
-
 // Admin clinic review endpoints (lightweight)
 app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const uid = String(req.params?.uid || '').trim()
@@ -5307,8 +5481,18 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
       firestore.collection('users').doc(uid).get(),
     ])
     if (!clinicSnap.exists && !userSnap.exists) return res.status(404).json({ success: false, error: 'Clinic or user not found' })
-    const clinicData = clinicSnap.exists ? clinicSnap.data() : {}
+    let clinicData = clinicSnap.exists ? clinicSnap.data() : {}
     const userData = userSnap.exists ? userSnap.data() : {}
+
+    const verificationJob = clinicData.verificationJob || {}
+    const verificationLease = getTimestampDate(verificationJob.leaseExpiresAt)
+    const jobNeedsRecovery = verificationJob.status === 'queued'
+      || (verificationJob.status === 'processing' && (!verificationLease || verificationLease.getTime() <= Date.now()))
+    if (clinicSnap.exists && jobNeedsRecovery) {
+      await recoverClinicVerificationJobs({ uid })
+      const refreshedClinicSnap = await firestore.collection('clinics').doc(uid).get()
+      if (refreshedClinicSnap.exists) clinicData = refreshedClinicSnap.data() || {}
+    }
 
     const submittedDocuments = clinicData.submittedDocuments || {}
     const reviewsSnap = await firestore.collection('clinics').doc(uid).collection('documentReviews').get()
@@ -5329,112 +5513,135 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
 app.post('/admin/document/verify', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const { uid, docKey, reviewer, note } = req.body ?? {}
   if (!uid || !docKey) return res.status(400).json({ success: false, error: 'uid and docKey are required' })
+  if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
   try {
     const firestore = admin.firestore()
     const clinicRef = firestore.collection('clinics').doc(uid)
     const userRef = firestore.collection('users').doc(uid)
-    const [clinicSnap, userSnap] = await Promise.all([clinicRef.get(), userRef.get()])
-    const clinicData = clinicSnap.exists ? clinicSnap.data() : {}
-    const userData = userSnap.exists ? userSnap.data() : {}
+    const historyRef = clinicRef.collection('reviewHistory').doc()
+    let allDocumentsMarkedVerified = false
+    let expiryHold = false
+    let userData = {}
 
-    const submittedDocs = clinicData.submittedDocuments || {}
-    const existing = submittedDocs[docKey] || {}
-    existing.verified = true
-    existing.verifiedAt = admin.firestore.FieldValue.serverTimestamp()
-    submittedDocs[docKey] = existing
+    await firestore.runTransaction(async (transaction) => {
+      const [clinicSnap, userSnap] = await Promise.all([transaction.get(clinicRef), transaction.get(userRef)])
+      if (!clinicSnap.exists) throw Object.assign(new Error('Clinic registration not found.'), { statusCode: 404 })
+      const clinicData = clinicSnap.data() || {}
+      userData = userSnap.exists ? userSnap.data() || {} : {}
+      const submittedDocs = clinicData.submittedDocuments || {}
+      const existing = submittedDocs[docKey]
+      if (!existing?.path && !existing?.storagePath && !existing?.url) {
+        throw Object.assign(new Error('The submitted clinic document was not found.'), { statusCode: 404 })
+      }
+      const updatedDocs = {
+        ...submittedDocs,
+        [docKey]: {
+          ...existing,
+          verified: true,
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          verifiedBy: reviewer || req.user?.uid || null,
+          rejectionReason: null,
+          rejectedAt: null,
+        },
+      }
+      const allKeys = getRegistrationDocumentRequirements('clinic', clinicData)
+      allDocumentsMarkedVerified = allKeys.every((key) => Boolean(updatedDocs[key]?.verified))
+      expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
+      transaction.set(clinicRef, { submittedDocuments: updatedDocs, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      transaction.set(historyRef, {
+        action: 'document-verified',
+        docKey,
+        reviewer: reviewer || req.user?.uid || null,
+        note: note || null,
+        clinicApprovalRequired: true,
+        ts: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    })
 
-    await Promise.all([
-      clinicRef.set({ submittedDocuments: submittedDocs }, { merge: true }),
-      clinicRef.collection('reviewHistory').add({ action: 'document-verified', docKey, reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
-    ])
     await writeSystemAdminActivity(req, {
       action: 'Verified clinic document',
       module: 'Clinic Verification',
-      details: `Verified ${docKey} for ${userData.fullName || userData.email || uid}.`,
+      details: `Verified ${docKey} for ${userData.fullName || userData.email || uid}. Clinic registration still requires an explicit administrator approval decision.`,
       targetId: uid,
       targetName: userData.fullName || userData.email || uid,
     })
 
-    const allKeys = getRegistrationDocumentRequirements('clinic', clinicData)
-    const allVerified = allKeys.every((k) => Boolean(submittedDocs[k]?.verified))
-    const expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
-    if (allVerified && !expiryHold) {
-      await Promise.all([
-        clinicRef.set({
-          approvalStatus: 'Approved',
-          registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
-          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-          resubmissionRequired: false,
-          resubmissionReason: admin.firestore.FieldValue.delete(),
-          clinicSetupRequired: true,
-        }, { merge: true }),
-        userRef.set({
-          status: 'Pending Activation',
-          registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
-          clinicSetupRequired: true,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true }),
-      ])
-
-      const recipient = String(userData.email || clinicData.email || '').trim().toLowerCase()
-      if (recipient && postmarkClient && senderEmail) {
-        try {
-          const loginUrl = `${EMAIL_WEBSITE_URL}/login`
-          const subject = 'Welcome to AesthetiCare — Your Clinic is Approved'
-          const textBody = `Hi ${String(userData.firstName || '').trim() || 'User'},\n\nYour clinic registration has been approved. Please use the activation link in the separate Activate your AesthetiCare account email before logging in.\n\nThank you for joining AesthetiCare.`
-          const htmlBody = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;"><p>Hi ${String(userData.firstName || '').trim() || 'User'},</p><p>Your clinic registration has been <strong>approved</strong>.</p><p>Please use the activation link in the separate <strong>Activate your AesthetiCare account</strong> email before logging in.</p><p>Thank you for joining AesthetiCare.</p></div>`
-          await sendPostmarkMessage({ to: recipient, from: senderEmail, subject, text: textBody, html: htmlBody })
-          await createAccountActivation({ firestore, uid, email: recipient, name: userData.fullName || userData.firstName || 'Clinic owner', req })
-        } catch (emailErr) {
-          console.warn('Failed to send clinic welcome email (manual verify):', emailErr?.message || emailErr)
-        }
-      }
-    }
-
-    return res.json({ success: true, data: { uid, docKey, allVerified, expiryHold } })
+    return res.json({ success: true, data: { uid, docKey, allDocumentsMarkedVerified, expiryHold, clinicApprovalRequired: true } })
   } catch (error) {
     console.error('document verify error', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to verify document' })
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Failed to verify document' })
   }
 })
-
 app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
   const { uid, docKey, reviewer, reason } = req.body ?? {}
   if (!uid || !docKey) return res.status(400).json({ success: false, error: 'uid and docKey are required' })
+  if (!SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS.has(docKey)) return res.status(400).json({ success: false, error: 'Unsupported clinic document.' })
   try {
     const firestore = admin.firestore()
     const clinicRef = firestore.collection('clinics').doc(uid)
     const userRef = firestore.collection('users').doc(uid)
-    const [clinicSnap, userSnap] = await Promise.all([clinicRef.get(), userRef.get()])
-    const clinicData = clinicSnap.exists ? clinicSnap.data() : {}
-    const userData = userSnap.exists ? userSnap.data() : {}
+    const historyRef = clinicRef.collection('reviewHistory').doc()
+    let clinicData = {}
+    let userData = {}
+    await firestore.runTransaction(async (transaction) => {
+      const [clinicSnap, userSnap] = await Promise.all([
+        transaction.get(clinicRef),
+        transaction.get(userRef),
+      ])
+      if (!clinicSnap.exists) throw Object.assign(new Error('Clinic registration not found.'), { statusCode: 404 })
+      clinicData = clinicSnap.data() || {}
+      userData = userSnap.exists ? userSnap.data() || {} : {}
+      const approvalStatus = String(clinicData.approvalStatus || '').trim().toLowerCase()
+      const userStatus = String(userData.approvalStatus || userData.registrationStatus || userData.status || '').trim().toLowerCase()
+      if (approvalStatus.includes('approved') || approvalStatus.includes('rejected')
+        || userStatus.includes('approved') || userStatus.includes('rejected') || userStatus === 'pending activation') {
+        throw Object.assign(new Error('This clinic registration already has a final decision.'), { statusCode: 409 })
+      }
+      if (clinicData.resubmissionRequired === true || approvalStatus.includes('pending documents') || userStatus.includes('pending documents')) {
+        throw Object.assign(new Error('Replacement documents have already been requested for this registration.'), { statusCode: 409 })
+      }
 
-    const submittedDocs = clinicData.submittedDocuments || {}
-    const existing = submittedDocs[docKey] || {}
-    existing.verified = false
-    existing.rejectionReason = reason || null
-    existing.rejectedAt = admin.firestore.FieldValue.serverTimestamp()
-    submittedDocs[docKey] = existing
-
-    await Promise.all([
-      clinicRef.set({
+      const submittedDocs = clinicData.submittedDocuments || {}
+      const existing = submittedDocs[docKey]
+      if (!existing?.path && !existing?.storagePath && !existing?.url) {
+        throw Object.assign(new Error('The submitted clinic document was not found.'), { statusCode: 404 })
+      }
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      const priorJob = clinicData.verificationJob || {}
+      const verificationJob = priorJob.status === 'queued' || priorJob.status === 'processing'
+        ? {
+            ...priorJob,
+            status: 'cancelled',
+            cancelledAt: timestamp,
+            updatedAt: timestamp,
+            leaseExpiresAt: admin.firestore.FieldValue.delete(),
+          }
+        : undefined
+      submittedDocs[docKey] = {
+        ...existing,
+        verified: false,
+        rejectionReason: reason || null,
+        rejectedAt: timestamp,
+      }
+      transaction.set(clinicRef, {
         submittedDocuments: submittedDocs,
         approvalStatus: 'Pending Documents',
         registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
         verificationStatus: 'Resubmission Required',
+        ...(verificationJob ? { verificationJob } : {}),
         resubmissionRequired: true,
         resubmissionReason: reason || `Replace the rejected ${registrationDocumentLabel(docKey)} document.`,
-      }, { merge: true }),
-      userRef.set({
+      }, { merge: true })
+      transaction.set(userRef, {
         status: 'Pending Documents',
         approvalStatus: 'Pending Documents',
         registrationStatus: CLINIC_REGISTRATION_STATUS.RESUBMISSION_REQUIRED,
         resubmissionRequired: true,
         resubmissionReason: reason || `Replace the rejected ${registrationDocumentLabel(docKey)} document.`,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-      clinicRef.collection('reviewHistory').add({ action: 'document-rejected', docKey, reviewer: reviewer || null, reason: reason || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
-    ])
+        updatedAt: timestamp,
+      }, { merge: true })
+      transaction.set(historyRef, { action: 'document-rejected', docKey, reviewer: reviewer || req.user?.uid || null, reason: reason || null, ts: timestamp })
+    })
     await writeSystemAdminActivity(req, {
       action: 'Rejected clinic document',
       module: 'Clinic Verification',
@@ -5458,7 +5665,7 @@ app.post('/admin/document/reject', requireAuth, requireRole(['superadmin','admin
     return res.json({ success: true, data: { uid, docKey } })
   } catch (error) {
     console.error('document reject error', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to reject document' })
+    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Failed to reject document' })
   }
 })
 
@@ -5469,46 +5676,67 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
     const firestore = admin.firestore()
     const clinicRef = firestore.collection('clinics').doc(uid)
     const userRef = firestore.collection('users').doc(uid)
-    const [clinicSnap, userSnap] = await Promise.all([clinicRef.get(), userRef.get()])
-    const clinicData = clinicSnap.exists ? clinicSnap.data() : {}
-    const userData = userSnap.exists ? userSnap.data() : {}
+    const historyRef = clinicRef.collection('reviewHistory').doc()
+    let clinicData = {}
+    let userData = {}
+    await firestore.runTransaction(async (transaction) => {
+      const [clinicSnap, userSnap] = await Promise.all([
+        transaction.get(clinicRef),
+        transaction.get(userRef),
+      ])
+      if (!clinicSnap.exists) {
+        throw Object.assign(new Error('Clinic registration not found.'), { statusCode: 404 })
+      }
+      clinicData = clinicSnap.data() || {}
+      userData = userSnap.exists ? userSnap.data() || {} : {}
 
-    const submittedDocuments = clinicData.submittedDocuments || {}
-    const missingDocuments = getRegistrationDocumentRequirements('clinic', clinicData)
-      .filter((docKey) => !submittedDocuments[docKey]?.url && !submittedDocuments[docKey]?.path)
-    if (missingDocuments.length) {
-      return res.status(409).json({
-        success: false,
-        error: 'Cannot approve a clinic with missing required documents.',
-        missingDocuments,
-      })
-    }
-    const expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
-    if (expiryHold) {
-      return res.status(409).json({
-        success: false,
-        error: `This registration requires resubmission because an expiry-dated document has ${REGISTRATION_EXPIRY_HOLD_DAYS} or fewer calendar days remaining. Request a replacement document before approving.`,
-      })
-    }
+      const jobStatus = String(clinicData.verificationJob?.status || '').trim().toLowerCase()
+      if (jobStatus === 'queued' || jobStatus === 'processing') {
+        throw Object.assign(new Error('OCR is still running. Wait for it to finish before approving this registration.'), { statusCode: 409 })
+      }
+      const currentApprovalStatus = String(clinicData.approvalStatus || '').trim().toLowerCase()
+      const currentUserStatus = String(userData.approvalStatus || userData.registrationStatus || userData.status || '').trim().toLowerCase()
+      if (currentApprovalStatus.includes('approved') || currentApprovalStatus.includes('rejected')
+        || currentUserStatus.includes('approved') || currentUserStatus.includes('rejected') || currentUserStatus === 'pending activation') {
+        throw Object.assign(new Error('This clinic registration already has a final decision.'), { statusCode: 409 })
+      }
+      if (clinicData.resubmissionRequired === true || currentApprovalStatus.includes('pending documents') || currentUserStatus.includes('pending documents')) {
+        throw Object.assign(new Error('Replacement documents are required before this clinic registration can be approved.'), { statusCode: 409 })
+      }
 
-    await Promise.all([
-      clinicRef.set({
+      const submittedDocuments = clinicData.submittedDocuments || {}
+      const missingDocuments = getRegistrationDocumentRequirements('clinic', clinicData)
+        .filter((docKey) => !submittedDocuments[docKey]?.url && !submittedDocuments[docKey]?.path && !submittedDocuments[docKey]?.storagePath)
+      if (missingDocuments.length) {
+        throw Object.assign(new Error('Cannot approve a clinic with missing required documents.'), { statusCode: 409, missingDocuments })
+      }
+      const expiryHold = Boolean(clinicData.expiryAccountHold) || hasActiveRegistrationExpiryHold(clinicData.verificationResults)
+      if (expiryHold) {
+        throw Object.assign(new Error(`This registration requires resubmission because an expiry-dated document has ${REGISTRATION_EXPIRY_HOLD_DAYS} or fewer calendar days remaining. Request a replacement document before approving.`), { statusCode: 409 })
+      }
+
+      transaction.set(clinicRef, {
         approvalStatus: 'Approved',
         registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
         approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-        approvedBy: reviewer || null,
+        approvedBy: reviewer || req.user?.uid || null,
         resubmissionRequired: false,
         resubmissionReason: admin.firestore.FieldValue.delete(),
         clinicSetupRequired: true,
-      }, { merge: true }),
-      userRef.set({
+      }, { merge: true })
+      transaction.set(userRef, {
         status: 'Pending Activation',
         registrationStatus: CLINIC_REGISTRATION_STATUS.APPROVED,
         clinicSetupRequired: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true }),
-      clinicRef.collection('reviewHistory').add({ action: 'clinic-approved', reviewer: reviewer || null, note: note || null, ts: admin.firestore.FieldValue.serverTimestamp() }),
-    ])
+      }, { merge: true })
+      transaction.set(historyRef, {
+        action: 'clinic-approved',
+        reviewer: reviewer || req.user?.uid || null,
+        note: note || null,
+        ts: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    })
     await writeSystemAdminActivity(req, {
       action: 'Approved clinic registration',
       module: 'Clinic Verification',
@@ -5540,7 +5768,11 @@ app.post('/admin/clinic/approve', requireAuth, requireRole(['superadmin','admin'
     return res.json({ success: true, data: { uid, approved: true } })
   } catch (error) {
     console.error('clinic approve error', error)
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to approve clinic' })
+    return res.status(Number(error?.statusCode || 500)).json({
+      success: false,
+      error: error?.message || 'Failed to approve clinic',
+      ...(Array.isArray(error?.missingDocuments) ? { missingDocuments: error.missingDocuments } : {}),
+    })
   }
 })
 
@@ -10825,6 +11057,11 @@ app.use((error, req, res, _next) => {
 if (isDirectRun) {
   app.listen(PORT, () => {
     console.log(`OTP backend running on http://localhost:${PORT}`)
+    void recoverClinicVerificationJobs()
+    const clinicVerificationRecoveryTimer = setInterval(() => {
+      void recoverClinicVerificationJobs()
+    }, 60_000)
+    clinicVerificationRecoveryTimer.unref?.()
   })
 }
 

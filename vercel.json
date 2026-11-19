@@ -50,6 +50,19 @@
       ]
     }
   ],
+  "functions": {
+    "api/[...path].js": {
+      "maxDuration": 300
+    }
+  },
+  "schedules": {
+    "clinic-registration-ocr-recovery": {
+      "schedule": "*/15 * * * *",
+      "path": "/api/cron/clinic-registration-ocr",
+      "requestMethod": "POST",
+      "jitter": 15
+    }
+  },
   "crons": [
     { "path": "/api/cron/appointment-reminders", "schedule": "0 1 * * *" },
     { "path": "/api/cron/online-consultation-timeouts", "schedule": "0 2 * * *" }
