@@ -1,4 +1,5 @@
-import { isClinicCustomerDiscoverable, isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
+import { isClinicCustomerDiscoverable, isPublicClinicCustomerDiscoverable, isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
+import { findClinicNameMatches } from '../../shared/clinicNameMatching.js'
 import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { createAppointmentPaymentHoldReaper } from './appointmentPaymentHolds.js'
 import { registerConsultationEvents } from './consultationEvents.js'
@@ -6169,6 +6170,15 @@ const trustedRegistrationProfileResponse = async (uid) => {
   }
 }
 
+const hasPublicClinicAtSameNameAndLocation = async (transaction, firestore, clinicInput) => {
+  const publicClinicQuery = firestore.collection('publicClinics').where('isPublished', '==', true)
+  const snapshot = await transaction.get(publicClinicQuery)
+  const clinics = snapshot.docs
+    .map((clinicDoc) => clinicDoc.data())
+    .filter((clinic) => isPublicClinicCustomerDiscoverable(clinic))
+  return findClinicNameMatches(clinics, clinicInput).sameLocation
+}
+
 app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
   try {
     const uid = String(req.user?.uid || '').trim()
@@ -6223,6 +6233,9 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
             || !Number.isFinite(latitude) || !Number.isFinite(longitude)
             || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
             return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
+          }
+          if (await hasPublicClinicAtSameNameAndLocation(transaction, firestore, clinicInput)) {
+            return { error: 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.' }
           }
           const emailVerified = userData.emailVerified === true
           const pendingStatus = emailVerified ? 'Pending Document Submission' : 'Pending OTP Verification'
@@ -6314,6 +6327,9 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
         || !Number.isFinite(latitude) || !Number.isFinite(longitude)
         || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
         return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
+      }
+      if (await hasPublicClinicAtSameNameAndLocation(transaction, firestore, clinicInput)) {
+        return { error: 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.' }
       }
       const companyName = registrationText(clinicInput.companyName || clinicInput.clinicName, 160)
       transaction.create(userRef, {

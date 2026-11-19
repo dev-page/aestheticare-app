@@ -4,7 +4,7 @@ import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { collection, doc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { useThemeStore } from '@/stores/theme'
@@ -17,6 +17,8 @@ import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.v
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../../../shared/clinicPlatformAgreement.js'
+import { findClinicNameMatches } from '../../../../shared/clinicNameMatching.js'
+import { isPublicClinicCustomerDiscoverable } from '../../../../shared/customerCatalog.js'
 import {
   validateCavitePinSelection,
 } from '@/utils/locationValidation'
@@ -121,6 +123,10 @@ const confirmPassword = ref('')
 
 const contactNumber = ref('')
 const clinicName = ref('')
+const clinicNameCheckingTimer = ref(null)
+const isCheckingClinicName = ref(false)
+const clinicNameAvailability = ref('idle')
+const clinicNameAvailabilityMessage = ref('')
 const clinicLocation = ref('')
 const clinicLocationLat = ref('')
 const clinicLocationLng = ref('')
@@ -272,6 +278,7 @@ const OTP_SENT_AT_KEY = 'registration_otp_sent_at'
 const OTP_COOLDOWN_SECONDS = 60 // 1 minute resend cooldown
 let otpResendInterval = null
 let emailLookupSequence = 0
+let clinicNameLookupSequence = 0
 
 const currentStep = ref(1)
 const registrationSteps = [
@@ -538,6 +545,8 @@ const isStep1FormComplete = computed(() => {
     clinicLocationLat.value &&
     clinicLocationLng.value &&
     phoneIsValid &&
+    !isCheckingClinicName.value &&
+    clinicNameAvailability.value !== 'duplicate' &&
     (emailAvailability.value === 'available' || emailChecked.value) &&
     passwordIsValid
   )
@@ -951,6 +960,8 @@ onBeforeUnmount(() => {
   stopOtpCountdown()
   stopApprovalCheck()
   clearApprovalRedirect()
+  if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
+  if (clinicNameCheckingTimer.value) clearTimeout(clinicNameCheckingTimer.value)
   Object.values(documentPreviewUrls.value).forEach((previewUrl) => {
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   })
@@ -1300,16 +1311,103 @@ const checkEmailAvailability = async (emailValue) => {
   const lookupSequence = ++emailLookupSequence
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    isCheckingEmail.value = false
     emailAvailability.value = normalizedEmail ? 'invalid' : 'idle'
     emailAvailabilityMessage.value = normalizedEmail ? 'Enter a valid email address.' : ''
     return
   }
 
   if (lookupSequence !== emailLookupSequence || normalizedEmail !== String(email.value || '').trim().toLowerCase()) return
+  isCheckingEmail.value = false
   emailChecked.value = true
   emailAvailability.value = 'available'
   emailAvailabilityMessage.value = 'Email format looks good. Account availability is confirmed securely when you continue.'
 }
+
+const checkClinicNameAvailability = async () => {
+  const lookupSequence = ++clinicNameLookupSequence
+  const candidate = {
+    clinicName: String(clinicName.value || '').trim(),
+    clinicLocation: String(clinicLocation.value || '').trim(),
+    clinicLocationAddress: String(clinicLocationAddress.value || '').trim(),
+    clinicLocationLat: clinicLocationLat.value,
+    clinicLocationLng: clinicLocationLng.value,
+  }
+
+  if (candidate.clinicName.length < 3) {
+    isCheckingClinicName.value = false
+    clinicNameAvailability.value = candidate.clinicName ? 'invalid' : 'idle'
+    clinicNameAvailabilityMessage.value = candidate.clinicName ? 'Enter at least 3 characters to check this name.' : ''
+    return { sameName: false, sameLocation: false }
+  }
+
+  isCheckingClinicName.value = true
+  clinicNameAvailability.value = 'checking'
+  clinicNameAvailabilityMessage.value = 'Checking clinic name…'
+
+  try {
+    const snapshot = await getDocs(query(
+      collection(db, 'publicClinics'),
+      where('isPublished', '==', true),
+    ))
+    if (lookupSequence !== clinicNameLookupSequence) return { sameName: false, sameLocation: false, stale: true }
+
+    const publicClinics = snapshot.docs
+      .map((clinicDoc) => clinicDoc.data())
+      .filter((clinic) => isPublicClinicCustomerDiscoverable(clinic))
+    const matches = findClinicNameMatches(publicClinics, candidate)
+
+    if (matches.sameLocation) {
+      clinicNameAvailability.value = 'duplicate'
+      clinicNameAvailabilityMessage.value = 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.'
+    } else if (matches.sameName) {
+      clinicNameAvailability.value = 'review'
+      clinicNameAvailabilityMessage.value = 'A clinic with this name is already listed elsewhere. You may continue if this is a separate location; we will review it.'
+    } else {
+      clinicNameAvailability.value = 'available'
+      clinicNameAvailabilityMessage.value = 'No matching listed clinic found.'
+    }
+
+    return matches
+  } catch (error) {
+    if (lookupSequence !== clinicNameLookupSequence) return { sameName: false, sameLocation: false, stale: true }
+    console.warn('Clinic name availability check failed:', error?.message || error)
+    clinicNameAvailability.value = 'error'
+    clinicNameAvailabilityMessage.value = 'Could not check this name right now. It will be checked again when you continue.'
+    return { sameName: false, sameLocation: false, error }
+  } finally {
+    if (lookupSequence === clinicNameLookupSequence) isCheckingClinicName.value = false
+  }
+}
+
+const scheduleClinicNameAvailabilityCheck = () => {
+  clinicNameLookupSequence += 1
+  if (clinicNameCheckingTimer.value) clearTimeout(clinicNameCheckingTimer.value)
+
+  const name = String(clinicName.value || '').trim()
+  if (name.length < 3) {
+    isCheckingClinicName.value = false
+    clinicNameAvailability.value = name ? 'invalid' : 'idle'
+    clinicNameAvailabilityMessage.value = name ? 'Enter at least 3 characters to check this name.' : ''
+    return
+  }
+
+  isCheckingClinicName.value = true
+  clinicNameAvailability.value = 'checking'
+  clinicNameAvailabilityMessage.value = 'Checking clinic name…'
+  clinicNameCheckingTimer.value = setTimeout(() => {
+    clinicNameCheckingTimer.value = null
+    void checkClinicNameAvailability()
+  }, 600)
+}
+
+watch([
+  clinicName,
+  clinicLocation,
+  clinicLocationAddress,
+  clinicLocationLat,
+  clinicLocationLng,
+], scheduleClinicNameAvailabilityCheck)
 
 const applyProfileData = (profile) => {
   if (!profile) return
@@ -1580,6 +1678,7 @@ const handleEmailDraftInput = () => {
   validateEmailFormat(email.value)
 
   emailLookupSequence += 1
+  isCheckingEmail.value = false
   emailAvailability.value = 'idle'
   emailAvailabilityMessage.value = ''
   recoveryLoginAvailable.value = false
@@ -1634,7 +1733,9 @@ const handleEmailDraftInput = () => {
   }
 
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    isCheckingEmail.value = true
     emailCheckingTimer.value = setTimeout(() => {
+      emailCheckingTimer.value = null
       checkEmailAvailability(normalizedEmail)
     }, 600)
   }
@@ -2283,6 +2384,16 @@ const registerClinic = async () => {
 
   if (age < 18) {
     toast.error('You must be at least 18 years old to register.')
+    return
+  }
+
+  if (clinicNameCheckingTimer.value) {
+    clearTimeout(clinicNameCheckingTimer.value)
+    clinicNameCheckingTimer.value = null
+  }
+  const clinicNameMatch = await checkClinicNameAvailability()
+  if (clinicNameMatch.sameLocation) {
+    toast.error('A listed clinic already uses this name at this location. If it is yours, sign in to manage it.')
     return
   }
 
@@ -3068,8 +3179,26 @@ const handleRegistrationSubmit = () => {
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
-                <input id="clinic-name" name="organization" v-model="clinicName" autocomplete="organization" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
+                <input id="clinic-name" name="organization" v-model="clinicName" autocomplete="organization" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 pr-14" aria-describedby="clinic-name-availability" />
                 <label for="clinic-name" class="floating-label">Clinic Name</label>
+                <span class="absolute right-4 top-8 -translate-y-1/2" aria-hidden="true">
+                  <span v-if="isCheckingClinicName" class="block h-5 w-5 animate-spin rounded-full border-2 border-gold-300 border-t-gold-700"></span>
+                  <svg v-else-if="clinicNameAvailability === 'available'" class="h-5 w-5 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 9.5 17 19 7.5" />
+                  </svg>
+                  <svg v-else-if="clinicNameAvailability === 'duplicate'" class="h-5 w-5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m7 7 10 10M17 7 7 17" />
+                  </svg>
+                  <svg v-else-if="['review', 'error', 'invalid'].includes(clinicNameAvailability)" class="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 4.7 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3l-6.9-12.3a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                </span>
+                <p v-if="clinicNameAvailabilityMessage" id="clinic-name-availability" aria-live="polite" class="mt-1 text-xs" :class="{
+                  'text-emerald-700': clinicNameAvailability === 'available',
+                  'text-rose-700': clinicNameAvailability === 'duplicate',
+                  'text-amber-700': ['review', 'error', 'invalid'].includes(clinicNameAvailability),
+                  'text-gold-700': clinicNameAvailability === 'checking'
+                }">{{ clinicNameAvailabilityMessage }}</p>
               </div>
               <div class="relative">
                 <label for="clinic-location" class="floating-label floating-label-raised">Clinic Location (Cavite Only)</label>
