@@ -372,6 +372,13 @@ const documentInputKeys = ref({
 // File upload rules
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
+const NAME_MATCH_REQUIRED_DOCUMENT_KEYS = new Set([
+  'governmentIdRepresentativeFront',
+  'businessPermit',
+  'dohAccreditation',
+  'birRegistration',
+  'sanitaryCertificate',
+])
 
 const approvalRedirecting = ref(false)
 const approvalRedirectSeconds = ref(5)
@@ -2480,10 +2487,14 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
   }
   // Firebase refreshes an expired token automatically. A forced refresh on
   // each document added a serial network round trip to every upload.
-  await sessionUser.getIdToken()
-  const safeName = `${Date.now()}-${String(file.name || 'document').replace(/\s+/g, '_')}`
+  const token = await sessionUser.getIdToken()
+  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${String(file.name || 'document').replace(/\s+/g, '_')}`
   const filePath = `clinic-registration/${uid}/${documentKey}/${safeName}`
-  const fileRef = storageRef(storage, filePath)
+  const requiresNameMatch = NAME_MATCH_REQUIRED_DOCUMENT_KEYS.has(documentKey)
+  const uploadPath = requiresNameMatch
+    ? `clinic-registration/${uid}/preflight-${documentKey}/${safeName}`
+    : filePath
+  const fileRef = storageRef(storage, uploadPath)
 
   const snapshot = await new Promise((resolve, reject) => {
     const task = uploadBytesResumable(fileRef, file)
@@ -2493,14 +2504,35 @@ const uploadDocumentForClinic = async (uid, file, documentKey, onProgress = () =
         const percent = snap.totalBytes
           ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
           : 0
-        onProgress(percent)
+        onProgress(requiresNameMatch ? Math.round(percent * 0.8) : percent)
       },
       reject,
       () => resolve(task.snapshot)
     )
   })
 
-  const url = await getDownloadURL(snapshot.ref)
+  if (requiresNameMatch) {
+    onProgress(85)
+    const response = await fetch(`${OTP_API_BASE}/registration/ocr-preflight`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        uid,
+        docKey: documentKey,
+        storagePath: uploadPath,
+        targetPath: filePath,
+        file: { name: file.name || '', size: file.size || 0, type: file.type || '' },
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success || payload?.data?.accepted !== true) {
+      throw new Error(payload?.error || 'The document could not be checked against the information entered in Step 1.')
+    }
+  }
+
+  const acceptedFileRef = requiresNameMatch ? storageRef(storage, filePath) : snapshot.ref
+  const url = await getDownloadURL(acceptedFileRef)
+  onProgress(100)
   return {
     name: file.name || '',
     size: file.size || 0,

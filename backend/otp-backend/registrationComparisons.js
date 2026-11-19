@@ -1,12 +1,13 @@
-// Comparisons are suggestions for a reviewer, not proof of document authenticity.
-// Only extract fields with explicit labels; arbitrary occurrences of an entered
-// value elsewhere on the page are not evidence that it belongs to that field.
+// A name mismatch is actionable only when OCR found a labelled field with
+// sufficient confidence. Arbitrary occurrences of a name elsewhere on a page
+// are not evidence that the name belongs to that field.
 const BUSINESS_DOCUMENTS = new Set(['businessPermit', 'dohAccreditation', 'birRegistration', 'sanitaryCertificate'])
 const NAME_SUFFIXES = new Set(['JR', 'SR', 'II', 'III', 'IV', 'V'])
 const KNOWN_OCR_FIELD_LABELS = [
   'full\\s+name', 'name', 'name\\s+of\\s+holder', 'first\\s+name', 'given\\s+names?',
   'last\\s+name', 'surname', 'family\\s+name', 'birth\\s*date', 'date\\s+of\\s+birth', 'dob',
-  'business\\s+name', 'trade\\s+name', 'clinic\\s+name', 'establishment\\s+name',
+  'business\\s+name', 'registered\\s+(?:business\\s+)?name', 'trade\\s+name',
+  'business\\s*(?:\\/|and)\\s*trade\\s+name', 'clinic\\s+name', 'establishment\\s+name',
   'name\\s+of\\s+(?:business|establishment|clinic)', 'permit\\s+holder(?:\\s+name)?',
   'owner(?:\\s+name)?', 'proprietor(?:\\s+name)?', 'registrant\\s+name', 'applicant\\s+name',
   'authorized\\s+representative', 'representative(?:\\s+name)?', 'authorized\\s+person',
@@ -114,7 +115,11 @@ export function compareRegistrationFields({ docKey, text, application = {}, user
   }
   if (BUSINESS_DOCUMENTS.has(docKey)) {
     const entered = hasSnapshot ? snapshot.businessName : application.businessName || application.clinicName || application.companyName || user.companyName
-    const detected = extractLabelled(text, ['business\\s+name', 'trade\\s+name', 'clinic\\s+name', 'establishment\\s+name', 'name\\s+of\\s+(?:business|establishment|clinic)'])
+    const detected = extractLabelled(text, [
+      'business\\s+name', 'registered\\s+(?:business\\s+)?name', 'trade\\s+name',
+      'business\\s*(?:\\/|and)\\s*trade\\s+name', 'clinic\\s+name', 'establishment\\s+name',
+      'name\\s+of\\s+(?:business|establishment|clinic)',
+    ])
     results.push(comparison('businessName', 'Clinic / business name', entered, detected, evidenceConfidence))
   }
   if (docKey === 'businessPermit' || (isAuthorization && !permitHolderIsRegistrant)) {

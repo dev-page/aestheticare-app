@@ -117,7 +117,7 @@ const rateLimitApi = (req, res, next) => {
     policy = API_RATE_LIMITS.publicAuth
     scope = 'public-auth'
   }
-  if (/\/(ocr|auto-verify|trigger-ocr|backup\/zip|attendance\/import|attendance\/imports)(\/|$)/.test(path)) {
+  if (/\/(ocr|ocr-preflight|auto-verify|trigger-ocr|backup\/zip|attendance\/import|attendance\/imports)(\/|$)/.test(path)) {
     policy = API_RATE_LIMITS.expensive
     scope = 'expensive'
   } else if (/\/(create|submit|approve|reject|cancel|checkout|payment|record|schedule|restore|close|connect|disconnect|upload|resend|verify|activate)(\/|$)/.test(path) || req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
@@ -224,10 +224,29 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
   'sanitaryCertificate',
   'dohAccreditation',
 ])
+const REGISTRATION_NAME_MATCH_DOCUMENTS = new Set([
+  'governmentIdRepresentativeFront',
+  ...BUSINESS_NAME_REQUIREMENTS,
+])
+const REGISTRATION_NAME_MATCH_POLICY_VERSION = 1
 const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
 const getRegistrationDocumentMinimumTextLength = (docKey) =>
   String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
 const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
+const getRegistrationNameInputsHash = (application = {}, user = {}) => {
+  const snapshot = application.registrationOcrSnapshot || {}
+  const hasSnapshot = Boolean(application.registrationOcrSnapshot && typeof application.registrationOcrSnapshot === 'object')
+  const ownerName = [
+    hasSnapshot ? snapshot.firstName : user.firstName || application.firstName,
+    hasSnapshot ? snapshot.middleName : user.midName || user.middleName || application.midName || application.middleName,
+    hasSnapshot ? snapshot.lastName : user.lastName || application.lastName,
+    hasSnapshot ? snapshot.suffix : user.suffix || application.suffix,
+  ].map((part) => String(part || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ')
+  const businessName = String(hasSnapshot
+    ? snapshot.businessName
+    : application.businessName || application.clinicName || application.companyName || user.companyName || '').trim().replace(/\s+/g, ' ')
+  return registrationDocumentHash(Buffer.from(JSON.stringify({ ownerName, businessName })))
+}
 
 const normalizeRegistrationDateForOcr = (value) => {
   if (!value) return ''
@@ -440,8 +459,6 @@ app.options(/.*/, cors(corsOptions))
 app.use(rateLimitApi)
 app.use('/supply', express.json({ limit: '8mb' }))
 app.use('/attendance', express.json({ limit: '5mb' }))
-// Registration OCR preflight receives a document as base64 and never persists
-// image files. Allow enough room for the existing 10 MB document limit.
 app.use(express.json({ limit: '15mb', verify: (req, _res, buffer) => {
   if (req.path === '/paymongo/webhook') req.rawBody = buffer
 } }))
@@ -760,30 +777,6 @@ const createVisionClient = () => {
       private_key: googleCloudCredential.private_key,
     },
   })
-}
-
-// Pass Cloud Storage objects to Vision explicitly. A bare string is accepted by
-// the SDK in some cases, but an AnnotateImageRequest keeps the storage source
-// unambiguous and lets us reliably distinguish a provider error from unreadable
-// document content.
-const createVisionGcsImageRequest = (gcsUri) => ({
-  image: {
-    source: { imageUri: gcsUri },
-  },
-})
-
-// Vision can read a gs:// URI directly, but that relies on a separate storage
-// hand-off inside Google Cloud. For registration images, read the already
-// authorization-checked object with Firebase Admin and send its bytes to
-// Vision. This avoids a URI-access failure being mistaken for no OCR text.
-const createRegistrationVisionRequest = async ({ bucketName, storagePath, contentType }) => {
-  const normalizedType = String(contentType || '').toLowerCase()
-  if (normalizedType.startsWith('image/')) {
-    const [content] = await admin.storage().bucket(bucketName).file(storagePath).download()
-    if (!content?.length) throw new Error('The uploaded image could not be read from secure storage.')
-    return { image: { content: content.toString('base64') } }
-  }
-  return createVisionGcsImageRequest(`gs://${bucketName}/${storagePath}`)
 }
 
 const getVisionResponseError = (response) => {
@@ -2193,6 +2186,66 @@ const getRegistrationComparisonNameMatch = (comparisons) => {
   return nameComparisons.every((item) => item.status === 'match') ? true : null
 }
 
+const getRegistrationDocumentOcr = async ({ visionClient, bucketName, storagePath, contentType, bytes, uid, docKey }) => {
+  if (String(contentType || '').toLowerCase() !== 'application/pdf') {
+    const [response] = await visionClient.documentTextDetection({ image: { content: bytes.toString('base64') } })
+    const responseError = getVisionResponseError(response)
+    if (responseError) throw new Error(responseError)
+    let annotation = response?.fullTextAnnotation || null
+    let extractedText = String(annotation?.text || '').trim()
+    if (!extractedText) {
+      const [fallback] = await visionClient.textDetection({ image: { content: bytes.toString('base64') } })
+      const fallbackError = getVisionResponseError(fallback)
+      if (fallbackError) throw new Error(fallbackError)
+      extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
+      annotation = fallback?.fullTextAnnotation || annotation
+    }
+    return { annotation, extractedText }
+  }
+
+  const outputPrefix = `clinic-registration/${uid}/ocr-output/${docKey}/${crypto.randomUUID()}/`
+  const outputUri = `gs://${bucketName}/${outputPrefix}`
+  try {
+    const [operation] = await visionClient.asyncBatchAnnotateFiles({
+      requests: [{
+        inputConfig: {
+          gcsSource: { uri: `gs://${bucketName}/${storagePath}` },
+          mimeType: 'application/pdf',
+        },
+        features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+        outputConfig: { gcsDestination: { uri: outputUri }, batchSize: 5 },
+      }],
+    })
+    const [operationResponse] = await operation.promise()
+    const fileError = operationResponse?.responses?.find((item) => item?.error?.message)
+    if (fileError) throw new Error(fileError.error.message)
+
+    const [outputFiles] = await admin.storage().bucket(bucketName).getFiles({ prefix: outputPrefix })
+    if (!outputFiles.length) throw new Error('Vision did not return OCR output for this PDF.')
+    const pageResponses = []
+    for (const outputFile of outputFiles) {
+      const [outputBytes] = await outputFile.download()
+      const output = JSON.parse(outputBytes.toString('utf8'))
+      for (const response of output?.responses || []) {
+        if (response?.error?.message) throw new Error(response.error.message)
+        pageResponses.push(response)
+      }
+    }
+    const extractedText = pageResponses
+      .map((response) => String(response?.fullTextAnnotation?.text || response?.textAnnotations?.[0]?.description || '').trim())
+      .filter(Boolean)
+      .join('\n')
+    const annotation = {
+      pages: pageResponses.flatMap((response) => response?.fullTextAnnotation?.pages || []),
+      text: extractedText,
+    }
+    return { annotation, extractedText }
+  } finally {
+    const [outputFiles] = await admin.storage().bucket(bucketName).getFiles({ prefix: outputPrefix }).catch(() => [[]])
+    await Promise.all(outputFiles.map((file) => file.delete({ ignoreNotFound: true }).catch(() => {})))
+  }
+}
+
 const processUploadedRegistrationDocument = async ({ uid, docKey, document, application, user }) => {
   const storagePath = String(document?.path || document?.storagePath || '').trim()
   const result = {
@@ -2228,19 +2281,10 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     return result
   }
   try {
-    const visionRequest = await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
-    const [visionResult] = await visionClient.documentTextDetection(visionRequest)
-    const primaryError = getVisionResponseError(visionResult)
-    if (primaryError) throw new Error(primaryError)
-    let annotation = visionResult?.fullTextAnnotation
-    let extractedText = String(annotation?.text || '').trim()
-    if (!extractedText) {
-      const [fallback] = await visionClient.textDetection(visionRequest)
-      const fallbackError = getVisionResponseError(fallback)
-      if (fallbackError) throw new Error(fallbackError)
-      extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
-      annotation = fallback?.fullTextAnnotation || annotation
-    }
+    const [bytes] = await admin.storage().bucket(bucketName).file(storagePath).download()
+    const { annotation, extractedText } = await getRegistrationDocumentOcr({
+      visionClient, bucketName, storagePath, contentType: document.type, bytes, uid, docKey,
+    })
     const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
     const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
     const minimumTextLength = getRegistrationDocumentMinimumTextLength(docKey)
@@ -2492,26 +2536,12 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
           await persistDocumentProgress()
           continue
         }
-        const visionRequest = await createRegistrationVisionRequest({ bucketName, storagePath, contentType: document.type })
-        const [visionResult] = await visionClient.documentTextDetection(visionRequest)
-        const primaryError = getVisionResponseError(visionResult)
-        if (primaryError) throw new Error(primaryError)
-        annotation = visionResult?.fullTextAnnotation
-        extractedText = String(annotation?.text || '').trim()
-        if (!extractedText) {
-          try {
-            const [fallbackResult] = await visionClient.textDetection(visionRequest)
-            const fallbackError = getVisionResponseError(fallbackResult)
-            if (fallbackError) throw new Error(fallbackError)
-            const fallbackText = String(fallbackResult?.textAnnotations?.[0]?.description || '').trim()
-            if (fallbackText) {
-              annotation = fallbackResult?.fullTextAnnotation || annotation
-              extractedText = fallbackText
-            }
-          } catch (fallbackError) {
-            console.warn(`Vision text fallback failed for ${docKey}:`, fallbackError?.message || fallbackError)
-          }
-        }
+        const [bytes] = await storageBucket.file(storagePath).download()
+        const ocr = await getRegistrationDocumentOcr({
+          visionClient, bucketName, storagePath, contentType: document.type, bytes, uid, docKey,
+        })
+        annotation = ocr.annotation
+        extractedText = ocr.extractedText
       }
       const requiresBusinessName = BUSINESS_NAME_REQUIREMENTS.has(docKey)
       const isAuthorizationDocument = docKey === AUTHORIZATION_DOCUMENT_KEY
@@ -3135,6 +3165,31 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         error.statusCode = 422
         throw error
       }
+
+      if (REGISTRATION_NAME_MATCH_DOCUMENTS.has(docKey)) {
+        const previousPath = String(previousDocuments[docKey]?.path || previousDocuments[docKey]?.storagePath || '').trim()
+        const isPreviouslyAcceptedFile = isExpiryPartialResubmission && previousPath === document.path
+        if (!isPreviouslyAcceptedFile) {
+          const preflightSnapshot = await clinicRef.collection('documentPreflights').doc(docKey).get()
+          const preflight = preflightSnapshot.exists ? preflightSnapshot.data() || {} : {}
+          const expiresAt = getTimestampDate(preflight.expiresAt)
+          const [storedBytes] = await storageBucket.file(document.path).download()
+          const preflightMatchesFile = preflight.accepted === true
+            && preflight.nameMatchPolicyVersion === REGISTRATION_NAME_MATCH_POLICY_VERSION
+            && preflight.storagePath === document.path
+            && preflight.comparisonStatus !== 'mismatch'
+            && Boolean(expiresAt && expiresAt.getTime() > Date.now())
+            && preflight.contentType === storedType
+            && Number(preflight.size) === storedSize
+            && preflight.nameInputsHash === getRegistrationNameInputsHash(clinic, user)
+            && preflight.contentHash === registrationDocumentHash(storedBytes)
+          if (!preflightMatchesFile) {
+            const error = new Error(`The ${registrationDocumentLabel(docKey)} has not passed the name comparison. Select and upload it again before submitting.`)
+            error.statusCode = 422
+            throw error
+          }
+        }
+      }
     }
 
     const registrationRequiresAgreement = clinic.isClinicRegistrationActive !== false
@@ -3611,6 +3666,128 @@ app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Upload-time OCR failed:', error)
     return res.status(500).json({ success: false, error: error?.message || 'OCR processing failed.' })
+  }
+})
+
+// Compare names in a private preflight object. Promote the candidate into the
+// normal registration folder only after it passes the name check.
+app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
+  const uid = String(req.body?.uid || '').trim()
+  const docKey = String(req.body?.docKey || '').trim()
+  const storagePath = String(req.body?.storagePath || '').trim()
+  const targetPath = String(req.body?.targetPath || '').trim()
+  const file = req.body?.file && typeof req.body.file === 'object' ? req.body.file : {}
+  if (!uid || uid !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+  if (!REGISTRATION_NAME_MATCH_DOCUMENTS.has(docKey)) {
+    return res.status(400).json({ success: false, error: 'This document does not require a name comparison.' })
+  }
+  const preflightPrefix = `clinic-registration/${uid}/preflight-${docKey}/`
+  const targetPrefix = `clinic-registration/${uid}/${docKey}/`
+  const preflightFileName = storagePath.startsWith(preflightPrefix) ? storagePath.slice(preflightPrefix.length) : ''
+  const targetFileName = targetPath.startsWith(targetPrefix) ? targetPath.slice(targetPrefix.length) : ''
+  if (!preflightFileName || preflightFileName.includes('/') || preflightFileName.length > 255
+    || !targetFileName || targetFileName.includes('/') || targetFileName.length > 255
+    || storagePath === targetPath) {
+    return res.status(400).json({ success: false, error: 'The uploaded document path is invalid.' })
+  }
+
+  const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+  if (!bucketName) return res.status(503).json({ success: false, error: 'Secure document storage is not configured.' })
+  const bucket = admin.storage().bucket(bucketName)
+  const storageFile = bucket.file(storagePath)
+  const acceptedFile = bucket.file(targetPath)
+  let preserveAcceptedFile = false
+  try {
+    const firestore = admin.firestore()
+    const clinicRef = firestore.collection('clinics').doc(uid)
+    const [clinicSnapshot, userSnapshot, [metadata], [bytes]] = await Promise.all([
+      clinicRef.get(),
+      firestore.collection('users').doc(uid).get(),
+      storageFile.getMetadata(),
+      storageFile.download(),
+    ])
+    if (!clinicSnapshot.exists || !userSnapshot.exists) {
+      return res.status(404).json({ success: false, error: 'Clinic registration information was not found.' })
+    }
+    const contentType = String(metadata?.contentType || '').toLowerCase()
+    const size = Number(metadata?.size || 0)
+    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)
+      || !Number.isFinite(size) || size <= 0 || size > 10 * 1024 * 1024
+      || Number(file.size) !== size || String(file.type || '').toLowerCase() !== contentType) {
+      return res.status(422).json({ success: false, error: 'The uploaded document details are invalid. Please choose the file again.' })
+    }
+
+    const visionClient = createVisionClient()
+    if (!visionClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'Document name checking is temporarily unavailable. The file was not accepted; please try again shortly.',
+      })
+    }
+    let extractedText = ''
+    let ocrConfidence = null
+    let comparisons = []
+    try {
+      const ocr = await getRegistrationDocumentOcr({
+        visionClient, bucketName, storagePath, contentType, bytes, uid, docKey,
+      })
+      extractedText = ocr.extractedText
+      ocrConfidence = getVisionWordConfidence(ocr.annotation)
+      comparisons = compareRegistrationFields({
+        docKey,
+        text: extractedText,
+        application: clinicSnapshot.data() || {},
+        user: userSnapshot.data() || {},
+        confidence: ocrConfidence,
+      })
+    } catch (ocrError) {
+      // OCR errors and documents without a labelled name remain eligible for
+      // the existing human review path. Only a confident, labelled mismatch
+      // blocks the upload.
+      console.warn('Clinic registration name preflight needs manual review:', {
+        uid,
+        docKey,
+        error: ocrError?.message || String(ocrError),
+      })
+    }
+
+    const mismatch = comparisons.find((comparison) => ['registrantName', 'businessName'].includes(comparison.field)
+      && comparison.status === 'mismatch')
+    if (mismatch) {
+      const error = mismatch.field === 'businessName'
+        ? 'Clinic name mismatch: the clinic name on this document does not match the name entered in Step 1. Please upload the correct document.'
+        : 'Registrant name mismatch: the name on this government ID does not match the owner details entered in Step 1. Please upload the correct document.'
+      return res.status(422).json({ success: false, error, code: 'REGISTRATION_DOCUMENT_NAME_MISMATCH' })
+    }
+
+    await storageFile.copy(acceptedFile)
+    const nameComparison = comparisons.find((comparison) => ['registrantName', 'businessName'].includes(comparison.field))
+    await clinicRef.collection('documentPreflights').doc(docKey).set({
+      accepted: true,
+      contentHash: registrationDocumentHash(bytes),
+      nameInputsHash: getRegistrationNameInputsHash(clinicSnapshot.data() || {}, userSnapshot.data() || {}),
+      contentType,
+      size,
+      storagePath: targetPath,
+      nameMatchPolicyVersion: REGISTRATION_NAME_MATCH_POLICY_VERSION,
+      comparisonStatus: nameComparison?.status === 'match' ? 'match' : 'needs_review',
+      checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * DAY_MS),
+    })
+    preserveAcceptedFile = true
+    return res.json({
+      success: true,
+      data: { accepted: true, comparisonStatus: nameComparison?.status === 'match' ? 'match' : 'needs_review' },
+    })
+  } catch (error) {
+    console.error('Clinic registration name preflight failed:', error?.message || error)
+    return res.status(Number(error?.statusCode || 500)).json({
+      success: false,
+      error: error?.message || 'Could not compare the uploaded document. Please try again.',
+    })
+  } finally {
+    await storageFile.delete({ ignoreNotFound: true }).catch(() => {})
+    if (!preserveAcceptedFile) await acceptedFile.delete({ ignoreNotFound: true }).catch(() => {})
   }
 })
 
