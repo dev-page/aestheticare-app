@@ -836,6 +836,12 @@ export default {
       })
     }
 
+    const localTagCheckIcon = {
+      width: 24,
+      height: 24,
+      body: '<path d="M21.41 11.58 12.42 2.59A2 2 0 0 0 11 2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 .59 1.41l9 9a2 2 0 0 0 2.82 0l7-7a2 2 0 0 0 0-2.83ZM13 20l-9-9V4h7l9 9-7 7ZM6.5 8A1.5 1.5 0 1 0 6.5 5a1.5 1.5 0 0 0 0 3Zm3.8 4.2 1.4-1.4 1.7 1.7 3.9-3.9 1.4 1.4-5.3 5.3-3.1-3.1Z" fill="currentColor" />',
+    }
+
     const iconName = (name) => {
       const key = String(name || '').toLowerCase()
       if (key.startsWith('mdi:')) return key
@@ -878,6 +884,7 @@ export default {
         profile: 'mdi:account-circle-outline',
         bell: 'mdi:bell-outline',
         'account-off': 'mdi:account-off-outline',
+        'tag-check': localTagCheckIcon,
         plus: 'mdi:plus-circle-outline',
         search: 'mdi:magnify',
         money: 'mdi:currency-usd',

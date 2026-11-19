@@ -36,10 +36,10 @@
         <div class="branding-grid"><label class="branding-upload"><span>Clinic logo</span><small>Square JPG, PNG, or WebP. Up to 5 MB.</small><div class="logo-preview"> <img v-if="logoPreview" :src="logoPreview" alt="Clinic logo preview" /><span v-else>Logo preview</span></div><input type="file" accept="image/jpeg,image/png,image/webp" @change="chooseBrandingImage($event, 'logo')" /></label><label class="branding-upload"><span>Clinic banner</span><small>Wide JPG, PNG, or WebP. Up to 5 MB.</small><div class="banner-preview" :style="bannerPreview ? { backgroundImage: `url('${bannerPreview}')` } : undefined"><span v-if="!bannerPreview">Banner preview</span></div><input type="file" accept="image/jpeg,image/png,image/webp" @change="chooseBrandingImage($event, 'banner')" /></label></div>
         <p v-if="brandingError" class="error-message" role="alert">{{ brandingError }}</p><button type="button" class="text-button" @click="skipBranding">Skip images for now</button>
       </section>
-      <section v-else class="form-section"><h2>Choose a plan <em>Optional</em></h2><p>Free Trial gives your clinic Premium access for 14 days after approval. Basic and Premium are paid plans; you can also skip and decide later.</p>
+      <section v-else class="form-section"><h2>Choose your subscription</h2><p>Choose Free Trial for 14 days of Premium access, or select Basic or Premium to pay securely with PayMongo. Your selected plan determines which clinic pages you can access.</p>
         <div v-if="plansLoading">Loading available plans…</div><div v-else class="plan-list"><button v-for="plan in plans" :key="plan.id" type="button" class="plan-card" :class="[{ selected: selectedPlan === plan.id }, `plan-card-${plan.id}`]" @click="selectedPlan = plan.id"><span>{{ plan.name }}</span><strong>{{ plan.priceLabel }}</strong><small>{{ plan.id === 'free-trial' ? '14 days · Premium access' : plan.cycleLabel }}</small><small v-if="plan.id === 'free-trial'" class="trial-plan-note">No payment during trial. Available once per clinic after approval.</small><p>{{ plan.description }}</p></button></div>
       </section>
-      <footer class="actions"><button v-if="step > 1" type="button" class="secondary-button" :disabled="saving" @click="step -= 1">Back</button><button v-if="step < 4" type="submit" class="primary-button" :disabled="saving">{{ saving ? 'Saving progress…' : 'Continue' }} <span aria-hidden="true">→</span></button><template v-else><button type="button" class="secondary-button app-form-action" :aria-busy="saving" :disabled="saving" @click="finishSetup">{{ saving ? 'Saving…' : 'Skip plan for now' }}</button><button type="button" class="primary-button app-form-action" :aria-busy="saving" :disabled="saving || !selectedPlan" @click="continueWithPlan">{{ saving ? 'Saving…' : selectedPlan === 'free-trial' ? 'Continue with Free Trial' : 'Continue to plan options' }} <span aria-hidden="true">→</span></button></template></footer>
+      <footer class="actions"><button v-if="step > 1" type="button" class="secondary-button" :disabled="saving" @click="step -= 1">Back</button><button v-if="step < 4" type="submit" class="primary-button" :disabled="saving">{{ saving ? 'Saving progress…' : 'Continue' }} <span aria-hidden="true">→</span></button><button v-else type="button" class="primary-button app-form-action" :aria-busy="saving" :disabled="saving || !selectedPlan" @click="continueWithPlan">{{ saving ? 'Saving…' : selectedPlan === 'free-trial' ? 'Choose Free Trial' : 'Continue to PayMongo checkout' }} <span aria-hidden="true">→</span></button></footer>
       </form>
     </section>
   </main>
@@ -52,15 +52,18 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { collection, deleteField, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import Swal from 'sweetalert2'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { useAuth } from '@/composables/useAuth'
 import { buildSubscriptionPlanCatalog, createDefaultSubscriptionPlans, filterActiveSubscriptionPlans } from '@/utils/subscriptionPlans'
+import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
 import { copyOnboardingOperatingHours } from '@/utils/onboardingAvailability'
+import { useSubscriptionStore } from '@/stores/subscription'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
-const router = useRouter(); const { logout } = useAuth(); const step = ref(1); const loading = ref(true); const plansLoading = ref(true); const saving = ref(false); const error = ref(''); const brandingError = ref(''); const plans = ref([]); const selectedPlan = ref(''); const clinicLocation = ref(''); const clinicLocationLat = ref(''); const clinicLocationLng = ref(''); const logoFile = ref(null); const bannerFile = ref(null); const logoPreview = ref(''); const bannerPreview = ref(''); let unsubscribePlans = null
-const stepLabels = [{ number: 1, label: 'Clinic details', hint: 'Profile & services' }, { number: 2, label: 'Availability', hint: 'Branch hours' }, { number: 3, label: 'Clinic images', hint: 'Optional logo & banner' }, { number: 4, label: 'Plan', hint: 'Choose when ready' }]; const days = [{ key: 'monday', label: 'Monday' }, { key: 'tuesday', label: 'Tuesday' }, { key: 'wednesday', label: 'Wednesday' }, { key: 'thursday', label: 'Thursday' }, { key: 'friday', label: 'Friday' }, { key: 'saturday', label: 'Saturday' }, { key: 'sunday', label: 'Sunday' }]
+const router = useRouter(); const { logout } = useAuth(); const subscriptionStore = useSubscriptionStore(); const step = ref(1); const loading = ref(true); const plansLoading = ref(true); const saving = ref(false); const error = ref(''); const brandingError = ref(''); const plans = ref([]); const selectedPlan = ref(''); const clinicLocation = ref(''); const clinicLocationLat = ref(''); const clinicLocationLng = ref(''); const logoFile = ref(null); const bannerFile = ref(null); const logoPreview = ref(''); const bannerPreview = ref(''); let unsubscribePlans = null
+const stepLabels = [{ number: 1, label: 'Clinic details', hint: 'Profile & services' }, { number: 2, label: 'Availability', hint: 'Branch hours' }, { number: 3, label: 'Clinic images', hint: 'Optional logo & banner' }, { number: 4, label: 'Subscription', hint: 'Choose your plan' }]; const days = [{ key: 'monday', label: 'Monday' }, { key: 'tuesday', label: 'Tuesday' }, { key: 'wednesday', label: 'Wednesday' }, { key: 'thursday', label: 'Thursday' }, { key: 'friday', label: 'Friday' }, { key: 'saturday', label: 'Saturday' }, { key: 'sunday', label: 'Sunday' }]
 const locationMapUrl = computed(() => { if (!clinicLocationLat.value || !clinicLocationLng.value) return ''; const lat = Number(clinicLocationLat.value); const lng = Number(clinicLocationLng.value); return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? `https://www.google.com/maps?q=${lat},${lng}&z=15&output=embed` : '' })
 const defaultOperatingHours = () => Object.fromEntries(days.map(({ key }) => [key, { ranges: [{ open: '09:00', close: '18:00' }], closed: key === 'sunday' }]))
 const form = ref({ clinicName: '', businessEmail: '', contactNumber: '', description: '', services: [], operatingHours: defaultOperatingHours(), profilePicture: '', bannerPicture: '' })
@@ -79,9 +82,122 @@ const nextStep = async () => { if (!validateStep()) return; saving.value = true;
 const chooseBrandingImage = (event, kind) => { const file = event.target.files?.[0]; if (!file) return; brandingError.value = ''; if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) { brandingError.value = 'Choose a JPG, PNG, or WebP image up to 5 MB.'; event.target.value = ''; return } const preview = URL.createObjectURL(file); if (kind === 'logo') { if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value); logoFile.value = file; logoPreview.value = preview } else { if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value); bannerFile.value = file; bannerPreview.value = preview } event.target.value = '' }
 const saveBrandingCheckpoint = async () => { const uid = auth.currentUser?.uid; if (!uid) return false; try { const uploadImage = async (file, kind) => { if (!file) return ''; const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'; const imageRef = storageRef(storage, `clinicMedia/${uid}/onboarding-${kind}-${Date.now()}.${extension}`); await uploadBytes(imageRef, file, { contentType: file.type }); return getDownloadURL(imageRef) }; const profilePicture = logoFile.value ? await uploadImage(logoFile.value, 'profile') : (form.value.profilePicture || ''); const bannerPicture = bannerFile.value ? await uploadImage(bannerFile.value, 'banner') : (form.value.bannerPicture || ''); await setDoc(doc(db, 'clinics', uid), { profilePicture, bannerPicture, onboardingDraft: { completedStep: 3, profilePicture, bannerPicture, updatedAt: serverTimestamp() }, updatedAt: serverTimestamp() }, { merge: true }); form.value.profilePicture = profilePicture; form.value.bannerPicture = bannerPicture; logoFile.value = null; bannerFile.value = null; return true } catch (reason) { console.error('Unable to save clinic image progress:', reason); brandingError.value = 'We could not save your images. Please retry or skip this step.'; return false } }
 const skipBranding = async () => { saving.value = true; try { logoFile.value = null; bannerFile.value = null; if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value); if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value); logoPreview.value = form.value.profilePicture || ''; bannerPreview.value = form.value.bannerPicture || ''; brandingError.value = ''; if (await saveBrandingCheckpoint()) step.value = 4 } finally { saving.value = false } }
-const saveSetup = async (skippedPlan = false) => { if (!validateStep()) return false; const uid = auth.currentUser?.uid; if (!uid) return false; saving.value = true; try { if (logoFile.value || bannerFile.value) { if (!await saveBrandingCheckpoint()) return false } const publishedAt = serverTimestamp(); await setDoc(doc(db, 'clinics', uid), { profilePicture: form.value.profilePicture || '', bannerPicture: form.value.bannerPicture || '', businessEmail: form.value.businessEmail.toLowerCase(), contactNumber: form.value.contactNumber, description: form.value.description, services: [...form.value.services], operatingHours: copyOnboardingOperatingHours(form.value.operatingHours, days.map(({ key }) => key)), isPublished: true, publishedAt, clinicSetupRequired: false, clinicSetupCompletedAt: publishedAt, clinicSetupVersion: 1, onboardingDraft: deleteField(), ...(skippedPlan ? { clinicSetupPlanSkippedAt: serverTimestamp() } : {}), updatedAt: serverTimestamp() }, { merge: true }); return true } catch (reason) { console.error('Unable to complete clinic setup:', reason); error.value = 'We could not save your clinic setup. Please try again.'; return false } finally { saving.value = false } }
-const finishSetup = async () => { if (await saveSetup(true)) await router.replace('/clinic/dashboard') }
-const continueWithPlan = async () => { if (!selectedPlan.value) return; if (await saveSetup()) await router.push({ path: '/account/plans', query: { plan: selectedPlan.value } }) }
+const saveSetup = async () => {
+  if (!validateStep()) return false
+  const uid = auth.currentUser?.uid
+  if (!uid) return false
+  saving.value = true
+  try {
+    if (logoFile.value || bannerFile.value) {
+      if (!await saveBrandingCheckpoint()) return false
+    }
+    const publishedAt = serverTimestamp()
+    await setDoc(doc(db, 'clinics', uid), {
+      profilePicture: form.value.profilePicture || '',
+      bannerPicture: form.value.bannerPicture || '',
+      businessEmail: form.value.businessEmail.toLowerCase(),
+      contactNumber: form.value.contactNumber,
+      description: form.value.description,
+      services: [...form.value.services],
+      operatingHours: copyOnboardingOperatingHours(form.value.operatingHours, days.map(({ key }) => key)),
+      isPublished: true,
+      publishedAt,
+      clinicSetupRequired: false,
+      clinicSetupCompletedAt: publishedAt,
+      clinicSetupVersion: 1,
+      onboardingDraft: deleteField(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+    return true
+  } catch (reason) {
+    console.error('Unable to complete clinic setup:', reason)
+    error.value = 'We could not save your clinic setup. Please try again.'
+    return false
+  } finally {
+    saving.value = false
+  }
+}
+
+const fetchBackendJson = async (path, options = {}) => {
+  let lastError = null
+  for (const baseUrl of OTP_API_BASE_CANDIDATES) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options)
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+      if (response.status === 404) {
+        lastError = new Error(`Backend route not found on ${baseUrl}.`)
+        continue
+      }
+      if (!contentType.includes('application/json')) {
+        lastError = new Error(`Backend returned a non-JSON response on ${baseUrl}.`)
+        continue
+      }
+      const payload = await response.json()
+      if (!response.ok || !payload?.success) {
+        throw Object.assign(new Error(payload?.error || 'Unable to complete subscription setup.'), { terminal: true })
+      }
+      return payload
+    } catch (reason) {
+      if (reason.terminal) throw reason
+      lastError = reason
+    }
+  }
+  throw lastError || new Error('Unable to reach the subscription backend.')
+}
+
+const startFreeTrial = async () => {
+  const currentUser = auth.currentUser
+  if (!currentUser) throw new Error('Please sign in again to start the Free Trial.')
+  return fetchBackendJson('/subscription/start-trial', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${await currentUser.getIdToken()}`,
+    },
+    body: JSON.stringify({}),
+  })
+}
+
+const continueWithPlan = async () => {
+  if (!selectedPlan.value || saving.value) return
+  error.value = ''
+
+  if (selectedPlan.value === 'free-trial') {
+    saving.value = true
+    try {
+      const result = await startFreeTrial()
+      if (!await saveSetup()) return
+      saving.value = true
+      await subscriptionStore.refreshSubscription()
+      await Swal.fire({
+        title: 'Free Trial Chosen',
+        text: `Your ${result?.data?.trialDays || 14}-day Premium trial is active. Taking you to your clinic dashboard.`,
+        icon: 'success',
+        timer: 1800,
+        showConfirmButton: false,
+      })
+      await router.replace('/clinic/dashboard')
+    } catch (reason) {
+      console.error('Unable to start clinic onboarding trial:', reason)
+      error.value = reason?.message || 'We could not start the Free Trial. Please try again.'
+    } finally {
+      saving.value = false
+    }
+    return
+  }
+
+  if (!['basic', 'premium'].includes(selectedPlan.value)) {
+    error.value = 'Choose Free Trial, Basic, or Premium to continue.'
+    return
+  }
+
+  if (await saveSetup()) {
+    await router.push({
+      path: '/subscription/checkout',
+      query: { plan: selectedPlan.value, from: 'owner', onboarding: '1' },
+    })
+  }
+}
 onMounted(trackPageLoad(() => { loadClinic(); loadPlans() })); onBeforeUnmount(() => { unsubscribePlans?.(); if (logoPreview.value.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value); if (bannerPreview.value.startsWith('blob:')) URL.revokeObjectURL(bannerPreview.value) })
 </script>
 

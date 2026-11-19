@@ -620,13 +620,15 @@ const handlePayMongoReturn = async () => {
         text:
           subscriptionAction?.action === 'scheduled_downgrade'
             ? (subscriptionAction?.message || 'Your plan change will take effect after the current billing cycle.')
-            : 'Redirecting you back to your subscription settings.',
+            : isOnboardingFlow.value
+              ? `Your ${pending.planName || 'subscription'} is active. Redirecting you to your clinic dashboard.`
+              : 'Redirecting you back to your subscription settings.',
         icon: 'success',
         timer: 1400,
         showConfirmButton: false,
       })
 
-      await router.replace({ path: '/account/subscription' })
+      await router.replace({ path: isOnboardingFlow.value ? '/clinic/dashboard' : '/account/subscription' })
       return
     }
 
@@ -688,10 +690,10 @@ const goBack = () => {
 }
 
 onMounted(trackPageLoad(async () => {
-  showPanels.value = true
   await loadPlans()
-  await handlePayMongoReturn()
   await prefillFromAccount()
+  await handlePayMongoReturn()
+  showPanels.value = true
 }))
 
 onBeforeUnmount(() => {

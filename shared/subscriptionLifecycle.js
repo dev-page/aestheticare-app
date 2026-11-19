@@ -25,6 +25,11 @@ export function subscriptionLifecycle(record = {}, now = new Date()) {
   // `free-trial` is an offer, not an entitlement on its own. Only a trusted
   // trial activation (`paymentStatus: trial`) grants Premium permissions.
   const plan = trial ? 'premium' : storedPlan === TRIAL_PLAN ? '' : storedPlan
+  // Recover legacy paid records that kept the registration-time
+  // "unsubscribed" marker after their plan and payment were activated.
+  const effectiveStoredStatus = plan && storedStatus === 'unsubscribed'
+    ? (trial ? 'trial' : ['paid', 'succeeded'].includes(paymentStatus) ? 'active' : storedStatus)
+    : storedStatus
   const expiresAt = subscriptionDate(trial ? (record.subscriptionTrialEndsAt || record.subscriptionExpiresAt) : record.subscriptionExpiresAt)
   const recordedGraceEndsAt = subscriptionDate(record.subscriptionGraceEndsAt || record.gracePeriodEndDate)
   const graceEndsAt = recordedGraceEndsAt || (expiresAt ? new Date(expiresAt.getTime() + GRACE_PERIOD_DAYS * 86400000) : null)
@@ -37,8 +42,8 @@ export function subscriptionLifecycle(record = {}, now = new Date()) {
     ? 'unsubscribed'
     : gracePeriodEnded
       ? 'expired'
-    : storedStatus && !(['trial', 'active', 'canceled'].includes(storedStatus) && endedCurrentCycle)
-      ? storedStatus
+    : effectiveStoredStatus && !(['trial', 'active', 'canceled'].includes(effectiveStoredStatus) && endedCurrentCycle)
+      ? effectiveStoredStatus
       : endedCurrentCycle ? 'grace_period' : (trial ? 'trial' : 'active')
   return { plan, status, trial, expiresAt, graceEndsAt, retentionEndsAt,
     isOperational: Boolean(plan) && (['trial', 'active', 'canceled'].includes(status) && (!expiresAt || expiresAt > now)

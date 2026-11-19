@@ -65,7 +65,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     feature: 'reports',
     children: [
       { label: 'Approve Purchase Orders', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'finance:payables:view' },
-      { label: 'Listing Approvals', icon: 'mdi:tag-check-outline', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
+      { label: 'Listing Approvals', icon: 'tag-check', to: '/finance/listing-approvals', permission: 'finance:reports:view' },
       { label: 'Employee Compensation', icon: 'mdi:account-cash-outline', to: '/finance/employee-compensation', feature: 'payroll', permissionsAny: ['payroll:update', 'payroll:view'] },
       { label: 'Payroll Management', icon: 'mdi:calculator', to: '/finance/payroll-management', feature: 'payroll', permission: 'payroll:update' },
       { label: 'Payroll Approval', icon: 'mdi:cash-check', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },

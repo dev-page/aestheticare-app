@@ -18,6 +18,13 @@ exports.runSubscriptionMaintenance = async ({ admin, now = new Date(), normalize
       let plan = paymentStatus === 'trial' ? 'premium' : normalizePlanKey(record.subscriptionPlan || record.plan)
       let expiry = toDate(record.subscriptionExpiresAt)
       let status = String(record.subscriptionAccessStatus || (paymentStatus === 'trial' ? 'trial' : (plan ? 'active' : 'unsubscribed'))).toLowerCase()
+      // Registration initializes clinics as unsubscribed. Older paid-plan
+      // activation writes updated the plan and payment dates but left that
+      // marker behind, so recover it from a verified paid entitlement.
+      if (plan && status === 'unsubscribed') {
+        if (paymentStatus === 'trial') status = 'trial'
+        else if (['paid', 'succeeded'].includes(paymentStatus)) status = 'active'
+      }
       if (!plan && !record.pendingSubscriptionPlan) status = 'unsubscribed'
       let payload = {}
       const pending = normalizePlanKey(record.pendingSubscriptionPlan)

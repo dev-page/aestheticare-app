@@ -43,15 +43,19 @@ const dateOf = (value) => {
 // public availability and its cutoff, not subscription or payment details.
 const customerAvailability = (clinic, now = new Date()) => {
   const storedStatus = String(clinic.subscriptionAccessStatus || clinic.subscriptionStatus || '').trim().toLowerCase()
-  const trial = String(clinic.paymentStatus || '').trim().toLowerCase() === 'trial'
+  const paymentStatus = String(clinic.paymentStatus || '').trim().toLowerCase()
+  const trial = paymentStatus === 'trial'
   const rawPlan = String(clinic.subscriptionPlan || clinic.plan || clinic.selectedPlan || '').trim().toLowerCase()
   const plan = trial ? 'premium' : rawPlan.includes('free-trial') || rawPlan === 'trial' ? '' : rawPlan.includes('premium') ? 'premium' : rawPlan.includes('basic') ? 'basic' : ''
+  const effectiveStoredStatus = plan && storedStatus === 'unsubscribed'
+    ? (trial ? 'trial' : ['paid', 'succeeded'].includes(paymentStatus) ? 'active' : storedStatus)
+    : storedStatus
   const expiresAt = dateOf(trial ? (clinic.subscriptionTrialEndsAt || clinic.subscriptionExpiresAt) : clinic.subscriptionExpiresAt)
   const graceEndsAt = dateOf(clinic.subscriptionGraceEndsAt || clinic.gracePeriodEndDate) || (expiresAt ? new Date(expiresAt.getTime() + 7 * 86400000) : null)
   const endedCurrentCycle = Boolean(expiresAt && expiresAt <= now)
   const graceEnded = Boolean(graceEndsAt && graceEndsAt <= now && (endedCurrentCycle || storedStatus === 'grace_period'))
   const status = !plan ? 'unsubscribed' : graceEnded ? 'expired'
-    : storedStatus && !(['trial', 'active', 'canceled'].includes(storedStatus) && endedCurrentCycle) ? storedStatus
+    : effectiveStoredStatus && !(['trial', 'active', 'canceled'].includes(effectiveStoredStatus) && endedCurrentCycle) ? effectiveStoredStatus
       : endedCurrentCycle ? 'grace_period' : (trial ? 'trial' : 'active')
   const operational = Boolean(plan) && (['trial', 'active', 'canceled'].includes(status) && (!expiresAt || expiresAt > now)
     || status === 'grace_period' && Boolean(graceEndsAt && graceEndsAt > now))

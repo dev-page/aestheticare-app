@@ -2,7 +2,7 @@
   "name": "aestheticare-functions",
   "private": true,
   "engines": {
-    "node": "24.5.0"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {

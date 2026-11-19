@@ -4187,6 +4187,7 @@ const applySubscriptionPaymentForOwner = async ({
   await updateOwnerSubscriptionDocuments(firestore, ownerUid, {
     subscriptionPlan: normalizedTargetPlan,
     paymentStatus: nextPaymentStatus,
+    subscriptionAccessStatus: 'active',
     paymentId: paymentReference || null,
     subscriptionStartedAt: paymentDate,
     subscriptionExpiresAt: nextExpiresAt,
