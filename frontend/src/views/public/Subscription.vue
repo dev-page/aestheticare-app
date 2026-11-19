@@ -224,6 +224,7 @@ onBeforeUnmount(() => {
 
 .popup-title {
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-weight: 700;
   font-size: clamp(2rem, 3.7vw, 3.35rem);
   line-height: 0.94;
   letter-spacing: -0.04em;

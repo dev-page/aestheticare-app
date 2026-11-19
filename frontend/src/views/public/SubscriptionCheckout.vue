@@ -800,6 +800,7 @@ onBeforeRouteLeave((_to, _from, next) => {
 .checkout-title {
   margin: 0;
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-weight: 700;
   font-size: clamp(2rem, 4vw, 3.15rem);
   line-height: 0.95;
   letter-spacing: -0.04em;
@@ -991,6 +992,7 @@ onBeforeRouteLeave((_to, _from, next) => {
 .summary-title {
   margin: 0;
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-weight: 700;
   font-size: clamp(1.6rem, 2.4vw, 2.3rem);
   line-height: 1;
   letter-spacing: -0.03em;

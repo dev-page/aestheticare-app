@@ -761,7 +761,7 @@ onMounted(() => {
 }
 
 .login-title {
-  font-family: "Playfair Display", "Times New Roman", serif;
+  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: #6f3f2a;
@@ -772,7 +772,7 @@ onMounted(() => {
 }
 
 .nav-brand {
-  font-family: "Playfair Display", "Times New Roman", serif;
+  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
   letter-spacing: 0.04em;
   background: linear-gradient(120deg, #3c2519 0%, #9f6946 42%, #c99673 70%, #744a33 100%);

@@ -67,7 +67,7 @@ button, input, select, textarea { font-family: var(--ac-font-ui); }
 :is(h1, h2, .page-title, .section-title) {
   color: var(--ac-text);
   font-family: var(--ac-font-display);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -.025em;
 }
 
@@ -736,7 +736,7 @@ body .supplier-theme :is(.chat-compose button, .exact-item-card footer button[ty
 
 .aestheticare-app:not(.landing-route) :is(h1, h2, .page-title, .section-title) {
   font-family: var(--ac-font-display);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -.025em;
 }
 

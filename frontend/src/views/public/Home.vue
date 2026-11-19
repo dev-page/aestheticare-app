@@ -961,7 +961,7 @@ export default {
 .hero-editorial-title {
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 0.96;
 }
@@ -1064,7 +1064,7 @@ export default {
   font-size: clamp(2.35rem, 4vw, 4.25rem);
   line-height: 0.98;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.03em;
   background: linear-gradient(120deg, #92583a 0%, #c78558 50%, #a66747 100%);
   -webkit-background-clip: text;
@@ -1134,7 +1134,7 @@ export default {
   font-size: clamp(2.6rem, 5.3vw, 5.5rem);
   line-height: 0.9;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: -0.035em;
   margin: 0 0 1rem;
@@ -1340,7 +1340,7 @@ export default {
   font-size: clamp(2.25rem, 4vw, 4rem);
   line-height: 0.96;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.03em;
   background: linear-gradient(120deg, #8a5237 0%, #c68457 52%, #a86444 100%);
   -webkit-background-clip: text;
@@ -1445,7 +1445,7 @@ export default {
   margin: 0 0 0.65rem;
   font-family: "Bodoni Moda", "Playfair Display", serif;
   font-size: 1.45rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.08;
   text-align: center;
   color: #3b281d;
@@ -1946,7 +1946,7 @@ export default {
   font-size: clamp(2.55rem, 4.9vw, 5.2rem);
   line-height: 0.94;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.16em;
   background: linear-gradient(120deg, #fff4dc 0%, #f1d4aa 28%, #d7aa7d 58%, #c6946c 100%);
   -webkit-background-clip: text;
@@ -1998,7 +1998,7 @@ export default {
   margin: 0;
   font-family: "Bodoni Moda", "Playfair Display", serif;
   font-size: 1.15rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff8eb;
   line-height: 1.05;
 }

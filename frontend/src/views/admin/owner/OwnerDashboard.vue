@@ -1081,6 +1081,7 @@ const renderEmployeeChart = () => {
 .dashboard-title {
   margin: 0;
   font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-weight: 700;
   font-size: clamp(2rem, 4vw, 3.2rem);
   line-height: 0.94;
   letter-spacing: -0.04em;
