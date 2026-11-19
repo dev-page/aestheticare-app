@@ -210,45 +210,40 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
               update.consultationWindowEndAt = new Date(now.getTime() + window.durationMinutes * 60000).toISOString()
               update.consultationDurationMinutes = window.durationMinutes
             }
-            const resourceRefs = (appointment.resources || []).filter((r) => r.kind === 'material').map((r) => ({ ...r, ref: db.collection('inventoryItems').doc(r.id) }))
-            const stocks = []
-            for (const resource of resourceRefs) stocks.push({ resource, snapshot: await tx.get(resource.ref) })
-            for (const { resource, snapshot: stock } of stocks) check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
-            const lotPlans = []
-            for (const { resource, snapshot: stock } of stocks) {
-              const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', resource.id))
-              lotPlans.push({
-                resource,
-                plan: planLotConsumption({
+            // Confirm the booked supplies are still available before care starts,
+            // while leaving their stock and lot balances untouched until completion.
+            if (!onlineConsultation && !appointment.materialsConsumed) {
+              const plannedMaterials = new Map()
+              for (const resource of appointment.resources || []) {
+                if (resource.kind !== 'material') continue
+                const id = String(resource.id || '').trim()
+                const quantity = Number(resource.quantity)
+                check(id && Number.isSafeInteger(quantity) && quantity > 0, 'A required material quantity is invalid.', 409)
+                const totalQuantity = Number(plannedMaterials.get(id)?.quantity || 0) + quantity
+                check(Number.isSafeInteger(totalQuantity), 'A required material quantity is invalid.', 409)
+                plannedMaterials.set(id, { ...resource, id, quantity: totalQuantity })
+              }
+              const stocks = []
+              for (const resource of plannedMaterials.values()) {
+                const stockRef = db.collection('inventoryItems').doc(resource.id)
+                stocks.push({ resource, snapshot: await tx.get(stockRef) })
+              }
+              for (const { resource, snapshot: stock } of stocks) {
+                check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
+                const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', resource.id))
+                planLotConsumption({
                   branchId: appointment.branchId,
                   itemId: resource.id,
                   item: stock.data(),
                   lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
                   quantity: resource.quantity,
                   today: inventoryDay(),
-                }),
-              })
+                })
+              }
             }
             if (onlineConsultation) tx.set(db.collection('bookingResourceLocks').doc(appointment.branchId), { updatedAt: timestamp })
             tx.set(teamStart.termsRef, { ...teamStart.terms, capturedAt: timestamp })
             update.treatmentTeam = teamStart.members
-            for (const { resource, snapshot: stock } of stocks) tx.update(resource.ref, { currentStock: Number(stock.data().currentStock) - resource.quantity, updatedAt: timestamp })
-            for (const { plan } of lotPlans) for (const write of plan.lotWrites) tx.set(db.collection('supplyLots').doc(write.id), {
-              ...write.data,
-              ...(write.created ? { receivedAt: timestamp, createdAt: timestamp } : {}),
-              updatedAt: timestamp,
-            }, { merge: true })
-            tx.set(db.collection('inventoryMovements').doc('service-' + ref.id), {
-              branchId: appointment.branchId,
-              appointmentId: ref.id,
-              type: 'service_consumption',
-              items: (appointment.resources || []).filter((r) => r.kind === 'material'),
-              lotAllocations: lotPlans.flatMap(({ resource, plan }) => plan.allocations.map(allocation => ({ inventoryItemId: resource.id, ...allocation }))),
-              lotAdjustments: lotPlans.flatMap(({ resource, plan }) => plan.adjustments.map(adjustment => ({ inventoryItemId: resource.id, ...adjustment }))),
-              createdBy: req.user.uid,
-              createdAt: timestamp,
-            })
-            update.materialsConsumed = true
             update.status = 'Ongoing'; update.startedAt = timestamp; update.startedById = req.user.uid
           } else if (transition === 'worker_complete') {
             check(worker, 'Only the assigned worker can finish the service.', 403)
@@ -285,6 +280,102 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
                 return { name, dosage, frequency, duration, instructions, quantity: prescribedQuantity }
               })
               update.prescriptionStatus = update.prescriptions.length ? 'pending' : 'none'
+            }
+            // Consume only the supplies the practitioner reports using at completion.
+            // Older appointments may already have been consumed at start, so the
+            // flag prevents them from being charged a second time after deployment.
+            if (!appointment.materialsConsumed) {
+              const plannedMaterials = new Map()
+              for (const resource of appointment.resources || []) {
+                if (resource.kind !== 'material') continue
+                const id = String(resource.id || '').trim()
+                const quantity = Number(resource.quantity)
+                check(id && Number.isSafeInteger(quantity) && quantity > 0, 'A required material quantity is invalid.', 409)
+                const previous = plannedMaterials.get(id)
+                const totalQuantity = Number(previous?.quantity || 0) + quantity
+                check(Number.isSafeInteger(totalQuantity), 'A required material quantity is invalid.', 409)
+                plannedMaterials.set(id, { ...resource, id, quantity: totalQuantity })
+              }
+
+              let materialRequirements
+              if (req.body?.materialsUsed === undefined) {
+                // Keep older clients compatible: absent actual-use data means the
+                // scheduled quantities were used.
+                materialRequirements = [...plannedMaterials.values()]
+                update.materialsUsed = materialRequirements.map(resource => ({
+                  id: resource.id,
+                  name: resource.name || '',
+                  plannedQuantity: resource.quantity,
+                  quantity: resource.quantity,
+                }))
+              } else {
+                check(Array.isArray(req.body.materialsUsed), 'Actual material usage is invalid.', 400)
+                const reported = new Map()
+                for (const [index, item] of req.body.materialsUsed.entries()) {
+                  check(item && typeof item === 'object' && !Array.isArray(item), `Material usage ${index + 1} is invalid.`, 400)
+                  const id = String(item.id || '').trim()
+                  const quantity = Number(item.quantity)
+                  check(plannedMaterials.has(id), `Material usage ${index + 1} is not part of this appointment.`, 400)
+                  check(!reported.has(id), `Material usage for ${id} was provided more than once.`, 400)
+                  check(Number.isSafeInteger(quantity) && quantity >= 0, `Material usage ${index + 1} must be a whole number of zero or more.`, 400)
+                  reported.set(id, quantity)
+                }
+                check(reported.size === plannedMaterials.size, 'Report the actual quantity for every appointment supply.', 400)
+                update.materialsUsed = [...plannedMaterials.values()].map(resource => ({
+                  id: resource.id,
+                  name: resource.name || '',
+                  plannedQuantity: resource.quantity,
+                  quantity: reported.get(resource.id) || 0,
+                }))
+                materialRequirements = update.materialsUsed
+                  .filter(resource => resource.quantity > 0)
+                  .map(resource => ({ ...plannedMaterials.get(resource.id), plannedQuantity: resource.plannedQuantity, quantity: resource.quantity }))
+              }
+
+              const stocks = []
+              for (const resource of materialRequirements.values()) {
+                const ref = db.collection('inventoryItems').doc(resource.id)
+                stocks.push({ resource, ref, snapshot: await tx.get(ref) })
+              }
+              for (const { resource, snapshot: stock } of stocks) {
+                check(stock.exists && Number(stock.data().currentStock) >= resource.quantity, 'A required material is no longer available. Contact the clinic.')
+              }
+
+              const lotPlans = []
+              for (const { resource, snapshot: stock } of stocks) {
+                const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', resource.id))
+                lotPlans.push({
+                  resource,
+                  plan: planLotConsumption({
+                    branchId: appointment.branchId,
+                    itemId: resource.id,
+                    item: stock.data(),
+                    lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+                    quantity: resource.quantity,
+                    today: inventoryDay(),
+                  }),
+                })
+              }
+
+              for (const { resource, ref, snapshot: stock } of stocks) {
+                tx.update(ref, { currentStock: Number(stock.data().currentStock) - resource.quantity, updatedAt: timestamp })
+              }
+              for (const { plan } of lotPlans) for (const write of plan.lotWrites) tx.set(db.collection('supplyLots').doc(write.id), {
+                ...write.data,
+                ...(write.created ? { receivedAt: timestamp, createdAt: timestamp } : {}),
+                updatedAt: timestamp,
+              }, { merge: true })
+              if (materialRequirements.length) tx.set(db.collection('inventoryMovements').doc('service-' + ref.id), {
+                branchId: appointment.branchId,
+                appointmentId: ref.id,
+                type: 'service_consumption',
+                items: materialRequirements.map(resource => ({ ...resource, quantity: resource.quantity })),
+                lotAllocations: lotPlans.flatMap(({ resource, plan }) => plan.allocations.map(allocation => ({ inventoryItemId: resource.id, ...allocation }))),
+                lotAdjustments: lotPlans.flatMap(({ resource, plan }) => plan.adjustments.map(adjustment => ({ inventoryItemId: resource.id, ...adjustment }))),
+                createdBy: req.user.uid,
+                createdAt: timestamp,
+              })
+              update.materialsConsumed = true
             }
             update.workerCompleted = true; update.workerCompletedAt = timestamp; update.workerCompletedById = req.user.uid
             update.status = walkIn ? 'Completed' : 'Awaiting Customer Confirmation'

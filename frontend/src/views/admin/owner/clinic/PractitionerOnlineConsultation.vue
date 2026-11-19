@@ -555,10 +555,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (treatmentNotes.length < 10) throw Error('Enter consultation notes of at least 10 characters.')
         if (!meetEndedConfirmed.value) throw Error('End the Google Meet call for everyone before finishing the consultation.')
         const prescriptions = parsePrescriptionText(completionPrescriptionsText.value)
+        const materialsUsed = [...new Map((appointment.resources || [])
+          .filter(resource => resource.kind === 'material' && String(resource.id || '').trim())
+          .map(resource => [String(resource.id).trim(), { id: String(resource.id).trim(), quantity: 0 }])).values()]
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions, meetEndedConfirmed: true }),
+          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions, materialsUsed, meetEndedConfirmed: true }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {
@@ -569,6 +572,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         appointment.prescriptions = prescriptions
         appointment.workerCompleted = true
         appointment.workerCompletedAt = new Date().toISOString()
+        appointment.materialsUsed = materialsUsed
         completionAppointment.value = null
         meetEndedConfirmed.value = false
         toast.success('Consultation notes saved. The customer can confirm completion or report a problem.')

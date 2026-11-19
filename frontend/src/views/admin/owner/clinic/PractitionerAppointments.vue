@@ -142,6 +142,33 @@ const localDateKey = (date = new Date()) => {
   return `${year}-${month}-${day}`
 }
 
+const promptForMaterialsUsed = appointment => {
+  const planned = new Map()
+  for (const resource of appointment?.resources || []) {
+    if (resource.kind !== 'material') continue
+    const id = String(resource.id || '').trim()
+    if (!id) continue
+    const current = planned.get(id) || { id, name: resource.name || '', quantity: 0 }
+    current.quantity += Number(resource.quantity) || 0
+    planned.set(id, current)
+  }
+
+  const materialsUsed = []
+  for (const resource of planned.values()) {
+    const label = resource.name || `supply ${resource.id}`
+    const entered = window.prompt(`How many units of ${label} were actually used? Enter 0 if none.`, String(resource.quantity))
+    if (entered === null) return null
+    const enteredText = String(entered).trim()
+    const quantity = Number(enteredText)
+    if (!/^\d+$/.test(enteredText) || !Number.isSafeInteger(quantity)) {
+      toast.error(`Enter a whole number of zero or more for ${label}.`)
+      return null
+    }
+    materialsUsed.push({ id: resource.id, quantity })
+  }
+  return materialsUsed
+}
+
 const formatAppointmentDate = (value) => {
   const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!match) return value || '-'
@@ -188,9 +215,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (treatmentNotes === null) return false
           const aftercareInstructions = window.prompt('Aftercare instructions (optional):', '')
           if (aftercareInstructions === null) return false
+          const materialsUsed = promptForMaterialsUsed(appointment)
+          if (materialsUsed === null) return false
           const prescriptions = String(appointment.type || '').toLowerCase() === 'consultation' ? promptForPrescriptions(appointment.prescriptions) : undefined
           if (prescriptions === null) return false
-          extra = { treatmentNotes, aftercareInstructions, ...(prescriptions ? { prescriptions } : {}) }
+          extra = { treatmentNotes, aftercareInstructions, materialsUsed, ...(prescriptions ? { prescriptions } : {}) }
         }
         const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action, ...extra }) })
         const payload = await response.json()

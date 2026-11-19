@@ -109,6 +109,9 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   for (const resource of resources) {
     inventory.push(await bookingInventoryRow({ tx, db, branchId, resource, scheduledDate: reservation.date }))
   }
+  for (const [index, resource] of resources.entries()) {
+    resource.name = String(inventory[index]?.name || inventory[index]?.itemName || inventory[index]?.productName || inventory[index]?.supplyName || '').trim()
+  }
   const group = reservation.groupBooking && typeof reservation.groupBooking === 'object' ? reservation.groupBooking : null
   check(!group || !services.some(service => normalized(service.postType) === 'consultation'), 'Consultations are individual appointments. Group consultations are not available.', 400)
   const guests = Array.isArray(group?.guests) ? group.guests : []
