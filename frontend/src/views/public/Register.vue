@@ -3276,8 +3276,8 @@ const handleRegistrationSubmit = () => {
             </div>
 
             <div class="relative">
-              <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">
-                <span class="inline-flex items-center px-3 text-charcoal-700 select-none">+63</span>
+              <div class="flex items-center overflow-hidden rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/55 focus-within:border-gold-700 focus-within:bg-white/75 focus-within:shadow-[0_0_0_3px_rgba(201,162,77,0.16)]">
+                <span class="inline-flex h-16 items-center border-r border-[rgba(232,167,58,0.22)] bg-cream-100/80 px-3 text-sm font-semibold tracking-[0.08em] text-charcoal-700 select-none sm:px-4">+63</span>
                 <input
                   id="clinic-contact-number"
                   name="tel-national"
@@ -3289,11 +3289,11 @@ const handleRegistrationSubmit = () => {
                   maxlength="10"
                   placeholder=" "
                   required
-                  class="peer flex-1 h-16 pt-4 pb-2 px-3 bg-transparent text-charcoal-700 placeholder-transparent focus:outline-none"
+                  class="h-16 min-w-0 flex-1 bg-transparent px-3 text-charcoal-700 placeholder:text-charcoal-400 focus:outline-none"
                   @input="sanitizeContactNumber"
                 />
-                <label for="clinic-contact-number" class="floating-label contact-label">Business Contact Number</label>
               </div>
+              <label for="clinic-contact-number" class="floating-label floating-label-prefix">Business Contact Number</label>
               <p class="mt-1.5 px-1 text-xs leading-5 text-charcoal-500">Enter exactly 10 digits, starting with 9. The +63 country code is already included.</p>
             </div>
 
@@ -4973,10 +4973,6 @@ const handleRegistrationSubmit = () => {
   font-size: 0.68rem !important;
   color: #8c5a3a;
 }
-.contact-label {
-  left: 3rem;
-}
-
 .terms-row {
   margin-top: 1.15rem !important;
 }
