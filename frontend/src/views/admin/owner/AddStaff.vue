@@ -2,7 +2,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getFirestore, collection, doc, getDocs, query, where } from 'firebase/firestore'
+import { getFirestore, collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -16,6 +16,7 @@ import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchSc
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { employeeSpecialtyTypes } from '../../../../../shared/practitionerTeam.js'
+import { builtInRoleTemplates, getTemplatePermissions } from '../../../../../shared/clinicRoleTemplates.js'
 
 const PASSWORD_LENGTH = 12
 const PASSWORD_PARTS = {
@@ -68,6 +69,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const loading = ref(true)
     const branches = ref([])
     const customRoles = ref([])
+    const rolesLoading = ref(false)
+    const rolesLoadError = ref('')
     const currentOwnerId = ref('')
     const currentBranchIds = ref([])
     const emailCheckingTimer = ref(null)
@@ -150,37 +153,78 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       loading.value = false
     })
 
-    const loadCustomRoles = trackPageLoad(async () => {
+    const loadCustomRoles = trackPageLoad(async (ownerId = currentOwnerId.value) => {
+      rolesLoading.value = true
+      rolesLoadError.value = ''
       const user = auth.currentUser
       if (!user) {
         customRoles.value = []
+        rolesLoading.value = false
         return
       }
 
-      const scope = await loadOwnerBranchScope(db, user.uid)
-      currentOwnerId.value = scope.ownerId || user.uid
+      try {
+        let resolvedOwnerId = String(ownerId || '').trim()
+        if (!resolvedOwnerId) {
+          const scope = await loadOwnerBranchScope(db, user.uid)
+          resolvedOwnerId = scope.ownerId || user.uid
+        }
+        currentOwnerId.value = resolvedOwnerId
 
-      const rolesQuery = query(
-        collection(db, 'clinicRoles'),
-        where('ownerId', '==', currentOwnerId.value)
-      )
-      const snapshot = await getDocs(rolesQuery)
-      customRoles.value = snapshot.docs
-        .map((roleDoc) => {
-          const data = roleDoc.data() || {}
-          const permissions = Array.isArray(data.permissions)
-            ? data.permissions.map((value) => String(value || '').trim()).filter(Boolean)
-            : []
+        const rolesQuery = query(
+          collection(db, 'clinicRoles'),
+          where('ownerId', '==', resolvedOwnerId)
+        )
+        let snapshot = await getDocs(rolesQuery)
+        const existingBuiltInKeys = new Set(
+          snapshot.docs
+            .map((roleDoc) => String(roleDoc.data()?.builtinKey || '').trim())
+            .filter(Boolean)
+        )
+        const missingTemplates = builtInRoleTemplates.filter((template) => !existingBuiltInKeys.has(template.key))
 
-          return {
-            id: roleDoc.id,
-            name: String(data.name || '').trim(),
-            color: String(data.color || '').trim(),
-            permissions,
-          }
-        })
-        .filter((role) => role.name && role.permissions.length > 0)
-        .sort((left, right) => left.name.localeCompare(right.name))
+        if (missingTemplates.length) {
+          await Promise.all(missingTemplates.map((template) => setDoc(
+            doc(db, 'clinicRoles', `${resolvedOwnerId}__builtin__${template.key}`),
+            {
+              ownerId: resolvedOwnerId,
+              name: template.name,
+              description: template.description,
+              color: template.color,
+              builtinKey: template.key,
+              isBuiltIn: true,
+              permissions: getTemplatePermissions(template.suggestion),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: false }
+          )))
+          snapshot = await getDocs(rolesQuery)
+        }
+
+        customRoles.value = snapshot.docs
+          .map((roleDoc) => {
+            const data = roleDoc.data() || {}
+            const permissions = Array.isArray(data.permissions)
+              ? data.permissions.map((value) => String(value || '').trim()).filter(Boolean)
+              : []
+
+            return {
+              id: roleDoc.id,
+              name: String(data.name || '').trim(),
+              color: String(data.color || '').trim(),
+              permissions,
+            }
+          })
+          .filter((role) => role.name && role.permissions.length > 0)
+          .sort((left, right) => left.name.localeCompare(right.name))
+      } catch (error) {
+        console.error('Failed to load employee roles:', error)
+        customRoles.value = []
+        rolesLoadError.value = 'Roles could not be loaded. Retry before creating an account.'
+      } finally {
+        rolesLoading.value = false
+      }
     })
 
     let unsubscribeAuth = null
@@ -191,7 +235,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (isUnmounted) return
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async () => {
         await loadBranches()
-        await loadCustomRoles()
+        await loadCustomRoles(currentOwnerId.value)
       })
     }))
 
@@ -283,11 +327,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         suffix: '',
         email: '',
         phoneNumber: '',
+        role: '',
         clinicBranch: '',
         clinicLocation: '',
         engagementType: '',
         employmentType: '',
         weeklyHoursTarget: '',
+        practitionerType: '',
         practitionerId: ''
       }
 
@@ -334,6 +380,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.phoneNumber = 'Enter a 10-digit mobile number.'
       }
 
+      if (!selectedCustomRoles.value.length) {
+        errors.role = 'Select at least one role.'
+      }
+
       if (!currentStaff.value.branchIds?.length) {
         errors.clinicBranch = 'Branch is required.'
       }
@@ -347,6 +397,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const weeklyHours = Number(currentStaff.value.weeklyHoursTarget)
       if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 48) {
         errors.weeklyHoursTarget = 'Enter agreed weekly hours from 1 to 48.'
+      }
+      if (isPractitionerRole.value && !employeeSpecialtyTypes.includes(currentStaff.value.practitionerType)) {
+        errors.practitionerType = 'Choose a professional specialty for this Practitioner.'
       }
       if (isPractitionerRole.value && !practitionerIdFile.value) {
         errors.practitionerId = 'Practitioner credential image is required.'
@@ -418,7 +471,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
       || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
     )
-    const showCredentialUpload = computed(() => isPractitionerRole.value || Boolean(String(currentStaff.value.practitionerType || '').trim()))
+    const showCredentialUpload = computed(() => isPractitionerRole.value)
+    watch(isPractitionerRole, (isPractitioner) => {
+      if (isPractitioner) return
+      currentStaff.value.practitionerType = ''
+      practitionerIdFile.value = null
+    })
     const selectedCustomRoleName = computed(() => {
       return selectedCustomRoles.value.map((role) => role.name).join(', ')
     })
@@ -495,6 +553,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       savingStaff.value = true
       const fullName = buildFullName()
+      const selectedRoleNames = selectedCustomRoles.value.map((role) => role.name).filter(Boolean)
+      const assignedBranchIds = [...new Set(
+        (Array.isArray(currentStaff.value.branchIds) && currentStaff.value.branchIds.length
+          ? currentStaff.value.branchIds
+          : [currentStaff.value.clinicBranch])
+          .map((branchId) => String(branchId || '').trim())
+          .filter(Boolean)
+      )]
 
       try {
         const result = await Swal.fire({
@@ -563,10 +629,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             fullName: fullName,
             email: currentStaff.value.email,
             phoneNumber: `+63${currentStaff.value.phoneNumber}`,
-            role: currentStaff.value.role,
+            role: selectedRoleNames[0] || '',
             customRoleId: currentStaff.value.customRoleId || null,
             customRoleIds: Array.isArray(currentStaff.value.customRoleIds) ? currentStaff.value.customRoleIds : [],
-            customRoleName: selectedCustomRoleName.value || null,
+            customRoleName: selectedRoleNames.join(', ') || null,
             effectivePermissions: [...new Set(selectedCustomRoles.value.flatMap((role) => role.permissions || []))],
             practitionerType: currentStaff.value.practitionerType,
             engagementType: currentStaff.value.engagementType,
@@ -574,7 +640,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,
-            branchIds: [...new Set(currentStaff.value.branchIds || [currentStaff.value.clinicBranch])],   // ✅ store branchId reference
+            branchIds: assignedBranchIds,
             clinicLocation: currentStaff.value.clinicLocation,
             status: 'Pending Activation',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
@@ -639,6 +705,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       loading,
       currentStaff,
       employeeSpecialtyTypes,
+      rolesLoading,
+      rolesLoadError,
+      loadCustomRoles,
       isStudentIntern,
       setEngagementType,
       setEmploymentType,
@@ -821,21 +890,30 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <div>
             <h2 class="text-lg font-semibold text-white mb-4 border-b border-slate-700 pb-2">Role & Employment</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="professional-specialty-block sm:col-span-2">
-                <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty (optional)" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not specified / non-clinical' }, ...employeeSpecialtyTypes.map(type => ({ value: type, label: type }))]" />
-                <p class="mt-1 text-xs leading-relaxed text-slate-400">Optional employee credential or specialty for reference. This does not grant system access; Pharmacy access comes from the assigned role. Appointment practitioner types are configured separately.</p>
+              <div v-if="isPractitionerRole" class="professional-specialty-block sm:col-span-2">
+                <ContractAppearanceSelect id="new-staff-specialty" label="Professional specialty *" v-model="currentStaff.practitionerType" :options="employeeSpecialtyTypes.map(type => ({ value: type, label: type }))" />
+                <p v-if="fieldErrors.practitionerType" class="mt-1 text-xs text-red-400" role="alert">{{ fieldErrors.practitionerType }}</p>
+                <p v-else class="mt-1 text-xs leading-relaxed text-slate-400">Required for the Practitioner role. Select the employee’s professional specialty.</p>
               </div>
               <!-- Custom Role -->
               <div>
                 <label class="mb-1 block text-slate-400">Role <span class="text-red-400">*</span></label>
-                <fieldset class="assignment-options" aria-label="Roles">
-                  <label v-for="role in customRoles" :key="role.id" class="assignment-option" :class="{ 'is-selected': currentStaff.customRoleIds.includes(role.id) }">
-                    <input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" />
-                    <span>{{ role.name }}</span>
-                  </label>
-                  <p v-if="!customRoles.length" class="assignment-empty">No roles available. Create a role in Roles first.</p>
+                <fieldset class="assignment-options" :class="{ 'has-error': fieldErrors.role }" aria-label="Roles" :aria-invalid="Boolean(fieldErrors.role)" :aria-describedby="fieldErrors.role ? 'staff-role-error' : 'staff-role-hint'">
+                  <p v-if="rolesLoading" class="assignment-empty" role="status">Loading roles…</p>
+                  <div v-else-if="rolesLoadError" class="assignment-empty" role="alert">
+                    <span>{{ rolesLoadError }}</span>
+                    <button type="button" class="ml-2 underline" @click="loadCustomRoles()">Retry</button>
+                  </div>
+                  <template v-else>
+                    <label v-for="role in customRoles" :key="role.id" class="assignment-option" :class="{ 'is-selected': currentStaff.customRoleIds.includes(role.id) }">
+                      <input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" />
+                      <span>{{ role.name }}</span>
+                    </label>
+                    <p v-if="!customRoles.length" class="assignment-empty">No roles are available for this clinic.</p>
+                  </template>
                 </fieldset>
-                <p class="mt-2 text-xs text-slate-400">Select one or more roles.</p>
+                <p id="staff-role-hint" class="mt-2 text-xs text-slate-400">Select one or more roles.</p>
+                <p v-if="fieldErrors.role" id="staff-role-error" class="mt-1 text-xs text-red-400" role="alert">{{ fieldErrors.role }}</p>
                 <div v-if="selectedCustomRoles.length" class="mt-3 rounded-lg border border-gold-500/40 bg-gold-500/10 p-3">
                   <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-200">Selected roles</p>
                   <div class="flex flex-wrap gap-2">
@@ -970,7 +1048,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </button>
             <button
               type="submit"
-              :disabled="hasErrors || savingStaff"
+              :disabled="hasErrors || savingStaff || rolesLoading || Boolean(rolesLoadError)"
               class="rounded-lg bg-blue-600 px-5 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {{ savingStaff ? 'Adding staff member…' : 'Add Staff Member' }}

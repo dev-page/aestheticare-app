@@ -13,7 +13,7 @@ import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder } f
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerHrWorkflow } from './hrWorkflow.js'
 import { registerPractitionerTeams } from './practitionerTeams.js'
-import { appointmentStaffIds, practitionerTypes } from '../../shared/practitionerTeam.js'
+import { appointmentStaffIds, employeeSpecialtyTypes, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerPharmacyWorkflow } from './pharmacyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
@@ -3981,7 +3981,7 @@ const PLAN_FEATURES = Object.freeze({
   // services/packages, orders, inventory and operational finance.
   basic: new Set(['booking_availability', 'staff_management', 'online_consultations', 'reports']),
   // Workforce management is intentionally a Premium boundary.
-  premium: new Set(['booking_availability', 'online_consultations', 'reports', 'multi_branch', 'hr', 'attendance', 'payroll']),
+  premium: new Set(['booking_availability', 'staff_management', 'online_consultations', 'reports', 'multi_branch', 'hr', 'attendance', 'payroll']),
 })
 
 const assertClinicPlanFeature = async (firestore, branchId, feature) => {
@@ -9044,8 +9044,15 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     const weeklyHoursTarget = Number(input.weeklyHoursTarget)
     const forbiddenRoles = new Set(['Owner', 'Superadmin'])
     const branchIds = [...new Set((Array.isArray(input.branchIds) ? input.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
-    if (!targetId || !email || !firstName || !lastName || !requestedRole || forbiddenRoles.has(requestedRole) || !branchIds.length || branchIds.length > 100) {
-      return res.status(400).json({ success: false, error: 'Enter valid staff details and select at least one branch.' })
+    const customRoleIds = [...new Set((Array.isArray(input.customRoleIds) ? input.customRoleIds : [input.customRoleId]).map((id) => String(id || '').trim()).filter(Boolean))]
+    if (!targetId || !email || !firstName || !lastName || forbiddenRoles.has(requestedRole)) {
+      return res.status(400).json({ success: false, error: 'Enter valid staff details.' })
+    }
+    if (!requestedRole || !customRoleIds.length) {
+      return res.status(400).json({ success: false, error: 'Select at least one staff role.' })
+    }
+    if (!branchIds.length || branchIds.length > 100) {
+      return res.status(400).json({ success: false, error: 'Select between 1 and 100 assigned branches.' })
     }
     if (!['employee', 'student_intern'].includes(engagementType)
       || (engagementType === 'employee' && !['Full-time', 'Part-time'].includes(employmentType))
@@ -9077,16 +9084,24 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
     }
 
-    const customRoleIds = [...new Set((Array.isArray(input.customRoleIds) ? input.customRoleIds : [input.customRoleId]).map((id) => String(id || '').trim()).filter(Boolean))]
     const customRoleSnaps = await Promise.all(customRoleIds.map((id) => firestore.collection('clinicRoles').doc(id).get()))
     if (customRoleSnaps.some((snap) => !snap.exists || String(snap.data()?.ownerId || '') !== ownerId)) {
       return res.status(400).json({ success: false, error: 'One or more selected custom roles are not available to this clinic organization.' })
+    }
+    const isPractitioner = customRoleSnaps.some((snap) => /\bpractitioner\b/i.test(String(snap.data()?.name || '')))
+    const professionalSpecialty = text(input.practitionerType, 100)
+    if (isPractitioner && !employeeSpecialtyTypes.includes(professionalSpecialty)) {
+      return res.status(400).json({ success: false, error: 'Choose a professional specialty for the Practitioner role.' })
+    }
+    if (!isPractitioner && professionalSpecialty) {
+      return res.status(400).json({ success: false, error: 'Professional specialty is only available for the Practitioner role.' })
     }
     const effectivePermissions = [...new Set([
       ...defaultClinicRolePermissions,
       ...customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? snap.data().permissions : []),
     ])]
-    await targetRef.set({
+    const profileBatch = firestore.batch()
+    profileBatch.set(targetRef, {
       firstName, middleName: text(input.middleName, 100) || null, lastName, suffix: text(input.suffix, 50) || null,
       fullName: text(input.fullName, 250) || `${firstName} ${lastName}`,
       email, phoneNumber: text(input.phoneNumber, 30), role: requestedRole,
@@ -9094,15 +9109,15 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
       engagementType, employmentType, weeklyHoursTarget, userType: 'Staff',
       branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
-      practitionerType: practitionerTypes.includes(input.practitionerType) ? input.practitionerType : null,
+      practitionerType: isPractitioner ? professionalSpecialty : null,
       status: 'Pending Activation', practitionerLicenseUrl: text(input.practitionerLicenseUrl, 2000) || null,
       practitionerLicenseName: text(input.practitionerLicenseName, 255) || null,
       practitionerLicenseUploadedBy: input.practitionerLicenseUrl ? req.user.uid : null,
       mustChangePassword: true, createdAt: admin.firestore.FieldValue.serverTimestamp(), createdBy: req.user.uid,
     })
-    if (practitionerTypes.includes(input.practitionerType)) {
-      await firestore.collection('practitionerProfiles').doc(targetId).set({
-        type: input.practitionerType,
+    if (isPractitioner) {
+      profileBatch.set(firestore.collection('practitionerProfiles').doc(targetId), {
+        type: professionalSpecialty,
         credentialNumber,
         credentialsVerified: false,
         approvedServiceIds: [],
@@ -9112,10 +9127,17 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true })
     }
+    await profileBatch.commit()
     res.status(201).json({ success: true, data: { id: targetId, branchId: branchIds[0], branchIds } })
   } catch (error) {
     console.error('Create staff profile failed:', error)
-    res.status(500).json({ success: false, error: 'Unable to create employee profile.' })
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500
+      ? error.status
+      : 500
+    const message = status < 500
+      ? String(error.message || 'Unable to create employee profile.')
+      : 'Unable to create employee profile.'
+    res.status(status).json({ success: false, error: message })
   }
 })
 
