@@ -181,8 +181,8 @@
           </label>
           <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
             <div v-if="form.postType === 'Consultation' && form.consultationModes.includes('online')" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <label class="block text-slate-400">Arrival grace (minutes)<input v-model.number="form.consultationGraceMinutes" type="number" min="0" max="30" step="1" placeholder="10" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
-              <label class="block text-slate-400">Schedule buffer (minutes)<input v-model.number="form.consultationBufferMinutes" type="number" min="5" max="45" step="1" placeholder="15" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
+              <label class="block text-slate-400">Arrival grace (minutes)<input v-model.number="form.consultationGraceMinutes" type="number" min="0" max="30" step="1" placeholder="15" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
+              <label class="block text-slate-400">Schedule buffer (minutes)<input v-model.number="form.consultationBufferMinutes" type="number" min="5" max="45" step="1" placeholder="20" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
               <p class="md:col-span-2 text-xs text-slate-400">The duration starts after verified attendance. The buffer reserves time between bookings and is at least the grace period plus five minutes. Connection interruptions can restore up to five minutes within this buffer. Unstarted sessions go to clinic review; no automatic customer penalty.</p>
             </div>
             <label class="block text-slate-400 mb-1">Consultation Fee (PHP)</label>

@@ -96,12 +96,19 @@ export const registerWalkInPayments = (app, { admin, requireAuth, authorizeClini
         const groupRef = appointment.groupBookingId ? db.collection('groupBookings').doc(appointment.groupBookingId) : null
         const group = groupRef ? await tx.get(groupRef) : null
         const timestamp = admin.firestore.FieldValue.serverTimestamp(), paidAt = admin.firestore.Timestamp.now(), serviceKey = String(crypto.randomInt(100000, 1000000))
-        const receipt = { transactionCode: receiptRef.id, appointmentId: ref.id, branchId: appointment.branchId, clientId: appointment.clientId, clientName: appointment.clientName || 'Walk-in client', customerEmail: appointment.customerEmail || '', customerPhone: appointment.customerPhone || '', practitionerName: appointment.practitionerName || '', service: appointment.service || 'Treatment', date: appointment.date, time: appointment.time, amount: amount / 100, total: amount / 100, pricingSnapshot: appointment.pricingSnapshot || null, method, status: 'Paid', type: 'appointment_payment', source: 'receptionist_pos', serviceKey, createdBy: req.user.uid, createdAt: paidAt, tendered: method === 'Cash' ? Number(req.body.tendered) : amount / 100, change: method === 'Cash' ? (cents(req.body.tendered) - amount) / 100 : 0, paymongoCheckoutSessionId: sessionId || null }
+        const receipt = { transactionCode: receiptRef.id, appointmentId: ref.id, branchId: appointment.branchId, customerId: appointment.customerId || null, clientId: appointment.clientId || null, clientName: appointment.clientName || 'Walk-in client', customerEmail: appointment.customerEmail || '', customerPhone: appointment.customerPhone || '', practitionerName: appointment.practitionerName || '', service: appointment.service || 'Treatment', date: appointment.date, time: appointment.time, amount: amount / 100, total: amount / 100, pricingSnapshot: appointment.pricingSnapshot || null, method, status: 'Paid', type: 'appointment_payment', source: 'receptionist_pos', serviceKey, createdBy: req.user.uid, createdAt: paidAt, tendered: method === 'Cash' ? Number(req.body.tendered) : amount / 100, change: method === 'Cash' ? (cents(req.body.tendered) - amount) / 100 : 0, paymongoCheckoutSessionId: sessionId || null, receiptEmailStatus: 'pending' }
         // The payer and the treatment recipient remain separate identities.
         receipt.payerName = appointment.bookedByName || receipt.clientName
         receipt.payerEmail = appointment.bookedByEmail || appointment.customerEmail || ''
         receipt.payerPhone = appointment.bookedByPhone || appointment.customerPhone || ''
         tx.set(receiptRef, receipt); tx.update(ref, { status: 'Paid', paymentStatus: 'Paid', amountPaid: amount / 100, balance: 0, serviceKey, paidAt, paymentMethod: method, updatedAt: timestamp })
+        if (appointment.customerId) tx.set(db.collection('notifications').doc(`payment-receipt-${receiptRef.id}`), {
+          recipientUserId: appointment.customerId,
+          branchId: appointment.branchId,
+          title: 'Payment received and receipt ready',
+          message: `Your payment for ${appointment.service || 'your appointment'} was recorded. Download the PDF receipt from My Appointments.`,
+          link: '/customer/appointments?tab=history', read: false, deleted: false, createdAt: timestamp,
+        })
         if (bookingRef) {
           const paid = siblingIds.length ? siblings.reduce((sum, sibling) => sum + (sibling.id === ref.id ? amount : cents(sibling.data()?.amountPaid)), 0) : amount
           const total = siblingIds.length ? cents(booking.totalAmount ?? booking.amount) : amount
@@ -113,7 +120,16 @@ export const registerWalkInPayments = (app, { admin, requireAuth, authorizeClini
         return receipt
       })
       let emailSent = false
-      if (!result.alreadyRecorded && initial.customerEmail && sendReceipt) try { emailSent = Boolean(await sendReceipt(initial.customerEmail, result)) } catch {}
+      const receiptEmail = initial.bookedByEmail || initial.customerEmail
+      if (!result.alreadyRecorded && receiptEmail && sendReceipt) try { emailSent = Boolean(await sendReceipt(receiptEmail, result)) } catch {}
+      if (!result.alreadyRecorded) {
+        try {
+          await db.collection('transactions').doc(result.transactionCode).set({
+            receiptEmailStatus: emailSent ? 'sent' : 'failed',
+            ...(emailSent ? { receiptEmailSentAt: admin.firestore.Timestamp.now() } : { receiptEmailFailedAt: admin.firestore.Timestamp.now() }),
+          }, { merge: true })
+        } catch (error) { console.warn('Could not record appointment receipt email status:', error?.message || error) }
+      }
       res.json({ success: true, data: { ...result, emailSent } })
     } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
   })

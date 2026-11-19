@@ -97,7 +97,7 @@ export const registerGoogleConsultations = (app, deps) => {
         amount: 0, totalAmount: 0, amountPaid: 0,
         contract: { status: 'signed', terms: 'Demo consultation only. No real payment or clinical care is provided.' },
         serviceKey, consultationDurationMinutes: 15, durationMinutes: 15,
-        consultationPolicy: { version: 2, graceMinutes: 10, bufferMinutes: 15 },
+        consultationPolicy: { version: 2, graceMinutes: 15, bufferMinutes: 20 },
         source: 'demo_online_consultation', demoMode: true,
         createdAt: timestamp, updatedAt: timestamp,
       }
@@ -116,7 +116,7 @@ export const registerGoogleConsultations = (app, deps) => {
         check(appointment, 'Appointment not found.', 404)
         check(appointment.customerId === req.user.uid, 'Only the booked customer may submit this code.', 403)
         check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
-        check(['paid', 'ready to start', 'scheduled', 'ongoing'].includes(normalized(appointment.status)) && appointment.approvalStatus === 'Approved' && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'Approval, a signed contract, and the required payment are needed.', 409)
+        check(['paid', 'ready to start', 'scheduled', 'ongoing'].includes(normalized(appointment.status)) && appointment.workerCompleted !== true && appointment.approvalStatus === 'Approved' && normalized(appointment.contract?.status) === 'signed' && initialPaymentReceived(appointment), 'Approval, a signed contract, and the required payment are needed.', 409)
         const attempts = (await tx.get(attemptRef)).data() || {}
         check(!(attempts.count >= 5 && attempts.until > Date.now()), 'Too many incorrect codes. Try again in ten minutes.', 429)
         const code = String(req.body?.serviceKey || '').trim()
@@ -143,7 +143,7 @@ export const registerGoogleConsultations = (app, deps) => {
           message: 'The customer entered their service code for the online consultation.',
           link: '/crm/appointments?tab=queue&mode=online', read: false, deleted: false, createdAt: stamp(),
         })
-        const matchingMeeting = (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual')
+        const matchingMeeting = !appointment.workerCompleted && (meeting.hostVerified || meeting.meetingProvider === 'google-meet-manual')
           && meeting.practitionerId === practitionerId && meeting.customerId === appointment.customerId
           && meeting.scheduledStartAt === consultationWindow(appointment).start.toISOString()
         return { queued: true, meetLink: matchingMeeting ? String(meeting.meetLink || '') : '' }

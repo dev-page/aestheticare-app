@@ -751,7 +751,9 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && ((get(/databases/$(database)/documents/appointments/$(appointmentId)).data.customerId == request.auth.uid
             && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('consultationCodeVerifiedAt', null) != null
-            && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('consultationInviteAt', null) != null)
+            && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('consultationInviteAt', null) != null
+            && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('workerCompleted', false) != true
+            && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.get('status', '') in ['Paid', 'Scheduled', 'Ready to Start', 'Ongoing', 'paid', 'scheduled', 'ready to start', 'ongoing'])
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.practitionerId == request.auth.uid
           || get(/databases/$(database)/documents/appointments/$(appointmentId)).data.assignedPractitionerId == request.auth.uid
           || (get(/databases/$(database)/documents/appointments/$(appointmentId)).data.branchId != null

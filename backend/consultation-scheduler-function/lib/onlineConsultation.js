@@ -2,8 +2,8 @@ const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) ? 
 export const onlinePolicy = (value = {}) => {
   value = value || {}
   return ({
-  version: 2, graceMinutes: bounded(value.graceMinutes ?? 10, 10, 0, 30),
-  bufferMinutes: Math.max(bounded(value.bufferMinutes ?? 15, 15, 5, 45), bounded(value.graceMinutes ?? 10, 10, 0, 30) + 5),
+  version: 2, graceMinutes: bounded(value.graceMinutes ?? 15, 15, 0, 30),
+  bufferMinutes: Math.max(bounded(value.bufferMinutes ?? 20, 20, 5, 45), bounded(value.graceMinutes ?? 15, 15, 0, 30) + 5),
   interruptionMinutes: 5, confirmationHours: 48,
 })
 }

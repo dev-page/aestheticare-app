@@ -2,8 +2,8 @@ const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) ? 
 export const onlinePolicy = (value = {}) => {
   value = value || {}
   return ({
-  version: 2, graceMinutes: bounded(value.graceMinutes ?? 10, 10, 0, 30),
-  bufferMinutes: Math.max(bounded(value.bufferMinutes ?? 15, 15, 5, 45), bounded(value.graceMinutes ?? 10, 10, 0, 30) + 5),
+  version: 2, graceMinutes: bounded(value.graceMinutes ?? 15, 15, 0, 30),
+  bufferMinutes: Math.max(bounded(value.bufferMinutes ?? 20, 20, 5, 45), bounded(value.graceMinutes ?? 15, 15, 0, 30) + 5),
   interruptionMinutes: 5, confirmationHours: 48,
 })
 }
@@ -27,7 +27,7 @@ export const consultationRecoveryDeadline = appointment => {
   return new Date(window.end.getTime() + remainingAllowance * 1000)
 }
 export const onlineAccessOpen = (appointment, now = Date.now()) => {
-  if (!['paid', 'scheduled', 'ready to start', 'ongoing'].includes(String(appointment.status || '').toLowerCase()) || appointment.consultationClientEndedAt) return false
+  if (!['paid', 'scheduled', 'ready to start', 'ongoing'].includes(String(appointment.status || '').toLowerCase())) return false
   // Once a consultation has started, keep its app entry open until the
   // practitioner records completion. The booked duration is a scheduling
   // target, not an automatic lockout for an active call.

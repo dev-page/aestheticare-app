@@ -184,8 +184,9 @@
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
                   <td data-label="Meeting Link">
-                    <template v-if="appt.meetLink"><span class="table-secondary" style="overflow-wrap:anywhere">{{ appt.meetLink }}</span><button type="button" class="appointment-button appointment-button-secondary" @click="copyMeetLink(appt)">Copy link</button></template>
-                    <span v-else class="table-secondary">{{ appt.consultationCustomerReadyAt ? 'Waiting for the clinic to add a link' : 'Enter your service code to reveal the link' }}</span>
+                    <button v-if="canJoinOnlineConsultation(appt)" type="button" class="appointment-button appointment-button-secondary" @click="openOnlineConsultationAccess(appt)">Join consultation</button>
+                    <span v-else-if="appt.workerCompleted || normalizeAppointmentStatus(appt.status) === 'completed'" class="table-secondary">Consultation complete. Meeting access is closed.</span>
+                    <span v-else class="table-secondary">{{ appt.consultationInviteAt ? 'Meeting access is not open yet' : 'Waiting for the clinic to add a link' }}</span>
                     <span v-if="appt.serviceKey && normalizeAppointmentStatus(appt.contract?.status) === 'signed' && initialPaymentReceived(appt) && !appt.consultationCustomerReadyAt" class="appointment-menu-key">In-app check-in code: <strong class="font-mono text-base">{{ appt.serviceKey }}</strong></span>
                   </td>
                   <td data-label="Status">
@@ -195,12 +196,13 @@
                     <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Requested'" class="table-secondary">Cancellation approved. The clinic is checking the refund with the payment provider.</p>
                     <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Refunded'" class="table-secondary">Cancellation approved. The clinic or payment provider confirmed the refund.</p>
                     <p v-else-if="normalizeAppointmentStatus(appt.status) === 'cancelled' && appt.refundStatus === 'Not Applicable'" class="table-secondary">Cancellation approved. No refund was due under the recorded payment and policy.</p>
-                    <p v-if="['awaiting customer confirmation', 'balance due'].includes(normalizeAppointmentStatus(appt.status)) && canConfirmCompletion(appt)" class="table-secondary">The clinic marked this consultation complete. Confirm receipt when you are ready.</p>
+                    <p v-if="['awaiting customer confirmation', 'balance due'].includes(normalizeAppointmentStatus(appt.status)) && canConfirmCompletion(appt)" class="table-secondary">The practitioner finished this consultation. Confirm that you received it when you are ready.</p>
                     <p v-else-if="normalizeAppointmentStatus(appt.status) === 'awaiting customer confirmation' && !appt.customerCompleted" class="table-secondary">The consultation is waiting for required notes or clinic review. You can report a problem in Consultation controls.</p>
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
-                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">View details</button>
+                      <button v-if="canLeaveFeedback(appt)" type="button" class="appointment-button appointment-button-secondary" @click="openFeedback(appt)">Leave feedback</button>
+                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">{{ canLeaveFeedback(appt) ? 'Review & receipt' : 'View details' }}</button>
                     </div>
                   </td>
                 </tr>
@@ -262,7 +264,7 @@
                   </td>
                   <td data-label="Actions">
                     <div class="table-actions">
-                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">View details</button>
+                      <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentDetails(appt)">Review &amp; receipt</button>
                     </div>
                   </td>
                 </tr>
@@ -329,14 +331,6 @@
                         @click="bookFollowUp(appt)"
                       >
                         Book Follow-up
-                      </button>
-                      <button
-                        v-if="normalizeAppointmentStatus(appt.status) === 'completed'"
-                        type="button"
-                        class="appointment-button appointment-button-secondary"
-                        @click="openFeedback(appt)"
-                      >
-                        Leave optional feedback
                       </button>
                       <span v-if="hasOpenFollowUp(appt)" class="table-secondary">
                         {{ followUpBookingStatus(appt) }}
@@ -583,6 +577,7 @@
                 <div class="appointment-details-payment-info">
                   <strong>{{ formatPricingAmount(payment.amount) }} · {{ payment.method || 'Online payment' }}</strong>
                   <span>{{ payment.paidAtSource === 'provider' ? 'Paid' : 'Recorded' }} {{ formatReceiptDateTime(payment.paidAt) }}<span v-if="payment.paidAtSource !== 'provider'"> · provider payment time was not retained</span></span>
+                  <span>{{ payment.receiptEmailStatus === 'sent' ? 'PDF receipt emailed' : payment.receiptEmailStatus === 'failed' ? 'Email delivery failed; download the PDF here' : 'PDF receipt available here' }}</span>
                   <span>Transaction code: <code>{{ payment.transactionCode }}</code></span>
                   <span v-if="payment.referenceNumber">Payment reference: <code>{{ payment.referenceNumber }}</code></span>
                   <span v-if="payment.paymentId">Payment ID: <code>{{ payment.paymentId }}</code></span>
@@ -591,6 +586,21 @@
               </article>
             </div>
             <p v-else class="appointment-details-note">No verified payment is recorded for this booking yet. A downloadable receipt appears here after payment is verified.</p>
+          </section>
+
+          <section class="appointment-details-section">
+            <div class="appointment-details-section-head"><h3>Your feedback</h3><span v-if="appointmentFeedbackLoading">Loading</span></div>
+            <p v-if="appointmentFeedbackError" class="appointment-details-note appointment-details-note-error" role="alert">{{ appointmentFeedbackError }}</p>
+            <template v-else-if="selectedAppointmentFeedback">
+              <p class="appointment-details-note"><strong>{{ '★'.repeat(Math.max(0, Math.min(5, Number(selectedAppointmentFeedback.rating || 0))) }}</strong> out of 5</p>
+              <p v-if="selectedAppointmentFeedback.comment" class="appointment-details-note">{{ selectedAppointmentFeedback.comment }}</p>
+              <p v-else class="appointment-details-note">No written comment was added.</p>
+              <button v-if="!appointmentFeedbackLoading && canLeaveFeedback(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="openFeedback(selectedAppointmentDetails)">Edit feedback</button>
+            </template>
+            <template v-else>
+              <p class="appointment-details-note">{{ canLeaveFeedback(selectedAppointmentDetails) ? 'Share how your appointment went.' : 'You can leave feedback after the clinic marks the service complete.' }}</p>
+              <button v-if="!appointmentFeedbackLoading && canLeaveFeedback(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="openFeedback(selectedAppointmentDetails)">Leave feedback</button>
+            </template>
           </section>
 
           <section v-if="selectedAppointmentDetails.serviceKey || selectedAppointmentDetails.treatmentNotes || selectedAppointmentDetails.aftercareInstructions" class="appointment-details-section">
@@ -607,14 +617,11 @@
             <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => selectedOnlineConsultation = selectedAppointmentDetails)">Consultation controls</button>
             <button v-if="selectedAppointmentDetails.contract && selectedAppointmentDetails.approvalStatus === 'Approved' && selectedAppointmentDetails.sameDayTreatmentStatus !== 'pending_clinical_clearance'" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => openContract(selectedAppointmentDetails))">{{ normalizeAppointmentStatus(selectedAppointmentDetails.contract.status) === 'signed' ? 'View contract' : 'Review and sign' }}</button>
             <button v-if="canPayAppointment(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => payAppointment(selectedAppointmentDetails))">Pay {{ formatBookingDue(selectedAppointmentDetails) }}</button>
-            <button v-if="isOnlineConsultationAppointment(selectedAppointmentDetails) && !selectedAppointmentDetails.consultationCustomerReadyAt" type="button" class="appointment-button appointment-button-secondary" :disabled="serviceKeyVerifying || isCancelledAppointment(selectedAppointmentDetails) || selectedAppointmentDetails.approvalStatus !== 'Approved' || selectedAppointmentDetails.contract?.status !== 'signed' || !initialPaymentReceived(selectedAppointmentDetails)" @click="verifyServiceKey(selectedAppointmentDetails); closeAppointmentDetails()">Enter service code</button>
-            <button v-if="selectedAppointmentDetails.meetLink && onlineAccessOpen(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="openMeetLink(selectedAppointmentDetails)">Join Google Meet</button>
-            <button v-if="selectedAppointmentDetails.meetLink" type="button" class="appointment-button appointment-button-secondary" @click="copyMeetLink(selectedAppointmentDetails)">Copy Meet link</button>
+            <button v-if="canJoinOnlineConsultation(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="openOnlineConsultationAccess(selectedAppointmentDetails)">{{ selectedAppointmentDetails.consultationCodeVerifiedAt ? 'Join consultation' : 'Enter code and join' }}</button>
             <button v-if="selectedAppointmentDetails.status === 'Ongoing' && !selectedAppointmentDetails.consultationClientEndedAt" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => endConsultationParticipation(selectedAppointmentDetails))">End consultation participation</button>
             <button v-if="canConfirmCompletion(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-primary" @click="runAppointmentDetailsAction(() => confirmCompletion(selectedAppointmentDetails))">Confirm service received</button>
             <button v-if="canRequestReschedule(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" :disabled="isRequestPending(selectedAppointmentDetails, 'reschedule')" @click="runAppointmentDetailsAction(() => openRequestModal('reschedule', selectedAppointmentDetails))">{{ isRequestPending(selectedAppointmentDetails, 'reschedule') ? 'Reschedule pending' : 'Request reschedule' }}</button>
             <button v-if="canRequestCancellation(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-danger" :disabled="isRequestPending(selectedAppointmentDetails, 'cancel')" @click="runAppointmentDetailsAction(() => openRequestModal('cancel', selectedAppointmentDetails))">{{ isRequestPending(selectedAppointmentDetails, 'cancel') ? 'Cancellation pending' : 'Request cancellation' }}</button>
-            <button v-if="normalizeAppointmentStatus(selectedAppointmentDetails.status) === 'completed'" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => openFeedback(selectedAppointmentDetails))">Leave feedback</button>
             <button v-if="canBookFollowUp(selectedAppointmentDetails) && !hasOpenFollowUp(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="runAppointmentDetailsAction(() => bookFollowUp(selectedAppointmentDetails))">Book follow-up</button>
             <button type="button" class="appointment-button appointment-button-secondary" @click="closeAppointmentDetails">Close</button>
           </div>
@@ -635,6 +642,48 @@
       @close="closeServiceKeyModal"
       @submit="submitServiceKey"
     />
+    <div v-if="onlineJoinAppointment" class="request-modal-overlay" @click.self="closeOnlineConsultationAccess">
+      <section class="request-modal-shell" role="dialog" aria-modal="true" aria-labelledby="online-join-modal-title">
+        <header class="request-modal-head">
+          <div>
+            <p class="request-modal-kicker">Online consultation</p>
+            <h2 id="online-join-modal-title" class="request-modal-title">{{ onlineJoinAppointment.consultationCodeVerifiedAt ? 'Your meeting link' : 'Verify your service code' }}</h2>
+            <p class="request-modal-summary">{{ formatAppointmentServices(onlineJoinAppointment) }} · {{ onlineJoinAppointment.clinic }}</p>
+          </div>
+          <button type="button" class="request-close-button" aria-label="Close online consultation access" :disabled="serviceKeyVerifying" @click="closeOnlineConsultationAccess"><span class="text-xl leading-none">&times;</span></button>
+        </header>
+        <div v-if="!canJoinOnlineConsultation(onlineJoinAppointment)" class="request-modal-body">
+          <p class="text-sm text-slate-600">Meeting access is closed in AesthetiCare. If the practitioner marked the consultation complete, you can leave feedback from Appointment History.</p>
+          <button v-if="canLeaveFeedback(onlineJoinAppointment)" type="button" class="request-button request-button-primary" @click="openFeedbackFromOnlineJoin">Leave feedback</button>
+          <footer class="request-modal-actions"><div class="request-action-buttons"><button type="button" class="request-button request-button-secondary" @click="closeOnlineConsultationAccess">Close</button></div></footer>
+        </div>
+        <form v-else-if="!onlineJoinAppointment.consultationCodeVerifiedAt" class="request-modal-body" @submit.prevent="verifyOnlineConsultationCode" :aria-busy="serviceKeyVerifying">
+          <p class="text-sm text-slate-600">Enter the six-digit service code for this appointment. Your code is saved after verification, so you can reopen this panel later.</p>
+          <div>
+            <label for="online-consultation-service-code" class="request-field-label">Service code</label>
+            <input id="online-consultation-service-code" v-model.trim="onlineJoinServiceCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900" placeholder="000000" />
+          </div>
+          <p v-if="onlineJoinError" role="alert" class="text-sm text-rose-700">{{ onlineJoinError }}</p>
+          <footer class="request-modal-actions"><div class="request-action-buttons">
+            <button type="button" class="request-button request-button-secondary" :disabled="serviceKeyVerifying" @click="closeOnlineConsultationAccess">Cancel</button>
+            <button type="submit" class="request-button request-button-primary" :disabled="serviceKeyVerifying || onlineJoinServiceCode.length !== 6">{{ serviceKeyVerifying ? 'Verifying…' : 'Verify and continue' }}</button>
+          </div></footer>
+        </form>
+        <div v-else class="request-modal-body">
+          <p v-if="canJoinOnlineConsultation(onlineJoinAppointment) && onlineJoinAppointment.meetLink" class="text-sm text-slate-600">Your code is verified. Use the button to join, or copy the link for later.</p>
+          <p v-else class="text-sm text-slate-600">Your code is verified. The clinic has not added the meeting link yet. This panel will show it when it is ready.</p>
+          <div v-if="canJoinOnlineConsultation(onlineJoinAppointment) && onlineJoinAppointment.meetLink" class="rounded-xl border border-[#e6cfb0] bg-[#fffaf3] p-4">
+            <p class="break-all font-mono text-sm text-[#3d281d]">{{ onlineJoinAppointment.meetLink }}</p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button type="button" class="request-button request-button-primary" @click="openMeetLink(onlineJoinAppointment)">Join Google Meet</button>
+              <button type="button" class="request-button request-button-secondary" @click="copyMeetLink(onlineJoinAppointment)">Copy link</button>
+            </div>
+          </div>
+          <p v-if="onlineJoinError" role="alert" class="text-sm text-rose-700">{{ onlineJoinError }}</p>
+          <footer class="request-modal-actions"><div class="request-action-buttons"><button type="button" class="request-button request-button-secondary" @click="closeOnlineConsultationAccess">Close</button></div></footer>
+        </div>
+      </section>
+    </div>
     <div v-if="feedbackModal.open" class="request-modal-overlay">
       <section class="request-modal-shell" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
         <header class="request-modal-head">
@@ -679,7 +728,7 @@ import { canRequestAppointmentReschedule, cancellationRefundEstimate, isCancella
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { paymentDue, initialPaymentReceived, bookingOrderReadyForPayment } from '../../../../backend/otp-backend/bookingWorkflow.js'
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 const selectedOnlineConsultation = ref(null)
 import { auth, db } from '@/config/firebaseConfig'
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
@@ -704,10 +753,24 @@ const loading = ref(true)
 const router = useRouter()
 const route = useRoute()
 const isUnpaidAppointmentsPage = computed(() => route.name === 'customer-unpaid-appointments')
-const activeAppointmentTab = ref('upcoming')
+const validAppointmentTabs = ['upcoming', 'online', 'sessions', 'history']
+const activeAppointmentTab = ref(validAppointmentTabs.includes(String(route.query.tab || '')) ? String(route.query.tab) : 'upcoming')
+watch(() => route.query.tab, value => {
+  if (validAppointmentTabs.includes(String(value || ''))) activeAppointmentTab.value = String(value)
+})
 const upcomingAppointments = ref([])
 const pastAppointments = ref([])
 const onlineConsultations = ref([])
+const onlineJoinAppointmentId = ref('')
+const onlineJoinAppointment = computed(() => onlineConsultations.value.find(appointment => appointment.id === onlineJoinAppointmentId.value) || null)
+const onlineJoinServiceCode = ref('')
+const onlineJoinError = ref('')
+watch(onlineConsultations, appointments => {
+  const selected = selectedAppointmentDetails.value
+  if (!selected || !isOnlineConsultationAppointment(selected)) return
+  const current = appointments.find(appointment => appointment.id === selected.id)
+  if (current) Object.assign(selected, current)
+})
 const treatmentSessions = ref([])
 const treatmentAppointments = computed(() => [...upcomingAppointments.value, ...pastAppointments.value, ...onlineConsultations.value])
 const treatmentSessionsForDisplay = computed(() => treatmentSessions.value.map(session => {
@@ -741,6 +804,11 @@ const appointmentPayments = ref([])
 const appointmentPaymentsLoading = ref(false)
 const appointmentPaymentsError = ref('')
 let appointmentPaymentsRequest = 0
+const appointmentFeedback = ref(null)
+const selectedAppointmentFeedback = computed(() => appointmentFeedback.value && appointmentFeedback.value.appointmentId === selectedAppointmentDetails.value?.id ? appointmentFeedback.value.review : null)
+const appointmentFeedbackLoading = ref(false)
+const appointmentFeedbackError = ref('')
+let appointmentFeedbackRequest = 0
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -1300,6 +1368,10 @@ const closeAppointmentDetails = () => {
   appointmentPaymentsError.value = ''
   appointmentPaymentsLoading.value = false
   appointmentPaymentsRequest += 1
+  appointmentFeedback.value = null
+  appointmentFeedbackError.value = ''
+  appointmentFeedbackLoading.value = false
+  appointmentFeedbackRequest += 1
 }
 
 const openAppointmentDetails = async appointment => {
@@ -1309,6 +1381,11 @@ const openAppointmentDetails = async appointment => {
   appointmentPaymentsError.value = ''
   appointmentPaymentsLoading.value = true
   const requestId = ++appointmentPaymentsRequest
+  appointmentFeedback.value = null
+  appointmentFeedbackError.value = ''
+  appointmentFeedbackLoading.value = true
+  const feedbackRequestId = ++appointmentFeedbackRequest
+  loadAppointmentFeedback(appointment, feedbackRequestId)
   try {
     const user = auth.currentUser
     if (!user) throw new Error('Please sign in again to view payment records.')
@@ -1325,6 +1402,26 @@ const openAppointmentDetails = async appointment => {
     appointmentPaymentsError.value = error?.message || 'Payment records could not be loaded.'
   } finally {
     if (requestId === appointmentPaymentsRequest) appointmentPaymentsLoading.value = false
+  }
+}
+
+const loadAppointmentFeedback = async (appointment, requestId) => {
+  try {
+    const user = auth.currentUser
+    if (!user) throw new Error('Please sign in again to view your feedback.')
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/appointments/${encodeURIComponent(appointment.id)}/feedback`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Feedback could not be loaded.')
+    if (requestId !== appointmentFeedbackRequest) return
+    appointmentFeedback.value = { appointmentId: appointment.id, review: payload.data?.review || null }
+  } catch (error) {
+    if (requestId !== appointmentFeedbackRequest) return
+    appointmentFeedbackError.value = error?.message || 'Feedback could not be loaded.'
+  } finally {
+    if (requestId === appointmentFeedbackRequest) appointmentFeedbackLoading.value = false
   }
 }
 
@@ -1503,7 +1600,7 @@ const bookFollowUp = (appointment) => {
 }
 
 const openMeetLink = async (appointment) => {
-  if (!onlineAccessOpen(appointment)) { toast.info('Consultation access is closed. Contact the clinic for review.'); return }
+  if (!appointment?.consultationCodeVerifiedAt || appointment?.workerCompleted || !onlineAccessOpen(appointment)) { toast.info('Consultation access is closed. Contact the clinic for review.'); return }
   const url = String(appointment.meetLink || '').trim()
   if (!url) return
   const callWindow = window.open('about:blank', '_blank')
@@ -1520,6 +1617,10 @@ const endConsultationParticipation = async appointment => {
 }
 
 const copyMeetLink = async (appointment) => {
+  if (!appointment?.consultationCodeVerifiedAt || appointment?.workerCompleted || !onlineAccessOpen(appointment)) {
+    toast.info('Verify your service code first, and use the link before the consultation is marked complete.')
+    return
+  }
   const meetLink = appointment.meetLink
   const url = String(meetLink || '').trim()
   if (!url) return
@@ -1559,18 +1660,19 @@ const statusToneClass = (status) => {
 
 const upcomingOnlineConsultations = computed(() => {
   return onlineConsultations.value.filter((appt) =>
-    !['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status))
+    !appt.workerCompleted && !['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status))
   )
 })
 
 const customerLifecycleAppointments = computed(() => [
   ...upcomingAppointments.value,
   ...upcomingOnlineConsultations.value,
+  ...pastAppointments.value,
+  ...pastOnlineConsultations.value,
 ])
 
 const pastOnlineConsultations = computed(() => {
-  const now = new Date()
-  return onlineConsultations.value.filter((appt) => ['completed', 'cancelled', 'rejected'].includes(normalizeAppointmentStatus(appt.status)))
+  return onlineConsultations.value.filter((appt) => appt.workerCompleted || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status)))
 })
 
 const pastRecords = computed(() =>
@@ -1721,7 +1823,8 @@ const startAppointmentsListener = (userId) => {
       const now = new Date()
       const all = await Promise.all(snapshot.docs.map(async (snap) => {
         const data = snap.data()
-        const invitationReady = Boolean(data.consultationCodeVerifiedAt && data.consultationInviteAt)
+        const meetingStatusOpen = !data.workerCompleted && ['paid', 'scheduled', 'ready to start', 'ongoing'].includes(normalizeAppointmentStatus(data.status))
+        const invitationReady = meetingStatusOpen && Boolean(data.consultationCodeVerifiedAt && data.consultationInviteAt)
         const meetingSnap = invitationReady ? await getDoc(doc(db, 'appointmentMeetings', snap.id)) : null
         return {
           id: snap.id,
@@ -1738,6 +1841,7 @@ const startAppointmentsListener = (userId) => {
       upcomingAppointments.value = all
         .filter((appt) => appt.isBookingOrderParent || (
           !isOnlineConsultationAppointment(appt) &&
+          !appt.workerCompleted &&
           !['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status))
         ))
         .sort((a, b) => {
@@ -1747,7 +1851,7 @@ const startAppointmentsListener = (userId) => {
         })
 
       pastAppointments.value = all
-        .filter((appt) => !isOnlineConsultationAppointment(appt) && ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status)))
+        .filter((appt) => !isOnlineConsultationAppointment(appt) && (appt.workerCompleted || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status))))
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime()
           const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime()
@@ -2094,7 +2198,61 @@ const canConfirmCompletion = (appointment) => {
     && !(appointment?.treatmentTeam || []).some(member => !member.participationConfirmed)
 }
 
+const canJoinOnlineConsultation = appointment => isOnlineConsultationAppointment(appointment)
+  && Boolean(appointment?.consultationInviteAt)
+  && !appointment?.workerCompleted
+  && onlineAccessOpen(appointment)
+
+const canLeaveFeedback = appointment => {
+  const status = normalizeAppointmentStatus(appointment?.status)
+  return status === 'completed'
+    || (appointment?.workerCompleted === true && ['awaiting customer confirmation', 'balance due'].includes(status))
+}
+
+const openOnlineConsultationAccess = appointment => {
+  if (!canJoinOnlineConsultation(appointment)) return
+  onlineJoinAppointmentId.value = appointment.id
+  onlineJoinServiceCode.value = ''
+  onlineJoinError.value = ''
+}
+
+const closeOnlineConsultationAccess = () => {
+  if (serviceKeyVerifying.value) return
+  onlineJoinAppointmentId.value = ''
+  onlineJoinServiceCode.value = ''
+  onlineJoinError.value = ''
+}
+
+const openFeedbackFromOnlineJoin = () => {
+  const appointment = onlineJoinAppointment.value
+  closeOnlineConsultationAccess()
+  if (appointment) openFeedback(appointment)
+}
+
+const verifyOnlineConsultationCode = async () => {
+  const appointment = onlineJoinAppointment.value
+  if (!canJoinOnlineConsultation(appointment) || !/^\d{6}$/.test(onlineJoinServiceCode.value)) return
+  serviceKeyVerifying.value = true
+  onlineJoinError.value = ''
+  try {
+    const result = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/consultation-access`, { serviceKey: onlineJoinServiceCode.value })
+    appointment.consultationCustomerReadyAt = new Date().toISOString()
+    appointment.consultationCodeVerifiedAt = new Date().toISOString()
+    appointment.meetLink = result.meetLink || ''
+    onlineJoinServiceCode.value = ''
+    toast.success(appointment.meetLink ? 'Service code verified. Your meeting link is ready.' : 'Service code verified. The link will appear here when the clinic adds it.')
+  } catch (error) {
+    onlineJoinError.value = error?.message || 'Unable to verify the service code.'
+  } finally {
+    serviceKeyVerifying.value = false
+  }
+}
+
 const verifyServiceKey = (appointment) => {
+  if (isOnlineConsultationAppointment(appointment)) {
+    openOnlineConsultationAccess(appointment)
+    return
+  }
   selectedServiceKeyAppointment.value = appointment
   showServiceKeyModal.value = true
 }
@@ -2109,16 +2267,8 @@ const submitServiceKey = async (serviceKey, appointmentOverride = null) => {
   if (!appointment?.id) return
   serviceKeyVerifying.value = true
   try {
-    if (isOnlineConsultationAppointment(appointment)) {
-      const result = await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/consultation-access`, { serviceKey })
-      appointment.consultationCustomerReadyAt = new Date().toISOString()
-      appointment.consultationCodeVerifiedAt = new Date().toISOString()
-      appointment.meetLink = result.meetLink || ''
-      toast.success(appointment.meetLink ? 'Service code verified. You can now copy the Meet link.' : 'Service code verified. The link will appear when the clinic adds it.')
-    } else {
-      await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
-      toast.success('Service key verified.')
-    }
+    await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/verify-service-key`, { serviceKey })
+    toast.success('Service key verified.')
     closeServiceKeyModal()
   } catch (error) {
     console.error(error)
@@ -2156,7 +2306,8 @@ const confirmCompletion = async (appointment) => {
 }
 
 const openFeedback = appointment => {
-  feedbackModal.value = { open: true, appointment, rating: 0, comment: '', saving: false, error: '' }
+  const existing = appointmentFeedback.value?.appointmentId === appointment?.id ? appointmentFeedback.value.review : null
+  feedbackModal.value = { open: true, appointment, rating: Number(existing?.rating || 0), comment: String(existing?.comment || ''), saving: false, error: '' }
 }
 
 const closeFeedbackModal = () => {
@@ -2172,6 +2323,10 @@ const submitFeedback = async () => {
   form.error = ''
   try {
     await postAppointmentAction(appointment.id, `/appointments/${appointment.id}/feedback`, { rating: form.rating, comment: form.comment.trim() })
+    appointmentFeedback.value = {
+      appointmentId: appointment.id,
+      review: { rating: form.rating, comment: form.comment.trim(), reviewerName: appointment.customerName || 'Customer' },
+    }
     toast.success('Thank you. Your feedback was submitted.')
     form.open = false
   } catch (error) {

@@ -271,7 +271,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       sameDayConsultationAllowed: false,
       sameDayConsultationBufferMinutes: 15,
       consultationFee: 0,
-      consultationModes: ['on-site'], consultationGraceMinutes: 10, consultationBufferMinutes: 15,
+      consultationModes: ['on-site'], consultationGraceMinutes: 15, consultationBufferMinutes: 20,
       followUpAllowed: false,
       followUpWindowDays: 14,
       staffingRequirements: [],
@@ -739,7 +739,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : postType === 'Package' && packageFollowUpComponents.length
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
-          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 10) + 5, Number(form.value.consultationBufferMinutes ?? 15))) },
+          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(form.value.consultationGraceMinutes ?? 15))), bufferMinutes: Math.min(45, Math.max(Number(form.value.consultationGraceMinutes ?? 15) + 5, Number(form.value.consultationBufferMinutes ?? 20))) },
           staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
           sessionCount: postType === 'Package' ? treatmentCourseVisitCount(courseSteps) : 1,
           sessionIntervalDays: postType === 'Package' ? Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
@@ -801,7 +801,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         sameDayConsultationAllowed: post.sameDayConsultationAllowed === true,
         sameDayConsultationBufferMinutes: Number.isInteger(Number(post.sameDayConsultationBufferMinutes)) ? Number(post.sameDayConsultationBufferMinutes) : 15,
         consultationFee: Number(post.consultationFee || post.price || 0),
-        consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 10, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 15,
+        consultationModes: normalizeConsultationModes(post.consultationModes, post.consultationMode), consultationGraceMinutes: post.consultationPolicy?.graceMinutes ?? 15, consultationBufferMinutes: post.consultationPolicy?.bufferMinutes ?? 20,
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
@@ -948,7 +948,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             : editForm.value.postType === 'Package' && editPackageFollowUpComponents.length
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
-          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(editForm.value.consultationGraceMinutes ?? 10))), bufferMinutes: Math.min(45, Math.max(Number(editForm.value.consultationGraceMinutes ?? 10) + 5, Number(editForm.value.consultationBufferMinutes ?? 15))) },
+          consultationPolicy: { version: 2, graceMinutes: Math.min(30, Math.max(0, Number(editForm.value.consultationGraceMinutes ?? 15))), bufferMinutes: Math.min(45, Math.max(Number(editForm.value.consultationGraceMinutes ?? 15) + 5, Number(editForm.value.consultationBufferMinutes ?? 20))) },
           staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
           sessionCount: editForm.value.postType === 'Package' ? treatmentCourseVisitCount(editCourseSteps) : 1,
           sessionIntervalDays: editForm.value.postType === 'Package' ? Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,

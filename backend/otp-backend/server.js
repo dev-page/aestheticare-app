@@ -19,6 +19,7 @@ import { registerPharmacyWorkflow } from './pharmacyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
 import { registerRefundWorkflow } from './refundWorkflow.js'
 import { registerPaymentReceiptWorkflow } from './paymentReceiptWorkflow.js'
+import { createAppointmentPaymentReceiptPdf, emailAppointmentPaymentReceipt } from './appointmentPaymentReceipts.js'
 import { registerListingApproval, approvedOrderLines } from './listingApproval.js'
 import { registerBookingMilestones } from './bookingMilestones.js'
 import { registerBookingBatch } from './bookingBatch.js'
@@ -482,9 +483,9 @@ let caviteBoundaryCacheAt = 0
 const CAVITE_BOUNDARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const postmarkClient = mailjetApiKey && mailjetSecretKey ? {
-  async sendEmail({ From, To, Subject, TextBody, HtmlBody, timeoutMs }) {
+  async sendEmail({ From, To, Subject, TextBody, HtmlBody, Attachments, timeoutMs }) {
     const auth = Buffer.from(`${mailjetApiKey}:${mailjetSecretKey}`).toString('base64')
-    const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}), headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || senderEmail }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '' }] }) })
+    const response = await fetch('https://api.mailjet.com/v3.1/send', { method: 'POST', ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}), headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ Messages: [{ From: { Email: From || senderEmail }, To: String(To).split(',').map((Email) => ({ Email: Email.trim() })).filter(({ Email }) => Email), Subject, TextPart: TextBody || '', HTMLPart: HtmlBody || '', ...(Array.isArray(Attachments) && Attachments.length ? { Attachments } : {}) }] }) })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(payload?.ErrorMessage || 'Mailjet delivery failed.')
     const result = payload?.Messages?.[0]
@@ -4732,7 +4733,9 @@ app.post('/treatment-sessions/:id/no-show', requireAuth, async (req, res) => {
       const visit = visitRef ? (await tx.get(visitRef)).data() : null
       assertWorkflow(!visit?.checkedInAt && !visit?.startedAt, 'An attendee who checked in cannot be marked absent.')
       const end = new Date(`${session.date}T${session.time}+08:00`).getTime() + Number(visit?.totalServiceDurationMinutes || 60) * 60000
-      assertWorkflow(Number.isFinite(end) && Date.now() >= end, 'Wait until the appointment window ends before marking a no-show.')
+      const configuredGracePeriod = Number(policy.noShowGracePeriodMinutes ?? 15)
+      const gracePeriodMinutes = Number.isFinite(configuredGracePeriod) ? Math.max(0, configuredGracePeriod) : 15
+      assertWorkflow(Number.isFinite(end) && Date.now() >= end + gracePeriodMinutes * 60000, `Wait until the appointment ends and its ${gracePeriodMinutes}-minute no-show grace period passes before marking a no-show.`)
       tx.update(ref, { status: nextStatus, noShowAt: admin.firestore.FieldValue.serverTimestamp(), noShowMarkedById: req.user.uid, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       if (visitRef) tx.update(visitRef, { status: 'No-show', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
       if (!eligible) tx.update(planRef, { treatmentPlan: { ...plan.treatmentPlan, forfeitedSessions: Number(plan.treatmentPlan?.forfeitedSessions || 0) + 1, remainingSessions: Math.max(0, Number(plan.treatmentPlan?.remainingSessions || session.totalSessions) - 1) }, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
@@ -4919,13 +4922,26 @@ registerWalkInPayments(app, {
     const priceLines = pricing
       ? `\nSubtotal: PHP ${Number(pricing.subtotal || 0).toFixed(2)}\n${pricing.vatApplicable ? `VAT (12%): PHP ${Number(pricing.vatAmount || 0).toFixed(2)}` : 'VAT: PHP 0.00'}\nTotal: PHP ${Number(pricing.total ?? receipt.total).toFixed(2)}`
       : `\nAmount paid: PHP ${Number(receipt.total || 0).toFixed(2)}`
-    await sendPostmarkMessage({
-      to: email,
-      from: senderEmail,
-      subject: 'Your walk-in appointment service key',
-      text: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}${priceLines}\n\nYour service key is: ${receipt.serviceKey}\n\nKeep this key private and bring it on the appointment day. The practitioner will ask for it to verify your appointment before starting the service.`,
+    const attachment = createAppointmentPaymentReceiptPdf({ appointment: receipt, payment: receipt, clinicName: receipt.clinicName || 'AesthetiCare clinic' })
+    const sameRecipient = String(receipt.customerEmail || '').trim().toLowerCase() === String(email || '').trim().toLowerCase()
+    const delivery = await postmarkClient.sendEmail({
+      From: senderEmail,
+      To: email,
+      Subject: sameRecipient ? 'Your walk-in appointment payment receipt and service code' : 'Your walk-in appointment payment receipt',
+      TextBody: `Hi ${receipt.payerName || receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}${priceLines}\n\nYour PDF receipt is attached.${sameRecipient ? `\n\nThe appointment service code is: ${receipt.serviceKey}\nKeep this code private and bring it on the appointment day.` : ''}`,
+      Attachments: [attachment],
     })
-    return true
+    if (!sameRecipient && receipt.customerEmail && receipt.serviceKey) {
+      try {
+        await postmarkClient.sendEmail({
+          From: senderEmail,
+          To: receipt.customerEmail,
+          Subject: 'Your walk-in appointment service code',
+          TextBody: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}. Your service code is ${receipt.serviceKey}. Keep it private and bring it on the appointment day so the practitioner can verify your appointment.`,
+        })
+      } catch (error) { console.warn('Could not email the walk-in service code:', error?.message || error) }
+    }
+    return delivery?.ErrorCode === 0
   },
 })
 registerListingApproval(app, { admin, requireAuth, loadUserContext })
@@ -9371,8 +9387,8 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
       assertWorkflow(fresh && ['scheduled', 'ready to start', 'paid'].includes(normalized(fresh.status)) && !fresh.checkedInAt && !fresh.workerKeyVerified && !fresh.startedAt && !fresh.isGroupParent && !fresh.isBookingOrderParent, 'Only an unattended individual appointment can be marked as a no-show.')
       const start = new Date(`${fresh.date}T${fresh.time}+08:00`)
       const end = fresh.endTime ? new Date(`${fresh.date}T${fresh.endTime}+08:00`) : new Date(start.getTime() + Number(fresh.totalServiceDurationMinutes || 60) * 60000)
-      const configuredGracePeriod = Number(policy.noShowGracePeriodMinutes || 0)
-      const gracePeriodMinutes = Number.isFinite(configuredGracePeriod) ? Math.max(0, configuredGracePeriod) : 0
+      const configuredGracePeriod = Number(policy.noShowGracePeriodMinutes ?? 15)
+      const gracePeriodMinutes = Number.isFinite(configuredGracePeriod) ? Math.max(0, configuredGracePeriod) : 15
       assertWorkflow(Number.isFinite(end.getTime()) && Date.now() >= end.getTime() + gracePeriodMinutes * 60 * 1000, `Wait until the appointment ends and its ${gracePeriodMinutes}-minute no-show grace period passes before recording a no-show.`)
       const planId = fresh.treatmentPlanAppointmentId || appointmentId
       const planRef = firestore.collection('appointments').doc(planId)
@@ -9656,6 +9672,23 @@ app.post('/appointments/:id/approve-booking', requireAuth, async (req, res) => {
   }
 })
 
+app.get('/appointments/:id/feedback', requireAuth, async (req, res) => {
+  const appointmentId = String(req.params.id || '').trim()
+  try {
+    const firestore = admin.firestore()
+    const appointmentSnap = await firestore.collection('appointments').doc(appointmentId).get()
+    if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
+    if (String(appointmentSnap.data()?.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
+    const reviewSnap = await firestore.collection('reviews').doc(`${appointmentId}_${req.user.uid}`).get()
+    if (!reviewSnap.exists) return res.json({ success: true, data: { review: null } })
+    const review = reviewSnap.data() || {}
+    return res.json({ success: true, data: { review: { rating: Number(review.rating || 0), comment: String(review.comment || ''), reviewerName: String(review.reviewerName || ''), createdAt: review.createdAt || null, updatedAt: review.updatedAt || null } } })
+  } catch (error) {
+    console.error('appointment feedback read error:', error)
+    return res.status(500).json({ success: false, error: error?.message || 'Feedback could not be loaded.' })
+  }
+})
+
 app.post('/appointments/:id/feedback', requireAuth, async (req, res) => {
   const appointmentId = String(req.params.id || '').trim()
   const rating = Number(req.body?.rating || 0)
@@ -9668,7 +9701,10 @@ app.post('/appointments/:id/feedback', requireAuth, async (req, res) => {
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
     const appointment = appointmentSnap.data() || {}
     if (String(appointment.customerId || '').trim() !== req.user.uid) return res.status(403).json({ success: false, error: 'Forbidden' })
-    if (normalizeBookingStatus(appointment.status) !== 'completed') return res.status(409).json({ success: false, error: 'Feedback is available after completion.' })
+    const status = normalizeBookingStatus(appointment.status)
+    const practitionerFinished = appointment.workerCompleted === true
+      && ['awaiting customer confirmation', 'balance due'].includes(status)
+    if (status !== 'completed' && !practitionerFinished) return res.status(409).json({ success: false, error: 'Feedback is available after the clinic marks the service complete.' })
 
     const reviewRef = firestore.collection('reviews').doc(`${appointmentId}_${req.user.uid}`)
     await reviewRef.set({
@@ -10670,6 +10706,18 @@ const recordAppointmentPayment = async (req, res) => {
     }
 
     if ((appointment.recordedPaymentSessions || []).includes(checkoutSessionId) || String(appointment.paymongoCheckoutSessionId || '').trim() === checkoutSessionId) {
+      const clinicSnap = appointment.branchId ? await firestore.collection('clinics').doc(String(appointment.branchId)).get() : null
+      let emailResult = { sent: false }
+      try {
+        emailResult = await emailAppointmentPaymentReceipt({
+          db: firestore,
+          transactionId: `booking-${checkoutSessionId}`,
+          appointment,
+          clinicName: clinicSnap?.data()?.name || '',
+          senderEmail,
+          sendEmail: postmarkClient?.sendEmail.bind(postmarkClient),
+        })
+      } catch (error) { console.warn('Could not send appointment receipt email:', error?.message || error) }
       return res.json({
         success: true,
         data: {
@@ -10678,6 +10726,7 @@ const recordAppointmentPayment = async (req, res) => {
           amountPaid: Number(appointment.amountPaid || 0),
           paymentCoverage: appointment.paymentCoverage || 'pending',
           alreadyRecorded: true,
+          receiptEmailSent: emailResult.sent,
         },
       })
     }
@@ -10766,6 +10815,7 @@ const recordAppointmentPayment = async (req, res) => {
         pricingSnapshot: fresh.pricingSnapshot || null,
         method: payment.attributes?.source?.type || payment.attributes?.payment_method?.type || 'Online',
         status: 'Paid',
+        receiptEmailStatus: 'pending',
         paidAt: paidTimestamp,
         createdAt: timestamp,
       })
@@ -10790,11 +10840,25 @@ const recordAppointmentPayment = async (req, res) => {
         if (groupRef) tx.set(groupRef, { paymentStatus: 'Paid', paymongoCheckoutSessionId: checkoutSessionId, paymongoPaymentId: paymentId, paidAt: timestamp, status: 'Paid', updatedAt: timestamp }, { merge: true })
       }
       if (fresh.bookingId) tx.set(firestore.collection('bookings').doc(fresh.bookingId), { status, amountPaid, paymentHoldStatus: 'confirmed', activePaymongoCheckoutSessionId: '', paymentHoldDeadlineAt: fresh.paymentHoldExpiresAt || null, paymentHoldExpiresAt: null, updatedAt: timestamp }, { merge: true })
-      tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: status === 'Completed' ? 'Booking completed' : 'Appointment confirmed', message: status === 'Completed' ? 'Your service and final payment are complete. The booking is now in your history.' : 'Payment verified. Your appointment is confirmed and appears in My Appointments.', link: '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
+      tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: 'Payment received and receipt ready', message: `Your payment of PHP ${paymentAmount.toFixed(2)} was verified. Download the PDF receipt from Appointment History in My Appointments.`, link: '/customer/appointments?tab=history', read: false, deleted: false, createdAt: timestamp })
       writeClinicAppointmentPaidNotifications({ tx, db: firestore, recipients: clinicRecipients, branchId: fresh.branchId, appointmentId, bookingId: fresh.bookingId, customerName: fresh.customerName, serviceName: fresh.service || 'Appointment', appointmentDate: fresh.date, appointmentTime: fresh.time, createdAt: timestamp })
       return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment' }
     })
-    return res.json({ success: true, data: result })
+    const updatedSnap = await appointmentRef.get()
+    const updatedAppointment = updatedSnap.data() || appointment
+    const clinicSnap = updatedAppointment.branchId ? await firestore.collection('clinics').doc(String(updatedAppointment.branchId)).get() : null
+    let emailResult = { sent: false }
+    try {
+      emailResult = await emailAppointmentPaymentReceipt({
+        db: firestore,
+        transactionId: `booking-${checkoutSessionId}`,
+        appointment: updatedAppointment,
+        clinicName: clinicSnap?.data()?.name || '',
+        senderEmail,
+        sendEmail: postmarkClient?.sendEmail.bind(postmarkClient),
+      })
+    } catch (error) { console.warn('Could not send appointment receipt email:', error?.message || error) }
+    return res.json({ success: true, data: { ...result, receiptEmailSent: emailResult.sent } })
   } catch (error) {
     console.error('appointments/record-payment error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })
@@ -10813,7 +10877,7 @@ app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
 
     // Customer clients cannot read the clinic transaction collection directly.
     // Query only this appointment's records on the server, then return a small
-    // receipt-safe projection after checking each transaction's customer ID.
+    // receipt-safe projection to the verified owner of the appointment.
     const transactions = await firestore.collection('transactions').where('appointmentId', '==', appointmentId).get()
     const toIso = value => {
       if (value?.toDate) return value.toDate().toISOString()
@@ -10823,8 +10887,8 @@ app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
     }
     const payments = transactions.docs
       .map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
-      .filter(transaction => String(transaction.customerId || '') === req.user.uid
-        && transaction.type === 'service_payment'
+      .filter(transaction => (!String(transaction.customerId || transaction.clientId || '') || String(transaction.customerId || transaction.clientId || '') === req.user.uid)
+        && ['service_payment', 'appointment_payment'].includes(String(transaction.type || ''))
         && Number(transaction.amount || 0) > 0)
       .map(transaction => ({
         id: transaction.id,
@@ -10835,6 +10899,8 @@ app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
         amount: Number(transaction.amount || 0),
         method: String(transaction.method || 'Online payment'),
         status: String(transaction.status || 'Paid'),
+        receiptEmailStatus: String(transaction.receiptEmailStatus || 'unknown'),
+        receiptEmailSentAt: toIso(transaction.receiptEmailSentAt),
         paidAt: toIso(transaction.paidAt || transaction.createdAt || appointment.paymongoPaidAt),
         paidAtSource: transaction.paidAt ? 'provider' : (transaction.createdAt || appointment.paymongoPaidAt ? 'recorded' : 'unknown'),
       }))

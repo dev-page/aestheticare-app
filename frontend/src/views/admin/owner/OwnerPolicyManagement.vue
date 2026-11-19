@@ -156,7 +156,7 @@ const servicePolicies = [
 ]
 
 
-const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 30, noShowNonRefundable: true, noShowRefundPercentage: 0 })
+const form = reactive({ servicePaymentPolicyEnabled: false, fullPayment: false, downpaymentPercentage: 50, serviceCancellationPolicyEnabled: false, earlyMinimumHours: 48, earlyNonRefundable: false, earlyRefundPercentage: 100, midMinimumHours: 24, midMaximumHours: 48, midNonRefundable: false, midRefundPercentage: 50, lateMaximumHours: 24, lateNonRefundable: true, lateRefundPercentage: 0, serviceReschedulingPolicyEnabled: false, maximumRescheduleAllowance: 1, serviceNoShowPolicyEnabled: false, noShowGracePeriodMinutes: 15, noShowNonRefundable: true, noShowRefundPercentage: 0 })
 const retiredPolicyFields = ref([])
 const activeTab = ref('policies')
 const savedPolicy = ref({})

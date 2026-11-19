@@ -327,6 +327,18 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           }
         }
         tx.update(ref, update)
+        if (req.body?.action === 'worker_complete' && appointment.customerId) {
+          tx.set(db.collection('notifications').doc(`service-complete-${ref.id}`), {
+            recipientUserId: appointment.customerId,
+            branchId: appointment.branchId,
+            title: online ? 'Consultation complete' : 'Service complete',
+            message: online
+              ? 'The practitioner marked your consultation complete. Meeting access is closed. Review your receipt and leave feedback in Appointment History.'
+              : 'The practitioner marked your service complete. Review your receipt and leave feedback in Appointment History.',
+            link: '/customer/appointments?tab=history',
+            read: false, deleted: false, createdAt: timestamp,
+          })
+        }
         if (update.status === 'Completed' && sharedParentRef && siblings.every(sibling => sibling && ['completed', 'cancelled', 'rejected', 'no-show', 'forfeited'].includes(normalized(sibling.status)))) {
           tx.update(sharedParentRef, { status: 'Completed', completedAt: timestamp, updatedAt: timestamp })
           if (sharedParent?.bookingId) tx.set(db.collection('bookings').doc(sharedParent.bookingId), { status: 'Completed', updatedAt: timestamp }, { merge: true })
