@@ -2765,8 +2765,8 @@ const handleRegistrationSubmit = () => {
 <div class="space-y-3 rounded-2xl border border-gold-200/80 bg-cream-50/80 p-4 sm:p-5">
               <h2 class="text-base font-semibold text-charcoal-800">Account</h2>
               <div class="relative flex-1">
-                <input v-model="email" type="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
-                <label class="floating-label floating-label-raised">Email Address</label>
+                <input id="clinic-registration-email" name="email" v-model="email" type="email" autocomplete="email" required placeholder=" " class="peer input h-16 pt-4 pb-2 px-3 pr-14" @input="handleEmailDraftInput" />
+                <label for="clinic-registration-email" class="floating-label floating-label-raised">Email Address</label>
                 <!-- Keep the status icon centered on the 4rem input, not on
                      this wrapper once validation text expands below it. -->
                 <span
@@ -2803,28 +2803,30 @@ const handleRegistrationSubmit = () => {
 
             <div class="registration-name-grid grid grid-cols-1 gap-4">
               <div class="relative">
-                <input v-model="firstName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="registration-name-label">First Name</label>
+                <input id="owner-first-name" name="given-name" v-model="firstName" autocomplete="given-name" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label for="owner-first-name" class="registration-name-label">First Name</label>
               </div>              
               <div class="registration-optional-field">
                 <div class="relative flex-1 min-w-0">
-                  <label class="registration-field-checkbox">
-                    <input v-model="middleNameEnabled" type="checkbox" aria-label="Enable middle name" @change="!middleNameEnabled && (midName = '')" />
+                  <label for="owner-middle-name-enabled" class="registration-field-checkbox">
+                    <input id="owner-middle-name-enabled" name="middle-name-enabled" v-model="middleNameEnabled" type="checkbox" @change="!middleNameEnabled && (midName = '')" />
+                    <span class="sr-only">Include middle name</span>
                   </label>
-                  <input v-model="midName" :disabled="!middleNameEnabled" placeholder=" " aria-label="Middle Name" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                  <label class="registration-name-label">Middle Name</label>
+                  <input id="owner-middle-name" name="additional-name" v-model="midName" :disabled="!middleNameEnabled" autocomplete="additional-name" placeholder=" " class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                  <label for="owner-middle-name" class="registration-name-label">Middle Name</label>
                 </div>
               </div>
               <div class="relative">
-                <input v-model="lastName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
-                <label class="registration-name-label">Last Name</label>
+                <input id="owner-last-name" name="family-name" v-model="lastName" autocomplete="family-name" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3 text-sm sm:text-base" />
+                <label for="owner-last-name" class="registration-name-label">Last Name</label>
               </div>
               <div class="registration-optional-field">
                 <div class="relative flex-1 min-w-0">
-                  <label class="registration-field-checkbox">
-                    <input v-model="suffixEnabled" type="checkbox" aria-label="Enable suffix" @change="!suffixEnabled && (suffix = '')" />
+                  <label for="owner-suffix-enabled" class="registration-field-checkbox">
+                    <input id="owner-suffix-enabled" name="suffix-enabled" v-model="suffixEnabled" type="checkbox" @change="!suffixEnabled && (suffix = '')" />
+                    <span class="sr-only">Include suffix</span>
                   </label>
-                  <select v-model="suffix" :disabled="!suffixEnabled" aria-label="Suffix" class="peer input registration-suffix-select registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base">
+                  <select id="owner-suffix" name="honorific-suffix" v-model="suffix" :disabled="!suffixEnabled" autocomplete="honorific-suffix" class="peer input registration-suffix-select registration-checkbox-field h-16 pt-4 pb-2 px-3 text-sm sm:text-base">
                   <option value="" disabled hidden></option>
                   <option value="Jr.">Jr.</option>
                   <option value="Sr.">Sr.</option>
@@ -2834,7 +2836,7 @@ const handleRegistrationSubmit = () => {
                   <option value="IV">IV</option>
                   <option value="V">V</option>
                   </select>
-                  <label class="registration-name-label">Suffix</label>
+                  <label for="owner-suffix" class="registration-name-label">Suffix</label>
                 </div>
               </div>
             </div>
@@ -2842,10 +2844,12 @@ const handleRegistrationSubmit = () => {
             <div class="relative">
               <div ref="calendarRef" class="calendar-wrapper" @click.stop>
                 <input
+                  id="owner-birth-date"
+                  name="birth-date"
                   v-model="manualBirthDate"
                   type="text"
                   inputmode="numeric"
-                  autocomplete="bday"
+                  autocomplete="off"
                   maxlength="10"
                   placeholder="mm/dd/yyyy"
                   class="peer input h-16 pt-4 pb-2 px-3 pr-12 text-left birth-display"
@@ -2853,7 +2857,7 @@ const handleRegistrationSubmit = () => {
                   @input="handleManualBirthInput"
                   @blur="handleManualBirthBlur"
                 />
-                <label class="floating-label birth-floating-label">Birth Date</label>
+                <label for="owner-birth-date" class="floating-label birth-floating-label">Birth Date</label>
                 <button type="button" @click.stop="toggleCalendar"
                   class="calendar-toggle absolute right-4 top-1/2 -translate-y-1/2 text-charcoal-700 hover:text-gold-700">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2936,8 +2940,8 @@ const handleRegistrationSubmit = () => {
             <div v-if="requiresPasswordForStep1" class="relative">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="relative">
-                  <input :type="passwordVisible ? 'text' : 'password'" v-model="password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="passwordFocused = true" @blur="passwordFocused = false" />
-                  <label class="floating-label">Password</label>
+                  <input id="clinic-registration-password" name="new-password" :type="passwordVisible ? 'text' : 'password'" v-model="password" autocomplete="new-password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="passwordFocused = true" @blur="passwordFocused = false" />
+                  <label for="clinic-registration-password" class="floating-label">Password</label>
                   <button type="button" @click="togglePassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-rose-500 hover:text-gold-700" tabindex="-1">
                     <svg v-if="!passwordVisible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.956 9.956 0 012.1-3.592M6.18 6.18A9.956 9.956 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -2951,8 +2955,8 @@ const handleRegistrationSubmit = () => {
                 </div>
 
                 <div v-if="requiresPasswordForStep1" class="relative">
-                  <input :type="confirmPasswordVisible ? 'text' : 'password'" v-model="confirmPassword" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="confirmPasswordFocused = true" @blur="confirmPasswordFocused = false" />
-                  <label class="floating-label">Confirm Password</label>
+                  <input id="clinic-registration-password-confirmation" name="confirm-password" :type="confirmPasswordVisible ? 'text' : 'password'" v-model="confirmPassword" autocomplete="new-password" required maxlength="32" placeholder=" " class="peer input h-16 pt-4 pb-2 px-3" @focus="confirmPasswordFocused = true" @blur="confirmPasswordFocused = false" />
+                  <label for="clinic-registration-password-confirmation" class="floating-label">Confirm Password</label>
                   <button type="button" @click="toggleConfirmPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-rose-500 hover:text-gold-700" tabindex="-1">
                     <svg v-if="!confirmPasswordVisible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.956 9.956 0 012.1-3.592M6.18 6.18A9.956 9.956 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -3032,8 +3036,8 @@ const handleRegistrationSubmit = () => {
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="relative">
-                <input v-model="clinicName" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
-                <label class="floating-label">Clinic Name</label>
+                <input id="clinic-name" name="organization" v-model="clinicName" autocomplete="organization" placeholder=" " required class="peer input h-16 pt-4 pb-2 px-3" />
+                <label for="clinic-name" class="floating-label">Clinic Name</label>
               </div>
               <div class="relative">
                 <label for="clinic-location" class="floating-label floating-label-raised">Clinic Location (Cavite Only)</label>
@@ -3057,50 +3061,55 @@ const handleRegistrationSubmit = () => {
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="registration-optional-field">
                   <div class="relative flex-1 min-w-0">
-                    <label class="registration-field-checkbox">
-                      <input v-model="clinicBuildingNumberEnabled" type="checkbox" aria-label="Include house or building number" @change="!clinicBuildingNumberEnabled && (clinicBuildingNumber = '')" />
+                    <label for="clinic-building-number-enabled" class="registration-field-checkbox">
+                      <input id="clinic-building-number-enabled" name="building-number-enabled" v-model="clinicBuildingNumberEnabled" type="checkbox" @change="!clinicBuildingNumberEnabled && (clinicBuildingNumber = '')" />
+                      <span class="sr-only">Include house or building number</span>
                     </label>
-                    <input v-model="clinicBuildingNumber" :disabled="!clinicBuildingNumberEnabled" placeholder=" " aria-label="House / Building Number" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
-                    <label class="registration-name-label">House / Building Number</label>
+                    <input id="clinic-building-number" name="building-number" v-model="clinicBuildingNumber" :disabled="!clinicBuildingNumberEnabled" placeholder=" " class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label for="clinic-building-number" class="registration-name-label">House / Building Number</label>
                   </div>
                 </div>
                 <div class="registration-optional-field">
                   <div class="relative flex-1 min-w-0">
-                    <label class="registration-field-checkbox">
-                      <input v-model="clinicStreetNameEnabled" type="checkbox" aria-label="Include street, subdivision, or village" @change="!clinicStreetNameEnabled && (clinicStreetName = '')" />
+                    <label for="clinic-street-name-enabled" class="registration-field-checkbox">
+                      <input id="clinic-street-name-enabled" name="street-name-enabled" v-model="clinicStreetNameEnabled" type="checkbox" @change="!clinicStreetNameEnabled && (clinicStreetName = '')" />
+                      <span class="sr-only">Include street, subdivision, or village</span>
                     </label>
-                    <input v-model="clinicStreetName" :disabled="!clinicStreetNameEnabled" placeholder=" " aria-label="Street / Subdivision / Village" class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
-                    <label class="registration-name-label">Street / Subdivision / Village</label>
+                    <input id="clinic-street-name" name="address-line1" v-model="clinicStreetName" :disabled="!clinicStreetNameEnabled" autocomplete="address-line1" placeholder=" " class="peer input registration-checkbox-field h-16 pt-4 pb-2 px-3" />
+                    <label for="clinic-street-name" class="registration-name-label">Street / Subdivision / Village</label>
                   </div>
                 </div>
               </div>
 
               <div class="relative">
-                <input :value="clinicFullAddressLabel" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
-                <label class="floating-label floating-label-raised">Full Address</label>
+                <input id="clinic-full-address" name="full-address" :value="clinicFullAddressLabel" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                <label for="clinic-full-address" class="floating-label floating-label-raised">Full Address</label>
                 <p v-if="!clinicLocationAddress" class="mt-1 text-xs text-charcoal-500">
                   Address will be filled after pinning the clinic location.
                 </p>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="relative">
-                  <input :value="clinicBarangay" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
-                  <label class="floating-label floating-label-raised">Barangay</label>
+                  <input id="clinic-barangay" name="address-level3" :value="clinicBarangay" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                  <label for="clinic-barangay" class="floating-label floating-label-raised">Barangay</label>
                 </div>
                 <div class="relative">
-                  <input :value="clinicProvince" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
-                  <label class="floating-label floating-label-raised">Province</label>
+                  <input id="clinic-province" name="address-level1" :value="clinicProvince" readonly class="input h-16 pt-4 pb-2 px-3 bg-cream-50/70 text-charcoal-700" />
+                  <label for="clinic-province" class="floating-label floating-label-raised">Province</label>
                 </div>
                 <div class="relative">
                   <input
+                    id="clinic-postal-code"
+                    name="postal-code"
                     v-model="clinicPostalCode"
+                    autocomplete="postal-code"
                     inputmode="numeric"
                     maxlength="4"
                     placeholder=" "
                     @input="sanitizePostalCodeInput"
                     class="peer input h-16 pt-4 pb-2 px-3"
                   />
-                  <label class="floating-label">Postal Code</label>
+                  <label for="clinic-postal-code" class="floating-label">Postal Code</label>
                 </div>
               </div>
             </div>
@@ -3109,8 +3118,11 @@ const handleRegistrationSubmit = () => {
               <div class="flex items-center rounded-xl border border-[rgba(232,167,58,0.35)] bg-white/45 focus-within:border-gold-700">
                 <span class="inline-flex items-center px-3 text-charcoal-700 select-none">+63</span>
                 <input
+                  id="clinic-contact-number"
+                  name="tel-national"
                   v-model="contactNumber"
                   type="tel"
+                  autocomplete="tel-national"
                   inputmode="numeric"
                   pattern="[0-9]*"
                   maxlength="10"
@@ -3119,7 +3131,7 @@ const handleRegistrationSubmit = () => {
                   class="peer flex-1 h-16 pt-4 pb-2 px-3 bg-transparent text-charcoal-700 placeholder-transparent focus:outline-none"
                   @input="sanitizeContactNumber"
                 />
-                <label class="floating-label contact-label">Business Contact Number</label>
+                <label for="clinic-contact-number" class="floating-label contact-label">Business Contact Number</label>
               </div>
             </div>
 
@@ -3150,9 +3162,14 @@ const handleRegistrationSubmit = () => {
                 </div>
 
               <div class="otp-boxes">
+                <label v-for="(_, index) in OTP_LENGTH" :key="`clinic-otp-label-${index}`" class="sr-only" :for="`clinic-otp-${index}`">
+                  One-time code digit {{ index + 1 }} of {{ OTP_LENGTH }}
+                </label>
                 <input
                   v-for="(_, index) in OTP_LENGTH"
                   :key="`clinic-otp-${index}`"
+                  :id="`clinic-otp-${index}`"
+                  :name="`one-time-code-digit-${index + 1}`"
                   :ref="(el) => setOtpInputRef(el, index)"
                   v-model="otpDigits[index]"
                   type="text"
@@ -3233,17 +3250,19 @@ const handleRegistrationSubmit = () => {
                   <legend class="text-sm font-medium text-charcoal-700">Are you the person named on the business permit?</legend>
                   <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label
+                      for="permit-holder-yes"
                       class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
                       :class="permitHolderIsRegistrant === true ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
                     >
-                      <input v-model="permitHolderIsRegistrant" :value="true" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
+                      <input id="permit-holder-yes" v-model="permitHolderIsRegistrant" :value="true" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
                       <span><strong class="block">Yes, I am</strong><span class="text-xs text-charcoal-500">My name appears as the permit holder.</span></span>
                     </label>
                     <label
+                      for="permit-holder-no"
                       class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition"
                       :class="permitHolderIsRegistrant === false ? 'border-gold-600 bg-gold-100/70 text-charcoal-800' : 'border-gold-200 bg-white/70 text-charcoal-700 hover:border-gold-400'"
                     >
-                      <input v-model="permitHolderIsRegistrant" :value="false" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
+                      <input id="permit-holder-no" v-model="permitHolderIsRegistrant" :value="false" type="radio" name="permit-holder-is-registrant" :disabled="isExpiryPartialResubmission" class="accent-gold-700" />
                       <span><strong class="block">No, someone else is</strong><span class="text-xs text-charcoal-500">I am registering as an authorized representative.</span></span>
                     </label>
                   </div>
@@ -3251,12 +3270,12 @@ const handleRegistrationSubmit = () => {
 
                 <div v-if="permitHolderIsRegistrant === false" class="grid grid-cols-1 gap-4 border-t border-gold-200/80 pt-4 sm:grid-cols-2">
                   <div class="relative">
-                    <input v-model.trim="permitHolderName" type="text" maxlength="120" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
-                    <label class="floating-label">Permit Holder's Full Name</label>
+                    <input id="permit-holder-name" name="permit-holder-name" v-model.trim="permitHolderName" type="text" autocomplete="name" maxlength="120" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
+                    <label for="permit-holder-name" class="floating-label">Permit Holder's Full Name</label>
                   </div>
                   <div class="relative">
-                    <input v-model.trim="permitHolderRelationship" type="text" maxlength="80" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
-                    <label class="floating-label">Your Role / Relationship</label>
+                    <input id="permit-holder-relationship" name="permit-holder-relationship" v-model.trim="permitHolderRelationship" type="text" maxlength="80" placeholder=" " class="peer input h-16 px-3 pb-2 pt-4" />
+                    <label for="permit-holder-relationship" class="floating-label">Your Role / Relationship</label>
                   </div>
                   <p class="text-xs leading-relaxed text-charcoal-600 sm:col-span-2">
                     An Authorization Letter / Proof of Authority upload will be required below. OCR will look for both names, and an administrator will validate the authority granted.
@@ -3291,8 +3310,8 @@ const handleRegistrationSubmit = () => {
                     </div>
                   </details>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeFront')" class="upload-card">
-                    <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</p>
-                    <input :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
+                    <label for="registration-document-government-id-front" class="upload-label">{{ documentLabelMap.governmentIdRepresentativeFront }}</label>
+                    <input id="registration-document-government-id-front" name="government-id-representative-front" :key="documentInputKeys.governmentIdRepresentativeFront" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeFront', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeFront"
                       :src="documentPreviewUrls.governmentIdRepresentativeFront"
@@ -3317,8 +3336,8 @@ const handleRegistrationSubmit = () => {
                   </div>
                   <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeFront }} will be kept from your previous submission.</div>
                   <div v-if="documentsToUpload.includes('governmentIdRepresentativeBack')" class="upload-card">
-                    <p class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</p>
-                    <input :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
+                    <label for="registration-document-government-id-back" class="upload-label">{{ documentLabelMap.governmentIdRepresentativeBack }}</label>
+                    <input id="registration-document-government-id-back" name="government-id-representative-back" :key="documentInputKeys.governmentIdRepresentativeBack" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdRepresentativeBack', $event)" class="upload-input" />
                     <img
                       v-if="documentPreviewUrls.governmentIdRepresentativeBack"
                       :src="documentPreviewUrls.governmentIdRepresentativeBack"
@@ -3348,9 +3367,10 @@ const handleRegistrationSubmit = () => {
                   :key="docKey"
                   class="upload-card"
                 >
-                  <p class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
+                  <label v-if="documentsToUpload.includes(docKey)" :for="`registration-document-${docKey}`" class="upload-label">{{ documentLabelMap[docKey] || docKey }}</label>
+                  <p v-else class="upload-label">{{ documentLabelMap[docKey] || docKey }}</p>
                   <template v-if="documentsToUpload.includes(docKey)">
-                  <input :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
+                  <input :id="`registration-document-${docKey}`" :name="`document-${docKey}`" :key="documentInputKeys[docKey]" type="file" accept=".pdf,image/png,image/jpeg" @change="handleDocumentFileChange(docKey, $event)" class="upload-input" />
 
                   <img
                     v-if="documentPreviewUrls[docKey]"
@@ -3391,19 +3411,19 @@ const handleRegistrationSubmit = () => {
                   </div>
                 </div>
 
-                <label class="flex items-start gap-2 text-sm text-charcoal-700">
-                  <input v-model="termsAccepted" type="checkbox" class="mt-1 accent-gold-700" />
+                  <label for="registration-terms-accepted" class="flex items-start gap-2 text-sm text-charcoal-700">
+                    <input id="registration-terms-accepted" name="terms-accepted" v-model="termsAccepted" type="checkbox" class="mt-1 accent-gold-700" />
                   <span>I agree to the Terms &amp; Conditions and Privacy Policy.</span>
                 </label>
 
                 <template v-if="isClinicRegistrationActive">
-                  <label class="flex items-start gap-2 text-sm text-charcoal-700">
-                    <input v-model="clinicAgreementAccepted" type="checkbox" :disabled="!clinicAgreementRead" class="mt-1 accent-gold-700" />
+                  <label for="clinic-agreement-accepted" class="flex items-start gap-2 text-sm text-charcoal-700">
+                    <input id="clinic-agreement-accepted" name="clinic-agreement-accepted" v-model="clinicAgreementAccepted" type="checkbox" :disabled="!clinicAgreementRead" class="mt-1 accent-gold-700" />
                     <span>I agree to the Clinic Platform Agreement and confirm that I am authorized to bind this clinic.</span>
                   </label>
 
                   <div v-if="clinicAgreementRead" class="space-y-2">
-                    <label class="block text-sm font-medium text-charcoal-700">Electronic signature</label>
+                    <p class="block text-sm font-medium text-charcoal-700">Electronic signature</p>
                     <ElectronicSignaturePad v-model="clinicAgreementSignatureImage" label="Draw your electronic signature" />
                     <p class="text-xs text-charcoal-600">
                       Your signature and registered legal name will be added to the signature block on the last page of your signed agreement:
