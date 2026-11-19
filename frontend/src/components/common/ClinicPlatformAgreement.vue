@@ -30,7 +30,7 @@ import { CLINIC_PLATFORM_AGREEMENT } from '../../../../shared/clinicPlatformAgre
 defineProps({
   version: {
     type: String,
-    default: 'clinic-platform-agreement-v1',
+    default: 'clinic-platform-agreement-v2',
   },
 })
 

@@ -1,22 +1,21 @@
 export const CLINIC_PLATFORM_AGREEMENT = Object.freeze({
-  version: 'clinic-platform-agreement-v1',
-  lastUpdated: 'September 13, 2026',
+  version: 'clinic-platform-agreement-v2',
+  lastUpdated: 'November 20, 2026',
   title: 'Clinic Platform Agreement',
   introduction: 'This agreement applies to the clinic owner or authorized representative registering the clinic on AesthetiCare. It supplements the general Terms and Conditions and Privacy Policy.',
   sections: [
     {
       heading: '1. Platform services',
       paragraphs: [
-        'AesthetiCare provides clinic operations, appointment, customer, payment, reporting, and related marketplace tools. The clinic remains responsible for its services, products, staff, customers, documents, licenses, and legal compliance.',
+        'AesthetiCare provides clinic operations, appointment, customer, payment, reporting, and related marketplace tools. The clinic remains responsible for its services, staff, customers, documents, licenses, and legal compliance.',
       ],
     },
     {
       heading: '2. Platform commissions',
       paragraphs: [
-        'The platform charges a commission on eligible transactions processed through AesthetiCare:',
+        'The platform charges a commission on completed services processed through AesthetiCare:',
       ],
       bullets: [
-        { label: 'Products:', text: '5% of the product sale amount.' },
         { label: 'Completed services:', text: '10% of the completed service amount.' },
       ],
       closingParagraphs: [

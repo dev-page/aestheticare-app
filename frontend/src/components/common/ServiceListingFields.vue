@@ -72,15 +72,9 @@
 
         <section v-if="['Service', 'Consultation', 'Package'].includes(form.postType)" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
           <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">Every booking includes fixed 12% VAT. Choose whether the listed price includes VAT or VAT is added at checkout.</p></div>
+            <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">{{ editing && form.vatPriceMode === 'inclusive' ? 'This existing listing price already includes 12% VAT; the customer total stays at the listed price.' : 'Fixed 12% VAT is automatically added to the listed price and included in the customer total.' }}</p></div>
             <span class="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">12% VAT on every booking</span>
           </div>
-          <label class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown? <span class="text-rose-300">*</span>
-            <select v-model="form.vatPriceMode" required class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled">
-              <option value="inclusive">Price already includes 12% VAT</option>
-              <option value="exclusive">Add 12% VAT to the listed price</option>
-            </select>
-          </label>
         </section>
 
         <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">

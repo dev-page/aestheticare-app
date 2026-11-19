@@ -46,6 +46,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
     const loading = ref(true)
     const setupPolicyConfigured = ref(false)
+    const setupEnabledPolicyKeys = ref([])
+    const setupEmployeeCount = ref(0)
     const setupListings = ref([])
     const selectedSetupBranchId = ref('')
 
@@ -79,14 +81,26 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const purchaseRequests = ref([])
     const messages = ref([])
 
-    const activeSetupBranches = computed(() => branches.value.filter(branch => !branch.archived))
+    const isActiveSetupBranch = (branch) => {
+      const status = String(branch?.status || '').trim().toLowerCase()
+      return branch?.archived !== true && !branch?.archivedAt && !['inactive', 'archived'].includes(status)
+    }
+    const activeSetupBranches = computed(() => branches.value.filter(isActiveSetupBranch))
     const setupBranch = computed(() => activeSetupBranches.value.find(branch => branch.id === selectedSetupBranchId.value) || activeSetupBranches.value[0] || null)
     const setupTasks = computed(() => {
+      const enabledPolicyKeys = new Set(setupEnabledPolicyKeys.value)
       const linkedKeys = setupBranch.value?.enforcedPolicyKeys
-      const policiesLinked = Array.isArray(linkedKeys)
-        ? linkedKeys.some(key => ['paymentPolicy', 'cancellationPolicy', 'reschedulePolicy', 'noShowPolicy'].includes(key))
-        : Boolean(setupBranch.value?.policiesLinkedAt)
-      const postTypes = new Set(setupListings.value.map(post => String(post.postType || '').toLowerCase()))
+      // Branches without an explicit link array use the legacy behavior of
+      // applying all enabled clinic policies. An explicitly empty array means
+      // the owner chose to link none and must not count as complete.
+      const policiesLinked = enabledPolicyKeys.size > 0 && (
+        Array.isArray(linkedKeys)
+          ? linkedKeys.some(key => enabledPolicyKeys.has(key))
+          : true
+      )
+      const postTypes = new Set(setupListings.value
+        .filter(post => String(post.financeStatus || '').trim().toLowerCase() === 'approved' && post.isPublished === true)
+        .map(post => String(post.postType || '').trim().toLowerCase()))
       const plan = String(subscriptionStore.activePlan || '').toLowerCase()
       const canCreateAllListings = ['basic', 'premium'].includes(plan)
       return [
@@ -94,10 +108,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         { key: 'link-policies', label: 'Link policies to a branch', description: 'Choose which saved policies apply at your branch.', done: policiesLinked, to: '/clinic/branches', action: 'Link policies', disabled: !setupBranch.value },
         { key: 'clinic-logo', label: 'Upload your clinic logo', description: 'Add the logo customers will see on your public clinic page.', done: Boolean(setupBranch.value?.profilePicture), to: { path: '/clinic/page', query: { branchId: setupBranch.value?.id || '', edit: 'branding' } }, action: 'Add logo', disabled: !setupBranch.value },
         { key: 'clinic-banner', label: 'Upload a clinic banner', description: 'Add a banner image for your public clinic page.', done: Boolean(setupBranch.value?.bannerPicture), to: { path: '/clinic/page', query: { branchId: setupBranch.value?.id || '', edit: 'branding' } }, action: 'Add banner', disabled: !setupBranch.value },
-        { key: 'employee', label: 'Add your first employee', description: 'Create at least one employee account for your clinic.', done: totalEmployees.value > 0, to: '/hr/employees/new', action: 'Add employee' },
-        { key: 'consultation', label: 'Add a consultation', description: 'Create a consultation listing for your clinic.', done: postTypes.has('consultation'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add consultation' : 'Choose a plan', disabled: !canCreateAllListings },
+        { key: 'employee', label: 'Add your first employee', description: 'Create at least one employee account for your clinic.', done: setupEmployeeCount.value > 0, to: '/hr/employees/new', action: 'Add employee' },
+        { key: 'consultation', label: 'Add a consultation', description: 'Publish an approved consultation listing customers can book.', done: postTypes.has('consultation'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add consultation' : 'Choose a plan', disabled: !canCreateAllListings },
         { key: 'service', label: 'Add a service', description: 'Create a service customers can book.', done: postTypes.has('service'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add service' : 'Choose a plan', disabled: !canCreateAllListings },
-        { key: 'package', label: 'Add a package', description: 'Bundle services into a treatment package.', done: postTypes.has('package'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add package' : 'Choose a plan', disabled: !canCreateAllListings },
+        { key: 'package', label: 'Add a package', description: 'Publish an approved treatment package customers can book.', done: postTypes.has('package'), to: '/catalog/products-services', action: canCreateAllListings ? 'Add package' : 'Choose a plan', disabled: !canCreateAllListings },
       ]
     })
     const setupCompletedCount = computed(() => setupTasks.value.filter(task => task.done).length)
@@ -204,6 +218,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (isPermissionDenied(error)) {
             branches.value = []
             staff.value = []
+            totalEmployees.value = 0
+            setupEmployeeCount.value = 0
+            setupPolicyConfigured.value = false
+            setupEnabledPolicyKeys.value = []
+            setupListings.value = []
+            selectedSetupBranchId.value = ''
             return
           }
           throw error
@@ -211,27 +231,29 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const branchData = branchSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
 
         const branchIds = branchData.map(b => b.id)
+        const activeBranchIds = branchData.filter(isActiveSetupBranch).map(branch => branch.id)
+        const activeBranchIdSet = new Set(activeBranchIds)
         if (!branchIds.includes(selectedSetupBranchId.value)) {
-          selectedSetupBranchId.value = branchData.find(branch => !branch.archived)?.id || branchData[0]?.id || ''
+          selectedSetupBranchId.value = activeBranchIds[0] || ''
+        } else if (!activeBranchIdSet.has(selectedSetupBranchId.value)) {
+          selectedSetupBranchId.value = activeBranchIds[0] || ''
         }
 
         try {
           let policies = await getDoc(doc(db, 'clinicPolicies', user.uid))
-          if (!policies.exists() && branchData.length) policies = await getDoc(doc(db, 'clinicPolicies', branchData[0].id))
+          if (!policies.exists() && activeBranchIds.length) policies = await getDoc(doc(db, 'clinicPolicies', activeBranchIds[0]))
           const policyData = policies.exists() ? policies.data() || {} : {}
-          setupPolicyConfigured.value = [
-            policyData.servicePaymentPolicyEnabled,
-            policyData.paymentPolicyEnabled,
-            policyData.serviceCancellationPolicyEnabled,
-            policyData.cancellationPolicyEnabled,
-            policyData.serviceReschedulingPolicyEnabled,
-            policyData.reschedulePolicyEnabled,
-            policyData.serviceNoShowPolicyEnabled,
-            policyData.noShowPolicyEnabled,
-          ].some(value => value === true)
+          setupEnabledPolicyKeys.value = [
+            ['paymentPolicy', policyData.servicePaymentPolicyEnabled, policyData.paymentPolicyEnabled],
+            ['cancellationPolicy', policyData.serviceCancellationPolicyEnabled, policyData.cancellationPolicyEnabled],
+            ['reschedulePolicy', policyData.serviceReschedulingPolicyEnabled, policyData.reschedulePolicyEnabled],
+            ['noShowPolicy', policyData.serviceNoShowPolicyEnabled, policyData.noShowPolicyEnabled],
+          ].filter(([, ...enabledValues]) => enabledValues.some(value => value === true)).map(([key]) => key)
+          setupPolicyConfigured.value = setupEnabledPolicyKeys.value.length > 0
         } catch (error) {
           if (!isPermissionDenied(error)) throw error
           setupPolicyConfigured.value = false
+          setupEnabledPolicyKeys.value = []
         }
 
         let staffData = []
@@ -257,6 +279,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
         staff.value = staffData
         totalEmployees.value = staff.value.length
+        setupEmployeeCount.value = staffData.filter((employee) => (
+          activeBranchIdSet.has(String(employee.branchId || ''))
+          && String(employee.status || 'active').trim().toLowerCase() === 'active'
+        )).length
 
         const [clientsData, appointmentsData, transactionsData, inventoryData, purchaseRequestData, messageData, listingData] = await Promise.all([
           loadDashboardCollection('clients', branchIds),
@@ -276,7 +302,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         inventoryItems.value = sortRecordsNewestFirst(inventoryData)
         purchaseRequests.value = sortRecordsNewestFirst(purchaseRequestData)
         messages.value = sortRecordsNewestFirst(messageData)
-        setupListings.value = listingData.filter(post => post.archived !== true)
+        setupListings.value = listingData.filter(post => (
+          post.archived !== true
+          && activeBranchIdSet.has(String(post.branchId || ''))
+        ))
 
         totalClients.value = clientsData.length
         unreadMessages.value = messages.value.filter((item) => !item.isRead).length

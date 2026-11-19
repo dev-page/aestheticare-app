@@ -363,7 +363,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!String(values.description || '').trim()) return 'Enter a description.'
       if (postType === 'Product' && !selectedProduct) return 'Select a valid product from inventory.'
       if (requiresNewImage && !imageReady) return 'Upload one image.'
-      if (postType !== 'Product' && !['inclusive', 'exclusive'].includes(values.vatPriceMode)) return 'Choose how the listed price is shown.'
       if (postType === 'Consultation') {
         const modes = validConsultationModes(values.consultationModes)
         if (!modes.length) return 'Choose at least one consultation mode.'
@@ -737,7 +736,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               ? Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
               : Number(form.value.price || form.value.consultationFee || 0),
           vatApplicable: postType !== 'Product',
-          vatPriceMode: form.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
+          vatPriceMode: 'exclusive',
           discountPercent: postType === 'Package' ? packageDiscountPercent : 0,
           discountAmount: postType === 'Package' ? Math.round((packageSubtotal - packageSubtotal * (1 - packageDiscountPercent / 100)) * 100) / 100 : 0,
           requiresConsultationFirst: postType === 'Service' ? Boolean(form.value.requiresConsultationFirst) : false,
