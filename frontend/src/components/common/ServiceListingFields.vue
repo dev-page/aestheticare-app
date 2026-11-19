@@ -1,10 +1,11 @@
 <template>
   <fieldset class="listing-fields" :disabled="disabled">
+        <p class="mb-3 text-xs text-slate-400"><span class="font-semibold text-rose-300">*</span> Required field</p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type" :disabled="editing || disabled" :options="[{ value: 'Service', label: 'Service · Single visit' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package · Treatment course' }]" />
+          <ContractAppearanceSelect :id="editing ? 'edit-listing-post-type' : 'listing-post-type'" v-model="form.postType" class="listing-post-type" label="Post Type *" :disabled="editing || disabled" :options="[{ value: 'Service', label: 'Service · Single visit' }, { value: 'Consultation', label: 'Consultation' }, { value: 'Package', label: 'Service Package · Treatment course' }]" />
 
           <div v-if="form.postType === 'Product'">
-            <label class="block text-slate-400 mb-1">Product</label>
+            <label class="block text-slate-400 mb-1">Product <span class="text-rose-300">*</span></label>
             <select
               v-model="form[nameKey('productName')]"
               class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -17,7 +18,7 @@
           </div>
 
           <div v-if="form.postType === 'Service'">
-            <label class="block text-slate-400 mb-1">Service Name</label>
+            <label class="block text-slate-400 mb-1">Service Name <span class="text-rose-300">*</span></label>
             <input
               type="text"
               v-model="form[nameKey('serviceName')]"
@@ -27,7 +28,7 @@
           </div>
 
           <div v-else-if="form.postType === 'Consultation'">
-            <label class="block text-slate-400 mb-1">Consultation Name</label>
+            <label class="block text-slate-400 mb-1">Consultation Name <span class="text-rose-300">*</span></label>
             <input
               type="text"
               v-model="form[nameKey('consultationName')]"
@@ -57,11 +58,11 @@
 
         <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div v-if="form.postType !== 'Consultation'">
-            <label class="block text-slate-400 mb-1">Price (PHP)</label>
+            <label class="block text-slate-400 mb-1">Price (PHP) <span v-if="form.postType === 'Service'" class="text-rose-300">*</span></label>
             <input :value="form.postType === 'Package' ? packagePrice.toFixed(2) : form.price" :readonly="form.postType === 'Package'" @input="setPositiveNumber('price', $event, 0)" @keydown="blockNegativeKey" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:opacity-80" />
           </div>
           <div class="md:col-span-2">
-            <label class="block text-slate-400 mb-1">Description</label>
+            <label class="block text-slate-400 mb-1">Description <span class="text-rose-300">*</span></label>
             <textarea v-model="form.description" rows="3" placeholder="Describe this service, consultation, or package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
           </div>
         </div>
@@ -71,7 +72,7 @@
             <div><h3 class="font-semibold text-white">Appointment tax</h3><p class="mt-1 text-xs leading-5 text-slate-400">Every booking includes fixed 12% VAT. Choose whether the listed price includes VAT or VAT is added at checkout.</p></div>
             <span class="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">12% VAT on every booking</span>
           </div>
-          <label class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown?
+          <label class="mt-4 block max-w-sm text-sm font-medium text-slate-200">How is the listed price shown? <span class="text-rose-300">*</span>
             <select v-model="form.vatPriceMode" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :disabled="disabled">
               <option value="inclusive">Price already includes 12% VAT</option>
               <option value="exclusive">Add 12% VAT to the listed price</option>
@@ -80,22 +81,22 @@
         </section>
 
         <div v-if="form.postType === 'Package'" class="mb-4 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-          <label class="block text-slate-400 mb-1">Package Name</label>
+          <label class="block text-slate-400 mb-1">Package Name <span class="text-rose-300">*</span></label>
           <input v-model="form[nameKey('packageName')]" type="text" placeholder="Consultation + service package" class="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600" />
-          <div class="mt-4 flex items-start justify-between gap-3"><div><h4 class="font-medium text-white">Course steps</h4><p class="mt-1 text-xs text-slate-400">Add the visits in the order they should happen. Each minimum gap applies before the next course visit; clinic availability determines the confirmed date.</p></div><button type="button" class="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-50" :disabled="disabled || courseSteps.length >= 50" @click="addCourseStep">Add step</button></div>
+          <div class="mt-4 flex items-start justify-between gap-3"><div><h4 class="font-medium text-white">Course steps <span class="text-rose-300">*</span></h4><p class="mt-1 text-xs text-slate-400">Add the visits in the order they should happen. Each minimum gap applies before the next course visit; clinic availability determines the confirmed date.</p></div><button type="button" class="rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-50" :disabled="disabled || courseSteps.length >= 50" @click="addCourseStep">Add step</button></div>
           <div v-if="courseSteps.length" class="mt-3 space-y-3">
             <article v-for="(step, index) in courseSteps" :key="index" class="grid grid-cols-1 gap-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3 md:grid-cols-[minmax(0,1fr)_120px_150px_auto] md:items-end">
-              <label class="block text-slate-300">{{ index + 1 }}. Visit type
+              <label class="block text-slate-300">{{ index + 1 }}. Visit type <span class="text-rose-300">*</span>
                 <select v-model="step.serviceId" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} service`">
                   <option value="">Choose a published service or consultation</option>
                   <option v-if="step.serviceId && !courseServiceOptions.some(item => item.id === step.serviceId)" :value="step.serviceId">Previously included listing · unavailable</option>
                   <option v-for="item in courseServiceOptions" :key="item.id" :value="item.id">{{ item.title || item.serviceName || item.consultationName }} · {{ item.postType }}</option>
                 </select>
               </label>
-              <label class="block text-slate-300">Visits
+              <label class="block text-slate-300">Visits <span class="text-rose-300">*</span>
                 <input :value="step.visitCount" @input="setStepNumber(step, 'visitCount', $event, 1, 50)" @keydown="blockNegativeKey" type="number" min="1" max="50" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} visit count`" />
               </label>
-              <label class="block text-slate-300">Minimum gap (days)
+              <label class="block text-slate-300">Minimum gap (days) <span class="text-rose-300">*</span>
                 <input :value="step.minimumGapDays" @input="setStepNumber(step, 'minimumGapDays', $event, 1, 365)" @keydown="blockNegativeKey" type="number" min="1" max="365" step="1" class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white" :aria-label="`Course step ${index + 1} minimum gap in days`" />
               </label>
               <button v-if="courseSteps.length > 1" type="button" class="rounded-lg border border-rose-800 px-3 py-2 text-sm text-rose-200" :aria-label="`Remove course step ${index + 1}`" @click="removeCourseStep(index)">Remove</button>
@@ -154,38 +155,19 @@
             <h3 class="font-semibold text-white">{{ form.postType === 'Service' ? 'Booking Rules' : 'Consultation Rules' }}</h3>
             <p class="mt-1 text-xs text-slate-400">{{ form.postType === 'Service' ? 'Set only the rules customers need to know before requesting this service.' : 'Set the fee, duration, and appointment mode for this consultation.' }}</p>
           </div>
-          <label class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-            <input
-              v-if="form.postType === 'Service'"
-              v-model="form.requiresConsultationFirst"
-              type="checkbox"
-              class="mt-1 h-4 w-4 accent-blue-500"
-            />
-            <input
-              v-else-if="form.postType === 'Consultation'"
-              type="checkbox"
-              checked
-              disabled
-              class="mt-1 h-4 w-4 accent-blue-500"
-            />
+          <label v-if="form.postType === 'Service'" class="flex items-start gap-3 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
+            <input v-model="form.requiresConsultationFirst" type="checkbox" class="mt-1 h-4 w-4 accent-blue-500" />
             <span>
-              <span class="block font-medium text-white">
-                {{ form.postType === 'Consultation' ? 'Standalone consultation post' : 'Requires consultation first' }}
-              </span>
-              <span class="block text-xs text-slate-400">
-                {{ form.postType === 'Consultation'
-                  ? 'This consultation can be booked separately.'
-                  : 'Enable this when the service must be assessed before a booking can proceed.' }}
-              </span>
+              <span class="block font-medium text-white">Requires consultation first</span>
+              <span class="block text-xs text-slate-400">Enable this when the service must be assessed before a booking can proceed.</span>
             </span>
           </label>
           <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
             <div v-if="form.postType === 'Consultation' && form.consultationModes.includes('online')" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <label class="block text-slate-400">Arrival grace (minutes)<input v-model.number="form.consultationGraceMinutes" type="number" min="0" max="30" step="1" placeholder="15" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
-              <label class="block text-slate-400">Schedule buffer (minutes)<input v-model.number="form.consultationBufferMinutes" type="number" min="5" max="45" step="1" placeholder="20" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
-              <p class="md:col-span-2 text-xs text-slate-400">The duration starts after verified attendance. The buffer reserves time between bookings and is at least the grace period plus five minutes. Connection interruptions can restore up to five minutes within this buffer. Unstarted sessions go to clinic review; no automatic customer penalty.</p>
+              <label class="block text-slate-400">Arrival grace (minutes, optional; defaults to 15)<input v-model.number="form.consultationGraceMinutes" type="number" min="0" max="30" step="1" placeholder="15" class="w-full px-3 py-2 rounded-lg border border-slate-600" /></label>
+              <p class="md:col-span-2 text-xs text-slate-400">The consultation duration starts after verified attendance. Unstarted sessions go to clinic review; no automatic customer penalty.</p>
             </div>
-            <label class="block text-slate-400 mb-1">Consultation Fee (PHP)</label>
+            <label class="block text-slate-400 mb-1">Consultation Fee (PHP) <span class="text-rose-300">*</span></label>
             <input
               v-model.number="form.consultationFee"
               type="number"
@@ -218,7 +200,7 @@
             <p class="text-xs text-slate-400 mt-1">Customers must book the follow-up within this many days after the service is completed.</p>
           </div>
           <div :class="{ 'md:col-span-2': form.postType === 'Consultation' }">
-            <label class="block text-slate-400 mb-1">{{ form.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }}</label>
+            <label class="block text-slate-400 mb-1">{{ form.postType === 'Consultation' ? 'Consultation Duration (minutes)' : 'Service Duration (minutes)' }} <span class="text-rose-300">*</span></label>
             <input
               v-model.number="form.durationMinutes"
               type="number"
@@ -235,7 +217,7 @@
           </div>
           <div v-if="form.postType === 'Consultation'" class="md:col-span-2">
             <fieldset class="rounded-xl border border-slate-600 bg-slate-900/40 p-4">
-              <legend class="px-1 text-sm font-medium text-slate-200">Available consultation modes</legend>
+              <legend class="px-1 text-sm font-medium text-slate-200">Available consultation modes <span class="text-rose-300">*</span></legend>
               <div class="mt-2 flex flex-wrap gap-4">
                 <label class="inline-flex items-center gap-2 text-sm text-slate-300"><input v-model="form.consultationModes" type="checkbox" value="on-site" class="h-4 w-4 accent-amber-500" /> On-site</label>
                 <label class="inline-flex items-center gap-2 text-sm text-slate-300"><input v-model="form.consultationModes" type="checkbox" value="online" class="h-4 w-4 accent-amber-500" /> Online</label>
@@ -244,7 +226,7 @@
             </fieldset>
           </div>
           <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2">
-            <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation (required)" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
+            <ContractAppearanceSelect :id="editing ? 'edit-linked-consultation' : 'linked-consultation'" v-model="form.linkedConsultationId" label="Linked consultation *" :disabled="disabled || !consultationOptions.length" :options="consultationOptions" />
             <p class="mt-2 text-xs text-slate-400">{{ consultationOptions.length ? 'Clients must complete this linked consultation before booking this service.' : 'No published consultations are available. Create and publish an online or on-site consultation first.' }}</p>
           </div>
           <div v-if="form.postType === 'Service' && form.requiresConsultationFirst" class="md:col-span-2 rounded-xl border border-slate-600 bg-slate-900/40 p-4">
@@ -262,7 +244,7 @@
           </div>
         </div>
         <div class="mb-4">
-          <label class="block text-slate-400 mb-1">{{ editing ? 'Replace image (optional)' : 'Image (1 file only)' }}</label>
+          <label class="block text-slate-400 mb-1">{{ editing ? 'Replace image (optional)' : 'Image (1 file only)' }}<span v-if="!editing" class="text-rose-300"> *</span></label>
           <input
             type="file"
             accept="image/*"

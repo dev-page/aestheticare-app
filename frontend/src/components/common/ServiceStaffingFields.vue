@@ -10,9 +10,9 @@ const add = () => { props.model.staffingRequirements = [...rows.value, { type: '
   <section class="staffing-fields">
     <h3>Treatment team requirements</h3><p>Set one lead and any required assistants. Staff must be approved for this service. The clinic assigns the team before treatment starts. Packages use each component service’s requirements.</p>
     <div v-for="(row, index) in rows" :key="index" class="staffing-row">
-      <ContractAppearanceSelect :id="'staffing-type-' + index" label="Specialty" v-model="row.type" :options="practitionerTypes.map(type => ({ value: type, label: type }))" />
-      <ContractAppearanceSelect :id="'staffing-role-' + index" label="Responsibility" v-model="row.responsibility" :options="[{ value: 'lead', label: 'Lead' }, { value: 'assistant', label: 'Assistant' }]" />
-      <label>Number required<input v-model.number="row.count" type="number" min="1" :max="row.responsibility === 'lead' ? 1 : 8" /></label>
+      <ContractAppearanceSelect :id="'staffing-type-' + index" label="Specialty *" v-model="row.type" :options="practitionerTypes.map(type => ({ value: type, label: type }))" />
+      <ContractAppearanceSelect :id="'staffing-role-' + index" label="Responsibility *" v-model="row.responsibility" :options="[{ value: 'lead', label: 'Lead' }, { value: 'assistant', label: 'Assistant' }]" />
+      <label>Number required *<input v-model.number="row.count" type="number" min="1" :max="row.responsibility === 'lead' ? 1 : 8" /></label>
       <button type="button" @click="model.staffingRequirements.splice(index, 1)">Remove</button>
     </div>
     <button type="button" @click="add" :disabled="rows.length >= 8">Add staffing requirement</button>

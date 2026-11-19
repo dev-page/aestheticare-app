@@ -2332,7 +2332,7 @@ const showRegistrationAttemptBlock = (attemptResult) => {
 
 const registerClinic = async () => {
   if (currentStep.value !== 1 || isSubmitting.value) return
-  if (!emailChecked.value) {
+  if (!emailChecked.value && !otpVerifiedForRegistration.value) {
     await verifyRegistrationEmail()
     if (!emailChecked.value || currentStep.value !== 1) return
   }
@@ -3294,7 +3294,7 @@ const handleRegistrationSubmit = () => {
                 />
                 <label for="clinic-contact-number" class="floating-label contact-label">Business Contact Number</label>
               </div>
-              <p class="mt-1.5 px-1 text-xs leading-5 text-charcoal-500">Enter the 10-digit number starting with 9. The +63 country code is already included.</p>
+              <p class="mt-1.5 px-1 text-xs leading-5 text-charcoal-500">Enter exactly 10 digits, starting with 9. The +63 country code is already included.</p>
             </div>
 
             </section>
@@ -3306,7 +3306,7 @@ const handleRegistrationSubmit = () => {
                 @click="registerClinic"
                 class="h-14 lg:h-12 flex-1 py-3 rounded-xl bg-gold-700 text-white font-semibold text-base hover:bg-gold-800 hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {{ isSubmitting ? 'Processing...' : 'Next: OTP Verification' }}
+                {{ isSubmitting ? 'Processing...' : (otpVerifiedForRegistration ? 'Resume Document Uploads' : 'Next: OTP Verification') }}
               </button>
             </div>
             </section>
