@@ -20,15 +20,13 @@ const chunkArray = (items, size = 10) => {
   return chunks
 }
 
+const isCenterDiscoverableClinic = (clinic) => Boolean(
+  toText(clinic.ownerId) && isPublicClinicCustomerDiscoverable(clinic)
+)
+
 const buildBranches = (clinics, serviceMap) =>
   clinics
-    .filter((clinic) => {
-      const ownerId = toText(clinic.ownerId)
-      return (
-        Boolean(ownerId) &&
-        isPublicClinicCustomerDiscoverable(clinic)
-      )
-    })
+    .filter(isCenterDiscoverableClinic)
     .map((clinic) => {
       const clinicServices = Array.isArray(clinic.services)
         ? clinic.services.map((entry) => toText(entry)).filter(Boolean)
@@ -93,9 +91,15 @@ const buildServiceMap = async (clinicIds) => {
 
   const chunks = chunkArray(clinicIds, 10)
   for (const chunk of chunks) {
-    const postsSnapshot = await getDocs(
-      query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk), where('financeStatus', '==', 'approved'), where('isPublished', '==', true))
-    )
+    let postsSnapshot
+    try {
+      postsSnapshot = await getDocs(
+        query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk), where('financeStatus', '==', 'approved'), where('isPublished', '==', true))
+      )
+    } catch (error) {
+      console.warn('Could not load clinic service listings; using public profile services.', error)
+      continue
+    }
     postsSnapshot.forEach((snap) => {
       const post = snap.data() || {}
       if (!isCustomerCareListing(post)) return
@@ -120,7 +124,9 @@ export const fetchCustomerCenters = async () => {
   const clinicsSnapshot = await getDocs(
     query(collection(db, 'publicClinics'), where('isPublished', '==', true))
   )
-  const clinics = clinicsSnapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+  const clinics = clinicsSnapshot.docs
+    .map((snap) => ({ id: snap.id, ...snap.data() }))
+    .filter(isCenterDiscoverableClinic)
   const serviceMap = await buildServiceMap(clinics.map((clinic) => clinic.id))
   return buildCenters(clinics, serviceMap)
 }
@@ -164,7 +170,9 @@ export const subscribeCustomerCenters = (onChange, onError) => {
   clinicUnsubscribe = onSnapshot(
     query(collection(db, 'publicClinics'), where('isPublished', '==', true)),
     (snapshot) => {
-      const clinics = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+      const clinics = snapshot.docs
+        .map((snap) => ({ id: snap.id, ...snap.data() }))
+        .filter(isCenterDiscoverableClinic)
       stopServiceListeners()
 
       if (!clinics.length) {
@@ -186,7 +194,9 @@ export const subscribeCustomerCenters = (onChange, onError) => {
             emit(clinics)
           },
           (error) => {
-            if (typeof onError === 'function') onError(error)
+            console.warn('Could not load clinic service listings; using public profile services.', error)
+            serviceSnapshots.delete(sourceKey)
+            emit(clinics)
           }
         )
         serviceUnsubscribers.push(unsubscribe)

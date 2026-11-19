@@ -252,6 +252,22 @@ service cloud.firestore {
         && clinicDoc(clinicId).data.isPublished == true;
     }
 
+    function publicClinicDoc(clinicId) {
+      return get(/databases/$(database)/documents/publicClinics/$(clinicId));
+    }
+
+    function isCustomerDiscoverablePublicClinic(clinicId) {
+      return clinicId is string
+        && clinicId.size() > 0
+        && exists(/databases/$(database)/documents/publicClinics/$(clinicId))
+        && publicClinicDoc(clinicId).data.get('isPublished', false) == true
+        && publicClinicDoc(clinicId).data.get('customerAccess', false) == true
+        && publicClinicDoc(clinicId).data.get('status', '') != 'inactive'
+        && publicClinicDoc(clinicId).data.get('status', '') != 'Inactive'
+        && (publicClinicDoc(clinicId).data.get('customerAccessUntil', null) == null
+          || publicClinicDoc(clinicId).data.get('customerAccessUntil', null) > request.time);
+    }
+
     function canUseClinicInbox(branchId) {
       return isSignedIn()
         && branchId is string
@@ -894,7 +910,7 @@ service cloud.firestore {
           'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount'
         ]);
       }
-      allow read: if (isPublicClinic(resource.data.branchId)
+      allow read: if (isCustomerDiscoverablePublicClinic(resource.data.branchId)
           && resource.data.get('financeStatus', '') == 'approved' && resource.data.get('isPublished', false) == true)
         || (isSignedIn() && canAccessBranch(resource.data.branchId));
       allow create: if isSignedIn() && canAccessBranch(request.resource.data.branchId)
