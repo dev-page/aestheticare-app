@@ -1603,6 +1603,22 @@ html[data-ac-theme="dark"] .aestheticare-app .register-form-panel :is(
   color: var(--ac-text) !important;
 }
 
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .registration-phone-field {
+  background: #342419 !important;
+  border-color: var(--ac-border-strong) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .registration-phone-field:focus-within {
+  border-color: #b98556 !important;
+  box-shadow: 0 0 0 3px rgb(201 162 77 / 18%) !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .registration-phone-prefix {
+  background: #493224 !important;
+  border-right-color: #76563e !important;
+  color: var(--ac-text-secondary) !important;
+}
+
 html[data-ac-theme="dark"] .aestheticare-app .register-form-panel .calendar-select {
   background-image:
     linear-gradient(45deg, transparent 50%, #f0ddc8 50%),
