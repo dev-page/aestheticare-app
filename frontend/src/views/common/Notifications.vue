@@ -570,7 +570,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .notifications-title-module,
 .notifications-modal-heading-module {
   color: var(--ac-text);
-  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-family: "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
 }
 

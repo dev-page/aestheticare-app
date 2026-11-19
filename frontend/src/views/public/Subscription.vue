@@ -223,7 +223,7 @@ onBeforeUnmount(() => {
 }
 
 .popup-title {
-  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-family: "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
   font-size: clamp(2rem, 3.7vw, 3.35rem);
   line-height: 0.94;
@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
 
 .plan-name {
   font-size: 1.22rem;
-  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-family: "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
   color: #3b281d;
 }

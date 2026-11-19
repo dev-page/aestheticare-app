@@ -622,7 +622,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .support-title-module {
   color: #342419;
-  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-family: "Playfair Display", "Times New Roman", serif;
   font-weight: 700;
 }
 

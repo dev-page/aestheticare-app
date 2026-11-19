@@ -959,7 +959,7 @@ export default {
 }
 
 .hero-editorial-title {
-  font-family: "Bodoni Moda", "Playfair Display", "Times New Roman", serif;
+  font-family: "Playfair Display", "Times New Roman", serif;
   font-style: italic;
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -1060,7 +1060,7 @@ export default {
 
 .capability-section-title {
   margin: 0;
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: clamp(2.35rem, 4vw, 4.25rem);
   line-height: 0.98;
   font-style: italic;
@@ -1130,7 +1130,7 @@ export default {
   margin-bottom: 0.9rem;
 }
 .capability-showcase-title {
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: clamp(2.6rem, 5.3vw, 5.5rem);
   line-height: 0.9;
   font-style: italic;
@@ -1336,7 +1336,7 @@ export default {
 
 .solutions-title {
   margin: 0;
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: clamp(2.25rem, 4vw, 4rem);
   line-height: 0.96;
   font-style: italic;
@@ -1443,7 +1443,7 @@ export default {
 
 .solution-title {
   margin: 0 0 0.65rem;
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: 1.45rem;
   font-weight: 700;
   line-height: 1.08;
@@ -1942,7 +1942,7 @@ export default {
 }
 
 .video-showcase-title {
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: clamp(2.55rem, 4.9vw, 5.2rem);
   line-height: 0.94;
   font-style: italic;
@@ -1996,7 +1996,7 @@ export default {
 
 .video-feature-title {
   margin: 0;
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: 1.15rem;
   font-weight: 700;
   color: #fff8eb;
@@ -2017,7 +2017,7 @@ export default {
 
 .video-stat-value {
   margin: 0;
-  font-family: "Bodoni Moda", "Playfair Display", serif;
+  font-family: "Playfair Display", serif;
   font-size: 2.4rem;
   font-weight: 700;
   line-height: 1;
