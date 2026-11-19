@@ -1465,6 +1465,7 @@ onBeforeUnmount(() => {
                 </div>
                 <label class="floating-label floating-label-prefix">Mobile Number</label>
               </div>
+              <p class="mt-1.5 px-1 text-xs leading-5 text-charcoal-500">Enter the 10-digit number starting with 9. The +63 country code is already included.</p>
 
               <div v-if="false" class="relative">
                 <label for="customer-address" class="floating-label floating-label-raised">City / Municipality</label>

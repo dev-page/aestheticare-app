@@ -592,7 +592,7 @@
             <div class="appointment-details-section-head"><h3>Your feedback</h3><span v-if="appointmentFeedbackLoading">Loading</span></div>
             <p v-if="appointmentFeedbackError" class="appointment-details-note appointment-details-note-error" role="alert">{{ appointmentFeedbackError }}</p>
             <template v-else-if="selectedAppointmentFeedback">
-              <p class="appointment-details-note"><strong>{{ '★'.repeat(Math.max(0, Math.min(5, Number(selectedAppointmentFeedback.rating || 0))) }}</strong> out of 5</p>
+              <p class="appointment-details-note"><strong>{{ String.fromCharCode(9733).repeat(Math.max(0, Math.min(5, Number(selectedAppointmentFeedback.rating || 0)))) }}</strong> out of 5</p>
               <p v-if="selectedAppointmentFeedback.comment" class="appointment-details-note">{{ selectedAppointmentFeedback.comment }}</p>
               <p v-else class="appointment-details-note">No written comment was added.</p>
               <button v-if="!appointmentFeedbackLoading && canLeaveFeedback(selectedAppointmentDetails)" type="button" class="appointment-button appointment-button-secondary" @click="openFeedback(selectedAppointmentDetails)">Edit feedback</button>

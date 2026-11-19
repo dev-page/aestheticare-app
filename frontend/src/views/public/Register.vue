@@ -3133,6 +3133,7 @@ const handleRegistrationSubmit = () => {
                 />
                 <label for="clinic-contact-number" class="floating-label contact-label">Business Contact Number</label>
               </div>
+              <p class="mt-1.5 px-1 text-xs leading-5 text-charcoal-500">Enter the 10-digit number starting with 9. The +63 country code is already included.</p>
             </div>
 
             </section>
