@@ -262,6 +262,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       editErrors.value = nextErrors
     }
 
+    const normalizeCredentialNumber = () => {
+      currentStaff.value.credentialNumber = String(currentStaff.value.credentialNumber || '').replace(/\D/g, '').slice(0, 7)
+      clearEditError('credentialNumber')
+    }
+
     const handleLicenseFile = async event => {
       const sequence = ++licenseOcrSequence
       licenseOcrBusy.value = false
@@ -338,6 +343,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const weeklyHours = Number(staff.weeklyHoursTarget)
       if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 48) errors.weeklyHoursTarget = 'Enter agreed weekly hours from 1 to 48.'
       if (staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
+      const credentialNumber = String(staff.credentialNumber || '').trim()
+      if (credentialNumber && !/^\d{7}$/.test(credentialNumber)) errors.credentialNumber = 'Enter exactly 7 digits.'
 
       editErrors.value = errors
       return Object.keys(errors).length === 0
@@ -527,7 +534,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       filteredStaffList,
       customRoles,
       employeeSpecialtyTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
-      licenseFile, licenseOcrResult, licenseOcrBusy, handleLicenseFile
+      licenseFile, licenseOcrResult, licenseOcrBusy, handleLicenseFile, normalizeCredentialNumber
     }
   }
 }
@@ -750,7 +757,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <div class="employee-license-fields">
                   <div class="employee-license-field">
                     <label for="employee-edit-license">Credential / license number</label>
-                    <input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" maxlength="100" placeholder="Type a number or use an OCR suggestion" />
+                    <input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" type="text" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="Enter 7 digits" @input="normalizeCredentialNumber" />
+                    <p v-if="editErrors.credentialNumber" class="employee-edit-error" role="alert">{{ editErrors.credentialNumber }}</p>
                   </div>
                   <div class="employee-license-field">
                     <label for="employee-edit-license-file">Replacement credential image (optional)</label>
@@ -759,7 +767,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                     <a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a>
                   </div>
                 </div>
-                <p class="employee-edit-caption">The image is optional when editing. Upload one JPEG or PNG image (up to 5MB) to run OCR; review the number and verify the credential manually.</p>
+                <p class="employee-edit-caption">If entered, the credential number must be exactly 7 digits. The image is optional when editing; upload one JPEG or PNG image (up to 5MB) to run OCR, then verify the number manually.</p>
                 <p class="employee-edit-caption">Changing professional details or the uploaded document requires a new credential review by the clinic owner.</p>
                 <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
                 <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></div>

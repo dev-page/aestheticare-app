@@ -35,13 +35,13 @@ export const prepareTeamStart = async (tx, db, appointment, id) => {
 export const extractPractitionerLicenseNumber = text => {
   const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const marker = /(?:\bPRC\s*)?(?:license|licence|registration|reg\.?)(?:\s*(?:no\.?|number|#))?\s*[:#-]?/i
-  const valuePattern = /\b([A-Z0-9][A-Z0-9./-]{3,29})\b/i
+  const valuePattern = /\b(\d{7})\b/
   for (let index = 0; index < lines.length; index += 1) {
     const match = marker.exec(lines[index])
     if (!match) continue
     const sameLine = lines[index].slice(match.index + match[0].length).replace(/^\s*[:#-]?\s*/, '')
     const value = sameLine.match(valuePattern)?.[1] || lines[index + 1]?.match(valuePattern)?.[1] || ''
-    if (value && /\d/.test(value) && !/^(?:NUMBER|LICENSE|LICENCE|REGISTRATION)$/i.test(value)) return value
+    if (value) return value
   }
   return ''
 }
@@ -109,7 +109,8 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     const licenseDocument = req.body?.licenseDocument && typeof req.body.licenseDocument === 'object' ? req.body.licenseDocument : null
     const licenseUrl = String(licenseDocument?.url || '').trim()
     const licenseName = String(licenseDocument?.name || '').trim()
-    check((!type || practitionerTypes.includes(type)) && credentialNumber.length <= 100, 'Choose a supported specialty and a license number of up to 100 characters.', 400)
+    check(!type || practitionerTypes.includes(type), 'Choose a supported specialty.', 400)
+    check(!credentialNumber || /^\d{7}$/.test(credentialNumber), 'Credential number must be exactly 7 digits.', 400)
     check(!licenseDocument || (licenseUrl.startsWith('https://firebasestorage.googleapis.com/') && licenseUrl.length <= 2000 && licenseName.length <= 255), 'The license document details are invalid.', 400)
     return db.runTransaction(async tx => {
       const userRef = db.collection('users').doc(req.params.id), profileRef = db.collection('practitionerProfiles').doc(req.params.id)

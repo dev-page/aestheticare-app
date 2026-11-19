@@ -33,6 +33,8 @@ export const normalizeStaffing = (value) => {
 export const normalizePractitionerProfile = (body) => {
   check(practitionerTypes.includes(body.type), 'Choose a practitioner specialty.')
   check(Array.isArray(body.approvedServiceIds || []) && Array.isArray(body.rates || []), 'Approved services and compensation agreements must be lists.')
+  const credentialNumber = String(body.credentialNumber || '').trim().slice(0, 100)
+  check(!credentialNumber || /^\d{7}$/.test(credentialNumber), 'Credential number must be exactly 7 digits.')
   const approvedServiceIds = [...new Set(body.approvedServiceIds || [])]
   check(approvedServiceIds.length <= 100 && approvedServiceIds.every(id => typeof id === 'string' && id.length <= 150 && !id.includes('/')), 'Invalid approved services.')
   const rates = (body.rates || []).map(rate => {
@@ -47,7 +49,7 @@ export const normalizePractitionerProfile = (body) => {
     const a = rates[i], b = rates[j]
     check(a.serviceId !== b.serviceId || a.responsibility !== b.responsibility || a.effectiveFrom > (b.effectiveUntil || '9999-12-31') || b.effectiveFrom > (a.effectiveUntil || '9999-12-31'), 'Compensation agreements for the same service and responsibility cannot overlap.')
   }
-  return { type: body.type, credentialNumber: String(body.credentialNumber || '').trim().slice(0, 100), credentialsVerified: body.credentialsVerified === true, approvedServiceIds, rates }
+  return { type: body.type, credentialNumber, credentialsVerified: body.credentialsVerified === true, approvedServiceIds, rates }
 }
 export const rateFor = (profile, serviceId, responsibility, date) => {
   const active = (profile?.rates || []).filter(rate => rate.responsibility === responsibility && rate.effectiveFrom <= date && (!rate.effectiveUntil || rate.effectiveUntil >= date))

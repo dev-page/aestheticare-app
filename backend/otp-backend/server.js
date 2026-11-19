@@ -8847,6 +8847,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     const requestedRole = normalizeRoleKey(text(input.role, 80))
     const engagementType = text(input.engagementType || 'employee', 40).toLowerCase()
     const employmentType = text(input.employmentType, 80)
+    const credentialNumber = text(input.credentialNumber, 100)
     const weeklyHoursTarget = Number(input.weeklyHoursTarget)
     const forbiddenRoles = new Set(['Owner', 'Superadmin'])
     const branchIds = [...new Set((Array.isArray(input.branchIds) ? input.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
@@ -8858,6 +8859,9 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       || (engagementType === 'student_intern' && employmentType !== 'Intern')
       || !Number.isFinite(weeklyHoursTarget) || weeklyHoursTarget < 1 || weeklyHoursTarget > 48) {
       return res.status(400).json({ success: false, error: 'Choose an employee or student intern arrangement and enter agreed weekly hours from 1 to 48.' })
+    }
+    if (credentialNumber && !/^\d{7}$/.test(credentialNumber)) {
+      return res.status(400).json({ success: false, error: 'Credential number must be exactly 7 digits.' })
     }
 
     const firestore = admin.firestore()
@@ -8906,7 +8910,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     if (practitionerTypes.includes(input.practitionerType)) {
       await firestore.collection('practitionerProfiles').doc(targetId).set({
         type: input.practitionerType,
-        credentialNumber: text(input.credentialNumber, 100),
+        credentialNumber,
         credentialsVerified: false,
         approvedServiceIds: [],
         rates: [],
