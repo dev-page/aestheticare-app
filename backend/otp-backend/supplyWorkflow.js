@@ -161,6 +161,172 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     res.json({ success: true, data: { branchId, branches, records, items, suppliers, movements, snapshots, stockReconciliation, permissions: [...ctx.permissions], roleKey: ctx.roleKey, supplier: false, uid: ctx.uid } })
   }))
 
+  app.post('/supply/stock-receipts', requireAuth, wrap(async (req, res, ctx) => {
+    allow(ctx, 'inventory:create')
+    const input = req.body || {}, branchId = cleanId(input.branchId)
+    await branchAccess(ctx, branchId)
+    const isNewItem = input.mode === 'new'
+    const itemRef = db.collection('inventoryItems').doc(isNewItem ? crypto.randomUUID() : cleanId(input.itemId))
+    const lotRef = db.collection('supplyLots').doc(crypto.randomUUID())
+    const movementRef = db.collection('inventoryMovements').doc()
+    const auditRef = db.collection('supplyAudit').doc()
+    const receivedQuantity = quantity(input.receivedQuantity)
+    const source = String(input.source || 'Supplier purchase')
+    demand(['Supplier purchase', 'Donation', 'Return', 'Initial stock', 'Other'].includes(source), 'Choose a valid stock source.', 400)
+    const reason = required(input.reason, 'Receipt reason')
+    const supplierId = input.supplierId ? cleanId(input.supplierId) : ''
+    const manufacturingDate = input.manufacturingDate ? dateKey(input.manufacturingDate) : ''
+    const expiryDate = input.expiryDate ? dateKey(input.expiryDate) : ''
+    demand(!manufacturingDate || !expiryDate || manufacturingDate <= expiryDate, 'Expiry date cannot be earlier than the manufacturing date.', 400)
+    const unitCost = input.unitCost === '' || input.unitCost == null ? null : Number(input.unitCost)
+    demand(unitCost === null || (Number.isFinite(unitCost) && unitCost >= 0), 'Enter a valid non-negative unit cost.', 400)
+    const condition = String(input.condition || 'Good')
+    demand(['Good', 'Damaged', 'Defective', 'Expired', 'Under repair'].includes(condition), 'Choose a valid stock condition.', 400)
+    const reference = String(input.reference || '').trim().slice(0, 200)
+    const lot = String(input.lot || '').trim().slice(0, 200)
+    const location = String(input.location || '').trim().slice(0, 200)
+
+    let resultingStock = 0
+    await db.runTransaction(async tx => {
+      const itemSnapshot = await tx.get(itemRef)
+      const old = itemSnapshot.data() || {}
+      demand(isNewItem ? !itemSnapshot.exists : itemSnapshot.exists, isNewItem ? 'This inventory item already exists; choose it from the list to receive stock.' : 'Choose an existing inventory item.', 409)
+      demand(!itemSnapshot.exists || old.branchId === branchId, 'Item belongs to another branch.', 403)
+
+      const lotSnapshot = itemSnapshot.exists
+        ? await tx.get(db.collection('supplyLots').where('itemId', '==', itemRef.id))
+        : { docs: [] }
+      const supplierSnapshot = supplierId ? await tx.get(db.collection('suppliers').doc(supplierId)) : null
+      const supplier = supplierSnapshot?.data()
+      const supplierLinks = supplierId ? await tx.get(db.collection('clinicSuppliers').where('branchId', '==', branchId)) : null
+      if (supplierId) {
+        const associated = docs(supplierLinks).some(link => link.supplierId === supplierId && link.status === 'Active')
+        const legacyBranchSupplier = supplier?.branchId === branchId && supplier.status === 'Active'
+        demand(supplier && supplier.status === 'Active' && (associated || legacyBranchSupplier), 'Choose an active supplier associated with this clinic branch.', 400)
+      }
+
+      const previousStock = itemSnapshot.exists ? quantity(old.currentStock ?? 0, true) : 0
+      const reservedStock = itemSnapshot.exists ? quantity(old.reservedStock ?? 0, true) : 0
+      resultingStock = previousStock + receivedQuantity
+      demand(Number.isSafeInteger(resultingStock), 'The resulting stock quantity is too large.', 400)
+      const itemName = isNewItem ? required(input.name, 'Item name') : String(old.name || '')
+      const category = isNewItem ? required(input.category, 'Category') : String(old.category || '')
+      const unit = isNewItem ? required(input.unit, 'Unit') : String(old.unit || 'units')
+      const minStock = isNewItem ? quantity(input.minStock ?? 0, true) : quantity(old.minStock ?? 0, true)
+      const targetStock = isNewItem ? quantity(input.targetStock ?? 0, true) : quantity(old.targetStock ?? 0, true)
+      const maxStock = isNewItem ? quantity(input.maxStock ?? 0, true) : quantity(old.maxStock ?? 0, true)
+      demand(targetStock >= minStock && maxStock >= targetStock, 'Maximum stock must be at least target stock, and target must be at least the restocking threshold.', 400)
+      const itemType = String(input.itemType || 'Material')
+      const consumability = String(input.consumability || 'Consumable')
+      demand(['Material', 'Equipment'].includes(itemType), 'Choose Material or Equipment.', 400)
+      demand(['Consumable', 'Non-consumable'].includes(consumability), 'Choose a material classification.', 400)
+      const itemData = isNewItem ? {
+        branchId,
+        name: itemName,
+        category,
+        description: String(input.description || '').slice(0, 4000),
+        unit,
+        currentStock: resultingStock,
+        reservedStock: 0,
+        minStock,
+        targetStock,
+        maxStock,
+        supplierId,
+        costPrice: unitCost ?? 0,
+        itemType,
+        consumability,
+        location,
+        createdAt: stamp(),
+        updatedAt: stamp(),
+      } : {
+        ...old,
+        currentStock: resultingStock,
+        ...(location ? { location } : {}),
+        updatedAt: stamp(),
+      }
+      demand(reservedStock <= resultingStock, 'Received stock must cover the item’s reserved quantity.', 409)
+      const lotPlan = reconcileLotsToInventory({
+        branchId,
+        itemId: itemRef.id,
+        item: { ...old, branchId, currentStock: previousStock },
+        lotRecords: lotSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+      })
+      tx.set(itemRef, itemData, { merge: true })
+      lotPlan.lotWrites.forEach(write => tx.set(db.collection('supplyLots').doc(write.id), {
+        ...write.data,
+        ...(write.created ? { receivedAt: stamp(), createdAt: stamp() } : {}),
+        updatedAt: stamp(),
+      }, { merge: true }))
+      tx.set(lotRef, {
+        branchId,
+        itemId: itemRef.id,
+        source: 'manual_receipt',
+        sourceType: source,
+        supplierId,
+        reference,
+        lot,
+        manufacturingDate,
+        expiryDate,
+        condition,
+        location,
+        unitCost,
+        receivedQuantity,
+        remainingQuantity: receivedQuantity,
+        reason,
+        createdBy: ctx.uid,
+        receivedAt: stamp(),
+        createdAt: stamp(),
+        updatedAt: stamp(),
+      })
+      tx.set(movementRef, {
+        branchId,
+        inventoryItemId: itemRef.id,
+        type: 'manual_receipt',
+        quantity: receivedQuantity,
+        stockBefore: previousStock,
+        stockAfter: resultingStock,
+        lotId: lotRef.id,
+        source,
+        sourceType: source,
+        supplierId,
+        reference,
+        lot,
+        condition,
+        manufacturingDate,
+        expiryDate,
+        unitCost,
+        reason,
+        createdBy: ctx.uid,
+        actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid,
+        createdAt: stamp(),
+      })
+      tx.set(auditRef, {
+        recordId: itemRef.id,
+        branchId,
+        actorId: ctx.uid,
+        actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid,
+        role: ctx.roleKey,
+        module: 'inventory',
+        action: 'stock-received',
+        before: { ...old, currentStock: previousStock },
+        after: itemData,
+        quantity: receivedQuantity,
+        source,
+        supplierId,
+        reference,
+        lot,
+        condition,
+        expiryDate,
+        unitCost,
+        lotId: lotRef.id,
+        reason,
+        ...ctx.auditContext,
+        createdAt: stamp(),
+      })
+    })
+    res.json({ success: true, data: { id: itemRef.id, lotId: lotRef.id, currentStock: resultingStock } })
+  }))
+
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
     allow(ctx, 'inventory:create'); const input = req.body, branchId = cleanId(input.branchId); await branchAccess(ctx, branchId)
     const ref = db.collection('inventoryItems').doc(input.id ? cleanId(input.id) : crypto.randomUUID())

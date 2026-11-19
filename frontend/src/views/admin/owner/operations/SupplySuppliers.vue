@@ -94,9 +94,7 @@
             <label>Business name <span aria-hidden="true">*</span>
               <input v-model.trim="form.businessName" required :disabled="editing && !editing.canEditBusiness" autocomplete="organization" />
             </label>
-            <label>Category
-              <input v-model.trim="form.category" :disabled="editing && !editing.canEditBusiness" placeholder="e.g. skincare, medical supplies" />
-            </label>
+            <CategorySelectField id="supplier-category" label="Category" v-model="form.category" :options="supplierCategoryOptions" :disabled="editing && !editing.canEditBusiness" />
             <label>Contact person
               <input v-model.trim="form.contactPerson" :disabled="editing && !editing.canEditBusiness" autocomplete="name" />
             </label>
@@ -124,9 +122,7 @@
               <label>FDA LTO number
                 <input v-model.trim="form.ltoNumber" :disabled="editing && !editing.canEditBusiness" />
               </label>
-              <label>Establishment category
-                <input v-model.trim="form.establishmentCategory" :disabled="editing && !editing.canEditBusiness" />
-              </label>
+              <CategorySelectField id="supplier-establishment-category" label="Establishment category" v-model="form.establishmentCategory" :options="establishmentCategoryOptions" :disabled="editing && !editing.canEditBusiness" />
               <label>FDA check status
                 <select v-model="form.verificationStatus" :disabled="editing && !editing.canEditBusiness">
                   <option value="not_checked">Not checked</option>
@@ -168,6 +164,8 @@ import { collection, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, wh
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
+import CategorySelectField from '@/components/common/CategorySelectField.vue'
+import { supplyCategoryOptions as buildSupplyCategoryOptions } from '@/utils/supplyCategories'
 import { auth, db } from '@/config/firebaseConfig'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
@@ -238,6 +236,16 @@ const visible = computed(() => {
       && (!status.value || supplier.associationStatus === status.value)
   })
 })
+const supplierCategoryOptions = computed(() => buildSupplyCategoryOptions([
+  ...associations.value.map(supplier => supplier.category),
+  ...directory.value.map(supplier => supplier.category),
+  form.value.category,
+]))
+const establishmentCategoryOptions = computed(() => [...new Set([
+  ...associations.value.map(supplier => supplier.regulatory?.establishmentCategory),
+  ...directory.value.map(supplier => supplier.regulatory?.establishmentCategory),
+  form.value.establishmentCategory,
+].map(value => String(value || '').trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right)))
 
 const label = value => ({
   not_checked: 'Not checked', checked_valid: 'Checked valid', expired_invalid: 'Expired / invalid',

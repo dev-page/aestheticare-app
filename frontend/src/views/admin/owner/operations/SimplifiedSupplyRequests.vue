@@ -20,7 +20,7 @@
             <p v-if="!requestBranchId" class="mb-5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">Your assigned clinic branch is still loading. Wait a moment before sending this request.</p>
           <div class="grid gap-5 md:grid-cols-2">
             <label class="form-field"><span>Supply or item name <b>*</b></span><input v-model.trim="draft.name" placeholder="e.g. Surgical gloves" required /><small>Use a general item description. It does not need to match a supplier's exact product name.</small></label>
-            <div class="form-field category-select-field"><ContractAppearanceSelect id="supply-request-category" label="Category *" v-model="draft.category" :options="[{ value: '', label: 'Select a category' }, ...inventoryCategories.map(value => ({ value, label: value }))]" /><small>Choose the closest supply group.</small></div>
+            <div class="form-field category-select-field"><CategorySelectField id="supply-request-category" label="Category" v-model="draft.category" :options="inventoryCategories" required /><small>Choose a supply group, or select Other to enter one.</small></div>
             <label class="form-field"><span>Quantity requested <b>*</b></span><input v-model.number="draft.quantity" type="number" min="1" required /><small>Enter the amount of supply the clinic needs.</small></label>
             <label class="form-field"><span>Unit of measure <b>*</b></span><select v-model="draft.unit" required><option value="units">Units</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="bottles">Bottles</option><option value="pairs">Pairs</option><option value="pieces">Pieces</option><option value="rolls">Rolls</option><option value="tubes">Tubes</option><option value="grams">Grams</option><option value="kilograms">Kilograms</option><option value="milliliters">Milliliters</option><option value="liters">Liters</option></select><small>Choose how the requested quantity is measured.</small></label>
             <label class="form-field"><span>Required by <b>*</b></span><input v-model="draft.requiredDate" type="date" :min="minimumRequiredDate" required /><small>Choose a date at least one day from today.</small></label>
@@ -187,12 +187,14 @@ import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import TablePagination from '@/components/common/TablePagination.vue'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
+import CategorySelectField from '@/components/common/CategorySelectField.vue'
 import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
 import Modal from '@/components/common/Modal.vue'
 import { auth } from '@/config/firebaseConfig'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { quoteAdjustmentRows, quoteDraftIsValid, quoteDraftTotal, quoteTaxTreatment, quoteTaxTreatmentLabel as taxTreatmentLabel } from '@/utils/supplyQuotePricing'
 import { toast } from 'vue3-toastify'
+import { supplyCategoryOptions as buildSupplyCategoryOptions } from '@/utils/supplyCategories'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -228,7 +230,10 @@ const activeBranch = computed(() => data.value.branches.find(branch => branch.id
 const requestBranchId = computed(() => String(activeBranch.value?.id || '').trim())
 const branchAddress = computed(() => String(activeBranch.value.address || activeBranch.value.name || '').trim())
 const suppliers = computed(() => data.value.suppliers.filter(supplier => supplier.status === 'Active' && supplier.associationStatus === 'Active'))
-const inventoryCategories = ['Medical supplies', 'Personal protective equipment', 'Cleaning and sanitation', 'Office supplies', 'Equipment', 'Pharmacy supplies', 'Other']
+const inventoryCategories = computed(() => buildSupplyCategoryOptions([
+  ...data.value.records.filter(record => ['request', 'procurement', 'po', 'receiving'].includes(record.kind)).flatMap(record => [record.category, ...(record.lines || []).map(line => line.category)]),
+  ...data.value.suppliers.map(supplier => supplier.category),
+]))
 const records = computed(() => data.value.records.filter(record => mode.value === 'inventory' ? record.kind === 'request' : mode.value === 'procurement' ? ['procurement', 'po'].includes(record.kind) : record.kind === 'po'))
 const procurementRecords = computed(() => records.value.filter(record => record.kind === 'procurement').sort((first, second) => createdTimestamp(second.createdAt) - createdTimestamp(first.createdAt)))
 const financePurchaseOrders = computed(() => [...records.value].sort((first, second) => createdTimestamp(second.createdAt) - createdTimestamp(first.createdAt)))
