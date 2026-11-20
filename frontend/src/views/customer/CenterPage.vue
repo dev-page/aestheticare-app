@@ -3107,13 +3107,11 @@ const submitBooking = async () => {
       })
       const result = await response.json().catch(() => null)
       if (!response.ok || !result?.success) throw new Error(result?.error || 'Failed to submit the same-day booking request.')
-      await Swal.fire({
-        title: 'Same-day booking held',
-        text: 'Your consultation and provisional treatment times are held for 15 minutes. Sign and pay for the consultation first. The practitioner must clear the treatment after the consultation before you can sign or pay for it.',
-        icon: 'success', confirmButtonText: 'View Appointments', confirmButtonColor: '#8d5a3b',
-      })
+      const consultationAppointmentId = String(result.data?.appointmentIds?.[0] || result.data?.appointmentId || '').trim()
+      if (!consultationAppointmentId) throw new Error('The consultation was created, but its appointment reference was not returned. Open My Appointments to continue.')
       clearBookingSelection()
-      await router.replace({ name: 'customer-appointments' })
+      toast.success('Your consultation time is held. Review and sign its contract to continue to payment.')
+      await router.replace({ name: 'customer-appointments', query: { bookingFlow: 'sign-and-pay', appointmentId: consultationAppointmentId } })
       return
     }
     const response = await fetch(`${OTP_API_BASE}/bookings/create`, {
@@ -3165,17 +3163,21 @@ const submitBooking = async () => {
     if (!response.ok || !result?.success) {
       throw new Error(result?.error || 'Failed to book the appointment.')
     }
-    await Swal.fire({
-      title: 'Appointment time held',
-      text: groupBookingEnabled.value
-        ? 'Your group slots are held for 15 minutes. The organizer signs the agreements and pays once; verified payment confirms the appointments. Each attendee receives a private link for their own treatment consent.'
-        : 'Your selected time is held for 15 minutes. Open My Appointments to sign the agreement and pay. Payment verification confirms the appointment and enables its service code.',
-      icon: 'success',
-      confirmButtonText: 'View Appointments',
-      confirmButtonColor: '#8d5a3b',
-    })
+    const groupBookingSubmitted = groupBookingEnabled.value
+    const appointmentId = String(result.data?.appointmentId || '').trim()
     clearBookingSelection()
-    await router.replace({ name: 'customer-appointments' })
+    if (groupBookingSubmitted) {
+      await Swal.fire({
+        title: 'Group booking held',
+        text: 'Your group slots are held for 15 minutes. The organizer signs the agreements and pays once; verified payment confirms the appointments. Each attendee receives a private link for their own treatment consent.',
+        icon: 'success', confirmButtonText: 'View Appointments', confirmButtonColor: '#8d5a3b',
+      })
+      await router.replace({ name: 'customer-appointments' })
+      return
+    }
+    if (!appointmentId) throw new Error('The appointment was created, but its reference was not returned. Open My Appointments to continue.')
+    toast.success('Your appointment time is held. Review and sign the contract to continue to payment.')
+    await router.replace({ name: 'customer-appointments', query: { bookingFlow: 'sign-and-pay', appointmentId } })
   } catch (error) {
     console.error(error)
     toast.error(error?.message || 'Failed to book the appointment.')

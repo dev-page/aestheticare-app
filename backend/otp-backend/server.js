@@ -11672,6 +11672,7 @@ const recordAppointmentPayment = async (req, res) => {
           status: appointment.status,
           amountPaid: Number(appointment.amountPaid || 0),
           paymentCoverage: appointment.paymentCoverage || 'pending',
+          serviceKey: appointment.serviceKey || null,
           alreadyRecorded: true,
           receiptEmailSent: emailResult.sent,
         },
@@ -11721,6 +11722,12 @@ const recordAppointmentPayment = async (req, res) => {
       const fullyPaid = amountPaid >= totalAmount
       const next = { ...fresh, amountPaid }
       const status = afterPaymentStatus(next)
+      const canIssueServiceKey = !fresh.isBookingOrderParent
+        && !fresh.isGroupParent
+        && normalized(fresh.contract?.status) === 'signed'
+        && initialPaymentReceived(next)
+      const serviceKey = fresh.serviceKey || (canIssueServiceKey ? String(crypto.randomInt(100000, 1000000)) : null)
+      const serviceKeyIssued = !fresh.serviceKey && Boolean(serviceKey)
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
       const branchSnap = await tx.get(firestore.collection('clinics').doc(String(fresh.branchId || '')))
       const branch = branchSnap.exists ? branchSnap.data() || {} : {}
@@ -11773,6 +11780,7 @@ const recordAppointmentPayment = async (req, res) => {
         activePaymongoCheckoutSessionId: '', paymentHoldStatus: 'confirmed',
         paymentHoldDeadlineAt: fresh.paymentHoldExpiresAt || null, paymentHoldExpiresAt: null,
         paymongoPaymentId: paymentId, paymongoPaidAt: paidTimestamp, updatedAt: timestamp,
+        ...(serviceKey ? { serviceKey } : {}),
         ...(status === 'Completed' ? { completedAt: timestamp } : {}),
       })
       if (sameDayTreatmentRef && sameDayTreatmentSnap?.exists) tx.update(sameDayTreatmentRef, {
@@ -11789,10 +11797,15 @@ const recordAppointmentPayment = async (req, res) => {
       if (fresh.bookingId) tx.set(firestore.collection('bookings').doc(fresh.bookingId), { status, amountPaid, paymentHoldStatus: 'confirmed', activePaymongoCheckoutSessionId: '', paymentHoldDeadlineAt: fresh.paymentHoldExpiresAt || null, paymentHoldExpiresAt: null, updatedAt: timestamp }, { merge: true })
       tx.set(firestore.collection('notifications').doc(), { recipientUserId: fresh.customerId, title: 'Payment received and receipt ready', message: `Your payment of PHP ${paymentAmount.toFixed(2)} was verified. Download the PDF receipt from Appointment History in My Appointments.`, link: '/customer/appointments?tab=history', read: false, deleted: false, createdAt: timestamp })
       writeClinicAppointmentPaidNotifications({ tx, db: firestore, recipients: clinicRecipients, branchId: fresh.branchId, appointmentId, bookingId: fresh.bookingId, customerName: fresh.customerName, serviceName: fresh.service || 'Appointment', appointmentDate: fresh.date, appointmentTime: fresh.time, createdAt: timestamp })
-      return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment' }
+      return { appointmentId, status, amountPaid, paymentCoverage: fullyPaid ? 'full' : 'installment', serviceKey, serviceKeyIssued }
     })
     const updatedSnap = await appointmentRef.get()
     const updatedAppointment = updatedSnap.data() || appointment
+    const serviceKey = result.serviceKey || updatedAppointment.serviceKey || null
+    if (result.serviceKeyIssued && serviceKey) {
+      await sendServiceCode({ email: updatedAppointment.customerEmail, serviceKey, date: updatedAppointment.date, time: updatedAppointment.time })
+        .catch(error => console.warn('Could not email the verified appointment service code:', error?.message || error))
+    }
     const clinicSnap = updatedAppointment.branchId ? await firestore.collection('clinics').doc(String(updatedAppointment.branchId)).get() : null
     let emailResult = { sent: false }
     try {
@@ -11805,7 +11818,7 @@ const recordAppointmentPayment = async (req, res) => {
         sendEmail: postmarkClient?.sendEmail.bind(postmarkClient),
       })
     } catch (error) { console.warn('Could not send appointment receipt email:', error?.message || error) }
-    return res.json({ success: true, data: { ...result, receiptEmailSent: emailResult.sent } })
+    return res.json({ success: true, data: { ...result, serviceKey, receiptEmailSent: emailResult.sent } })
   } catch (error) {
     console.error('appointments/record-payment error:', error)
     return res.status(error.status || 500).json({ success: false, error: error?.message || 'Failed to record appointment payment' })

@@ -16,6 +16,30 @@
           </button>
         </section>
 
+        <section v-if="paymentReturnState?.status === 'success'" class="payment-return-banner payment-return-banner-success" role="status">
+          <div>
+            <p class="payment-return-kicker">Payment verified</p>
+            <h2>Your appointment is confirmed.</h2>
+            <p>{{ paymentReturnState.serviceKey ? 'PayMongo confirmed your payment. Keep this service code private and show it at check-in.' : 'PayMongo confirmed your payment. Your appointment details are available below.' }}</p>
+          </div>
+          <div v-if="paymentReturnState.serviceKey" class="payment-return-code">
+            <span>Service code</span>
+            <code>{{ paymentReturnState.serviceKey }}</code>
+            <small>Keep this code private and show it at check-in.</small>
+          </div>
+        </section>
+
+        <section v-else-if="paymentReturnState?.status === 'cancelled'" class="payment-return-banner payment-return-banner-cancelled" role="status">
+          <div>
+            <p class="payment-return-kicker">Payment not completed</p>
+            <h2>Your signed appointment is still here.</h2>
+            <p>Return to payment to finish booking. Your slot remains held while the payment window is active.</p>
+          </div>
+          <button v-if="paymentReturnAppointment && canPayAppointment(paymentReturnAppointment)" type="button" class="appointment-button appointment-button-primary" @click="payAppointment(paymentReturnAppointment)">
+            Continue to payment {{ formatBookingDue(paymentReturnAppointment) }}
+          </button>
+        </section>
+
         <section v-if="contractsToSign.length" class="appointments-panel">
           <div class="panel-head"><div><p class="panel-kicker">Next step: sign your contract</p><h2 class="panel-title">Review and sign before payment</h2></div></div>
           <p class="p-4 text-sm">Your slot is held for 15 minutes. Review and sign the agreement, then pay. The appointment is confirmed when payment is verified.</p>
@@ -812,6 +836,9 @@ let appointmentFeedbackRequest = 0
 const clinicsById = ref({})
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
+const bookingFlowPromptedAppointmentId = ref('')
+const bookingFlowCheckoutStartedAppointmentId = ref('')
+const paymentReturnState = ref(null)
 const showServiceKeyModal = ref(false)
 const selectedServiceKeyAppointment = ref(null)
 const serviceKeyVerifying = ref(false)
@@ -1671,6 +1698,8 @@ const customerLifecycleAppointments = computed(() => [
   ...pastOnlineConsultations.value,
 ])
 
+const paymentReturnAppointment = computed(() => customerLifecycleAppointments.value.find(appointment => appointment.id === paymentReturnState.value?.appointmentId) || null)
+
 const pastOnlineConsultations = computed(() => {
   return onlineConsultations.value.filter((appt) => appt.workerCompleted || ['completed', 'cancelled', 'rejected', 'no-show'].includes(normalizeAppointmentStatus(appt.status)))
 })
@@ -2347,8 +2376,27 @@ const closeContract = () => {
   selectedContractAppointment.value = null
 }
 
-const contractUpdated = () => {
-  const needsPayment = selectedContractAppointment.value && paymentDue(selectedContractAppointment.value) > 0
+const continueBookingFlowToPayment = async (appointment) => {
+  const appointmentId = String(appointment?.id || '').trim()
+  if (!appointmentId || bookingFlowCheckoutStartedAppointmentId.value === appointmentId) return
+  bookingFlowCheckoutStartedAppointmentId.value = appointmentId
+  closeContract()
+  await router.replace({ name: 'customer-appointments' })
+  toast.success('Contract signed. Opening secure payment checkout.')
+  await payAppointment(appointment)
+}
+
+const contractUpdated = async (result = {}) => {
+  const appointment = selectedContractAppointment.value
+  if (appointment && result.contract) appointment.contract = { ...(appointment.contract || {}), ...result.contract }
+  const needsPayment = appointment && paymentDue(appointment) > 0
+  const contractIsSigned = normalizeAppointmentStatus(appointment?.contract?.status) === 'signed'
+  const isBookingHandoff = route.query.bookingFlow === 'sign-and-pay'
+    && String(route.query.appointmentId || '') === String(appointment?.id || '')
+  if (isBookingHandoff && contractIsSigned && needsPayment) {
+    await continueBookingFlowToPayment(appointment)
+    return
+  }
   closeContract()
   toast.success(needsPayment ? 'Contract signed. You can now complete payment.' : 'Contract signed successfully.')
   if (needsPayment) router.push({ name: 'customer-unpaid-appointments' })
@@ -2383,8 +2431,8 @@ const payAppointment = async (appointment) => {
         description: `Payment for ${appointment.service || 'appointment'}`,
         referenceNumber: createShortAppointmentReference(),
         billing: { name: appointment.customerName || user.displayName || 'Customer', email: user.email || appointment.customerEmail || '' },
-        successUrl: `${window.location.origin}${isUnpaidAppointmentsPage.value ? '/customer/unpaid-appointments' : '/customer/appointments'}?paymongo_status=success`,
-        cancelUrl: `${window.location.origin}${isUnpaidAppointmentsPage.value ? '/customer/unpaid-appointments' : '/customer/appointments'}?paymongo_status=cancelled`,
+        successUrl: `${window.location.origin}/customer/appointments?paymongo_status=success`,
+        cancelUrl: `${window.location.origin}/customer/unpaid-appointments?paymongo_status=cancelled`,
         metadata: {
           module: 'customer_appointment',
           source: 'appointment_payment',
@@ -2414,12 +2462,18 @@ const payAppointment = async (appointment) => {
 }
 
 const handlePaymentReturn = async (user) => {
-  if (!user || route.query.paymongo_status !== 'success') return
+  if (!user || !['success', 'cancelled'].includes(String(route.query.paymongo_status || ''))) return
   const raw = localStorage.getItem('pendingAppointmentPayment')
   if (!raw) return
   let pending = null
   try { pending = JSON.parse(raw) } catch (_error) { pending = null }
   if (!pending?.appointmentId || !pending?.checkoutSessionId) return
+
+  if (route.query.paymongo_status === 'cancelled') {
+    paymentReturnState.value = { status: 'cancelled', appointmentId: pending.appointmentId }
+    toast.info('Payment was cancelled. Continue to payment when you are ready.')
+    return
+  }
 
   try {
     const token = await user.getIdToken()
@@ -2431,12 +2485,32 @@ const handlePaymentReturn = async (user) => {
     const payload = await response.json().catch(() => null)
     if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Payment verification failed.')
     localStorage.removeItem('pendingAppointmentPayment')
+    paymentReturnState.value = { status: 'success', appointmentId: pending.appointmentId, serviceKey: String(payload.data?.serviceKey || '') }
     toast.success('Appointment payment recorded.')
   } catch (error) {
     console.error(error)
     toast.error(error?.message || 'Payment verification failed. Please refresh and try again.')
   }
 }
+
+const resumeCustomerBookingFlow = async () => {
+  const flow = String(route.query.bookingFlow || '')
+  const appointmentId = String(route.query.appointmentId || '').trim()
+  if (!appointmentId || !['sign-and-pay', 'pay'].includes(flow)) return
+  const appointment = customerLifecycleAppointments.value.find(item => String(item.id) === appointmentId)
+  if (!appointment) return
+
+  if (normalizeAppointmentStatus(appointment.contract?.status) === 'signed') {
+    if (paymentDue(appointment) > 0) await continueBookingFlowToPayment(appointment)
+    return
+  }
+  if (flow !== 'sign-and-pay' || bookingFlowPromptedAppointmentId.value === appointmentId) return
+  if (!appointment.contract || !(appointment.contract.terms || appointment.contract.templateUrl)) return
+  bookingFlowPromptedAppointmentId.value = appointmentId
+  openContract(appointment)
+}
+
+watch(() => [route.query.bookingFlow, route.query.appointmentId, customerLifecycleAppointments.value], resumeCustomerBookingFlow)
 
 onMounted(trackPageLoad(() => {
   holdClockInterval = setInterval(() => { holdClockNow.value = Date.now() }, 1000)
@@ -2498,9 +2572,38 @@ onUnmounted(() => {
   box-shadow: 0 18px 44px rgba(87, 56, 35, 0.08);
 }
 
+.payment-return-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  border: 1px solid #b9dcc0;
+  border-radius: 1.25rem;
+  padding: 1.15rem 1.3rem;
+  background: #f0f8ef;
+  color: #285638;
+}
+.payment-return-banner-cancelled {
+  border-color: #eccb9c;
+  background: #fff7e9;
+  color: #684523;
+}
+.payment-return-kicker { margin: 0 0 .25rem; font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.payment-return-banner h2 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 1.2rem; font-weight: 700; }
+.payment-return-banner p:not(.payment-return-kicker) { margin: .3rem 0 0; color: #6d6558; font-size: .88rem; }
+.payment-return-code { display: grid; justify-items: end; gap: .15rem; flex: none; }
+.payment-return-code span { font-size: .72rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.payment-return-code code { color: #234b30; font-size: 1.55rem; font-weight: 850; letter-spacing: .16em; }
+.payment-return-code small { color: #6d6558; font-size: .72rem; }
+
 .appointments-header,
 .appointments-panel {
   padding: 1.25rem;
+}
+
+@media (max-width: 680px) {
+  .payment-return-banner { align-items: flex-start; flex-direction: column; }
+  .payment-return-code { justify-items: start; }
 }
 
 .appointments-header {
