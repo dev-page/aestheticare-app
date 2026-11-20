@@ -53,7 +53,7 @@ service cloud.firestore {
 
     function applicantCannotChangeVerificationFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'ownerId', 'organizationOwnerId',
+        'ownerId', 'owner', 'organizationOwnerId',
         'status', 'approvalStatus', 'registrationStatus', 'verificationStatus', 'verificationResults', 'verificationJob', 'registrationOcrSnapshot',
         'verificationProcessedAt', 'verificationProcessedBy', 'approvedAt',
         'approvedBy', 'rejectedAt', 'rejectionReason', 'reviewedBy', 'reviewedAt',
@@ -240,7 +240,10 @@ service cloud.firestore {
       let ownerId = data.get('createdForClinicId', '');
       let branchId = data.get('branchId', '');
       return (ownerId is string && ownerId.size() > 0
-          && (request.auth.uid == ownerId || isStaffOfOwner(ownerId)
+          && (request.auth.uid == ownerId
+            || userData().get('ownerId', '') == ownerId
+            || userData().get('owner', '') == ownerId
+            || isStaffOfOwner(ownerId)
             || (userData().branchId != null
               && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
               && (clinicDoc(userData().branchId).data.get('ownerId', '') == ownerId
@@ -267,6 +270,12 @@ service cloud.firestore {
           && ltoDocument.get('storagePath', '') is string
           && ltoDocument.get('storagePath', '').matches(
             '^supplier-fda-documents/' + data.get('createdForClinicId', '') + '/' + supplierId + '/[A-Za-z0-9_.-]{1,180}$'));
+    }
+
+    function validSupplierContactNumber(data) {
+      let contactNumber = data.get('contactNumber', '');
+      return contactNumber is string
+        && (contactNumber == '' || isValidPhilippineMobile(contactNumber));
     }
 
     function isAssignedClinicRole(roleId) {
@@ -874,12 +883,16 @@ service cloud.firestore {
         && request.resource.data.createdForClinicId != null
         && supplierClinicCanRead(request.resource.data)
         && request.resource.data.get('sharedDirectory', false) == false
+        && request.resource.data.get('status', '') == 'Active'
+        && validSupplierContactNumber(request.resource.data)
         && validSupplierLtoPath(request.resource.data, supplierId)
         && !request.resource.data.keys().hasAny(['ownerId', 'supplierUserId', 'offeredItems', 'verificationStatus']);
       allow update: if isSignedIn() && hasPermission('suppliers:update')
         && supplierClinicCanRead(resource.data)
         && request.resource.data.createdForClinicId == resource.data.createdForClinicId
         && request.resource.data.get('sharedDirectory', false) == false
+        && request.resource.data.get('status', '') in ['Active', 'Inactive']
+        && validSupplierContactNumber(request.resource.data)
         && validSupplierLtoPath(request.resource.data, supplierId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'supplierUserId', 'offeredItems']);
       allow delete: if false;
@@ -892,12 +905,14 @@ service cloud.firestore {
           || hasPermission('suppliers:create') || hasPermission('suppliers:update'));
       allow create: if isSignedIn() && request.resource.data.branchId != null
         && canAccessBranch(request.resource.data.branchId) && (isOwnerOfBranch(request.resource.data.branchId) || hasPermission('suppliers:create'))
+        && request.resource.data.get('status', '') == 'Active'
         && request.resource.data.createdBy == request.auth.uid;
       allow update: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId) && (isOwnerOfBranch(resource.data.branchId) || hasPermission('suppliers:update'))
         && request.resource.data.branchId == resource.data.branchId
         && request.resource.data.clinicId == resource.data.clinicId
-        && request.resource.data.supplierId == resource.data.supplierId;
+        && request.resource.data.supplierId == resource.data.supplierId
+        && request.resource.data.get('status', '') in ['Active', 'Inactive'];
       // Associations are retained for history; mark inactive instead of deleting.
       allow delete: if false;
     }

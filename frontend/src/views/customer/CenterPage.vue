@@ -426,8 +426,10 @@
                     </dl>
                     <p v-if="sameDayConsultationRequested" class="mt-2 text-xs leading-5 text-[#8b6a4d]">Treatment total if cleared: ₱{{ sameDayTreatmentPricing.total.toFixed(2) }}. It is not charged unless the practitioner clears the treatment after the consultation.</p>
                     <p v-if="selectedServiceDurationMinutes" class="mt-1 text-xs text-[#8b6a4d]">
-                      Total duration:
-                      <span class="ml-1 font-semibold text-[#3d281d]">{{ sameDayConsultationRequested ? bookingDurationMinutes : selectedServiceDurationMinutes }} mins{{ sameDayConsultationRequested ? ' including consultation and buffer' : '' }}</span>
+                      Time reserved:
+                      <span class="ml-1 font-semibold text-[#3d281d]">{{ bookingDurationMinutes }} mins</span>
+                      <span v-if="onlineConsultationBufferMinutes" class="ml-1">(includes {{ onlineConsultationBufferMinutes }}-minute online consultation buffer)</span>
+                      <span v-else-if="sameDayConsultationRequested" class="ml-1">(includes consultation and buffer)</span>
                     </p>
                     <p v-if="selectedTreatmentSessionCount > 1" class="mt-1 text-xs text-[#8b6a4d]">
                       Treatment plan:
@@ -500,7 +502,7 @@
                 </div>
                 <label class="mt-4 flex items-start gap-2 text-xs leading-5 text-[#6f4a2d]">
                   <input v-model="bookingPolicyAcknowledged" type="checkbox" class="mt-1 h-4 w-4 accent-[#8d5a3b]" />
-                  <span>I have read and agree to the active clinic policies for this booking request.</span>
+                  <span>I have read and agree to the active clinic policies for this appointment.</span>
                 </label>
               </div>
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
@@ -513,7 +515,7 @@
                   :disabled="bookingPaymentSaving"
                   class="center-booking-primary-button w-full sm:w-auto"
                 >
-                  {{ bookingPaymentSaving ? 'Submitting...' : 'Submit Booking Request' }}
+                  {{ bookingPaymentSaving ? 'Booking...' : 'Book Appointment' }}
                 </button>
                 <button type="button" @click="clearBookingSelection" class="center-booking-secondary-button w-full sm:w-auto">Cancel</button>
               </div>
@@ -850,6 +852,10 @@ const bookingDurationMinutes = computed(() => {
   const consultationDuration = sameDayConsultationRequested.value ? sameDayConsultationDuration.value + sameDayBufferMinutes.value : 0
   return selectedServices.value.reduce((sum, service) => sum + (service.consultationMode === 'online' ? onlinePolicy(service.consultationPolicy).bufferMinutes : 0), 0) + serviceDuration + consultationDuration
 })
+const onlineConsultationBufferMinutes = computed(() => selectedServices.value.reduce((sum, service) =>
+  String(service.type || '').toLowerCase() === 'consultation' && String(service.consultationMode || '').toLowerCase() === 'online'
+    ? sum + onlinePolicy(service.consultationPolicy).bufferMinutes
+    : sum, 0))
 const selectedServiceCommission = computed(() =>
   appointmentCommissionAmount(selectedServicePricing.value.subtotal)
 )
@@ -1597,7 +1603,9 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       followUpAllowed: Boolean(post.followUpAllowed),
       followUpWindowDays: post.followUpWindowDays != null ? Number(post.followUpWindowDays) : null,
       consultationPolicy: post.consultationPolicy || null,
-      durationMinutes: post.durationMinutes != null ? Number(post.durationMinutes) : null,
+      // The booking API defaults an omitted duration to 60 minutes. Keep the
+      // slot picker on the same duration so customers only see valid times.
+      durationMinutes: Number(post.durationMinutes) > 0 ? Number(post.durationMinutes) : 60,
       staffingRequirements: post.staffingRequirements || [],
       sessionCount: post.postType === 'Package'
         ? (Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length
@@ -3147,7 +3155,7 @@ const submitBooking = async () => {
           commissionPercent: serviceCommissionPercent,
           commissionAmount: selectedServiceCommission.value,
           netAmount: selectedServiceNetAmount.value,
-          source: 'customer_booking_request',
+          source: 'customer_booking',
           groupBooking: groupBookingEnabled.value ? { organizerId: user.uid, organizerIncluded: groupIncludeOrganizer.value, participantCount: groupRecipientCount.value, guests: groupGuests.value.map((guest) => ({ name: guest.name, email: guest.email, phone: guest.phone || '', serviceId: guest.serviceId || selectedServices.value[0]?.id })) } : null,
           policyAcknowledged: bookingPolicyAcknowledged.value,
         },
@@ -3155,7 +3163,7 @@ const submitBooking = async () => {
     })
     const result = await response.json().catch(() => null)
     if (!response.ok || !result?.success) {
-      throw new Error(result?.error || 'Failed to submit the booking request.')
+      throw new Error(result?.error || 'Failed to book the appointment.')
     }
     await Swal.fire({
       title: 'Appointment time held',
@@ -3170,7 +3178,7 @@ const submitBooking = async () => {
     await router.replace({ name: 'customer-appointments' })
   } catch (error) {
     console.error(error)
-    toast.error(error?.message || 'Failed to submit booking request.')
+    toast.error(error?.message || 'Failed to book the appointment.')
   } finally {
     bookingPaymentSaving.value = false
   }

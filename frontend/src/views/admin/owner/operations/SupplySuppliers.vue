@@ -35,7 +35,6 @@
             <option value="">All statuses</option>
             <option>Active</option>
             <option>Inactive</option>
-            <option>For review</option>
           </select>
         </label>
       </section>
@@ -96,16 +95,38 @@
               <input v-model.trim="form.email" type="email" :disabled="editing && !editing.canEditBusiness" autocomplete="email" />
             </label>
             <label>Contact number
-              <input v-model.trim="form.contactNumber" :disabled="editing && !editing.canEditBusiness" autocomplete="tel" />
+              <div class="phone-input-shell" :class="{ 'phone-input-invalid': contactNumberError }">
+                <span aria-hidden="true">+63</span>
+                <input
+                  id="supplier-contact-number"
+                  :value="form.contactNumber"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel-national"
+                  maxlength="10"
+                  pattern="9[0-9]{9}"
+                  placeholder="9XXXXXXXXX"
+                  title="Enter exactly 10 digits starting with 9."
+                  :disabled="editing && !editing.canEditBusiness"
+                  :aria-invalid="Boolean(contactNumberError)"
+                  :aria-describedby="contactNumberError ? 'supplier-contact-number-error' : undefined"
+                  @input="handleContactNumberInput"
+                  @blur="validateContactNumber"
+                />
+              </div>
+              <small v-if="contactNumberError" id="supplier-contact-number-error" class="field-error" role="alert">{{ contactNumberError }}</small>
             </label>
             <label>Address
               <input v-model.trim="form.address" :disabled="editing && !editing.canEditBusiness" autocomplete="street-address" />
             </label>
-            <label>Relationship status
+            <label v-if="!editing">Relationship status
+              <input value="Active" readonly aria-readonly="true" />
+              <small>New supplier relationships start as Active.</small>
+            </label>
+            <label v-else>Relationship status
               <select v-model="form.associationStatus">
-                <option>Active</option>
-                <option>Inactive</option>
-                <option>For review</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
               </select>
             </label>
           </div>
@@ -208,6 +229,7 @@ const draftSupplierId = ref('')
 const ltoPreviewUrl = ref('')
 const pendingLtoUploads = ref([])
 const manualNameConfirmation = ref(null)
+const contactNumberError = ref('')
 const scope = ref({ branchId: '', ownerId: '' })
 
 const blank = () => ({
@@ -325,9 +347,34 @@ const businessNameMatchLabel = value => ({
   matched: 'Matches document', mismatch: 'Does not match document',
   manually_confirmed: 'Manually confirmed against document', unverified: 'Not verified', not_checked: 'Not checked',
 }[value] || 'Not verified')
-const statusClass = value => ({ Active: 'is-active', Inactive: 'is-inactive', 'For review': 'is-review' }[value] || 'is-review')
+const normalizedAssociationStatus = value => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return !normalized || normalized === 'active' ? 'Active' : 'Inactive'
+}
+const statusClass = value => normalizedAssociationStatus(value) === 'Inactive' ? 'is-inactive' : 'is-active'
+const normalizeSupplierPhone = value => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('0063')) digits = digits.slice(4)
+  else if (digits.startsWith('63') && digits.length >= 12) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  return digits.slice(0, 10)
+}
+const isValidSupplierPhone = value => !value || /^9\d{9}$/.test(String(value))
+function validateContactNumber() {
+  contactNumberError.value = isValidSupplierPhone(form.value.contactNumber)
+    ? ''
+    : 'Enter exactly 10 digits starting with 9.'
+  return !contactNumberError.value
+}
+function handleContactNumberInput(event) {
+  const number = normalizeSupplierPhone(event?.target?.value)
+  form.value.contactNumber = number
+  if (event?.target) event.target.value = number
+  if (contactNumberError.value) validateContactNumber()
+}
 const errorMessage = error => {
-  if (['permission-denied', 'storage/unauthorized'].includes(error?.code)) return 'Your account does not have access to this clinic supplier record or document.'
+  if (error?.code === 'storage/unauthorized') return 'The FDA LTO could not be uploaded. Verify clinic access and that the latest Storage rules are deployed.'
+  if (error?.code === 'permission-denied') return 'Your account does not have access to this clinic supplier record or document.'
   if (error?.code === 'unavailable' || /503|unavailable|network/i.test(error?.message || '')) return 'The supplier service is temporarily unavailable. Try again in a moment.'
   return error?.message || 'Unable to complete this supplier action.'
 }
@@ -336,7 +383,7 @@ const view = (supplier, link = {}) => ({
   supplierId: supplier.id,
   key: link.id || supplier.id,
   associationId: link.id || '',
-  associationStatus: link.status || 'Active',
+  associationStatus: normalizedAssociationStatus(link.status),
   regulatory: supplier.regulatory || {},
   canEditBusiness: supplier.createdForClinicId === scope.value.ownerId,
 })
@@ -353,6 +400,8 @@ async function load() {
   loadFailed.value = false
   try {
     const workspace = await api(`/workspace?branchId=${encodeURIComponent(scope.value.branchId)}`)
+    const currentBranch = (workspace.branches || []).find(branch => branch.id === scope.value.branchId)
+    if (currentBranch?.ownerId) scope.value.ownerId = String(currentBranch.ownerId)
     associations.value = (workspace.suppliers || []).filter(supplier => supplier.clinicSupplierId).map(supplier => view(supplier, {
       id: supplier.clinicSupplierId,
       status: supplier.associationStatus,
@@ -368,6 +417,7 @@ async function load() {
 function openCreate() {
   editing.value = null
   manualNameConfirmation.value = null
+  contactNumberError.value = ''
   draftSupplierId.value = doc(collection(db, 'suppliers')).id
   form.value = blank()
   error.value = ''
@@ -383,9 +433,9 @@ function edit(supplier) {
     category: supplier.category || '',
     contactPerson: supplier.contactPerson || '',
     email: supplier.email || '',
-    contactNumber: supplier.contactNumber || '',
+    contactNumber: normalizeSupplierPhone(supplier.contactNumber),
     address: supplier.address || '',
-    associationStatus: supplier.associationStatus || 'Active',
+    associationStatus: normalizedAssociationStatus(supplier.associationStatus),
     ltoNumber: supplier.regulatory?.ltoNumber || '',
     ltoDocument: supplier.regulatory?.ltoDocument || null,
     ltoExpiryDate: supplier.regulatory?.ltoExpiryDate || '',
@@ -394,6 +444,8 @@ function edit(supplier) {
     ltoOcrReason: supplier.regulatory?.ltoOcrReason || '',
     ltoOcrProcessedAt: supplier.regulatory?.ltoOcrProcessedAt || '',
   }
+  contactNumberError.value = ''
+  if (editing.value.canEditBusiness && form.value.contactNumber && !isValidSupplierPhone(form.value.contactNumber)) validateContactNumber()
   error.value = ''
   showForm.value = true
 }
@@ -555,6 +607,7 @@ async function save() {
   try {
     const userId = auth.currentUser?.uid
     if (!userId) throw new Error('Sign in to save supplier details.')
+    if ((!editing.value || editing.value.canEditBusiness) && !validateContactNumber()) throw new Error(contactNumberError.value)
     if (businessNameSaveBlocked.value) {
       throw new Error(businessNameMismatch.value
         ? 'The supplier business name must match the name read from the FDA LTO document.'
@@ -578,7 +631,7 @@ async function save() {
           category: form.value.category,
           contactPerson: form.value.contactPerson,
           email: form.value.email,
-          contactNumber: form.value.contactNumber,
+          contactNumber: form.value.contactNumber ? `+63${form.value.contactNumber}` : '',
           address: form.value.address,
           sharedDirectory: false,
           regulatory,
@@ -587,7 +640,7 @@ async function save() {
         })
       }
       batch.update(doc(db, 'clinicSuppliers', editing.value.associationId), {
-        status: form.value.associationStatus,
+        status: normalizedAssociationStatus(form.value.associationStatus),
         updatedAt: serverTimestamp(),
         updatedBy: userId,
       })
@@ -610,7 +663,7 @@ async function save() {
         category: form.value.category,
         contactPerson: form.value.contactPerson,
         email: form.value.email,
-        contactNumber: form.value.contactNumber,
+        contactNumber: form.value.contactNumber ? `+63${form.value.contactNumber}` : '',
         address: form.value.address,
         sharedDirectory: false,
         createdForClinicId: scope.value.ownerId,
@@ -625,7 +678,7 @@ async function save() {
         clinicId: scope.value.ownerId,
         branchId: scope.value.branchId,
         supplierId: supplierRef.id,
-        status: form.value.associationStatus,
+        status: 'Active',
         internalNotes: '',
         associatedAt: serverTimestamp(),
         createdBy: userId,
@@ -689,6 +742,14 @@ button:disabled { opacity: .58; cursor: wait; }
 .toolbar label, .form-grid > label { display: grid; gap: .32rem; color: var(--ac-text-secondary); font-size: .78rem; font-weight: 700; }
 .toolbar input:not([type="checkbox"]), .toolbar select, .form-grid input:not([type="checkbox"]), .form-grid select, .form-grid textarea { width: 100%; min-width: 0; min-height: 2.8rem; box-sizing: border-box; border: 1px solid var(--ac-border-strong); border-radius: .6rem; padding: .65rem .75rem; color: var(--ac-text); background: var(--ac-surface); }
 .toolbar input::placeholder, .form-grid input::placeholder, .form-grid textarea::placeholder { color: var(--ac-text-muted); }
+.phone-input-shell { display: flex; align-items: center; min-width: 0; min-height: 2.8rem; overflow: hidden; border: 1px solid var(--ac-border-strong); border-radius: .6rem; background: var(--ac-surface); }
+.phone-input-shell:focus-within { border-color: var(--ac-primary); box-shadow: 0 0 0 3px rgb(180 83 9 / .12); }
+.phone-input-shell.phone-input-invalid { border-color: var(--ac-danger); }
+.phone-input-shell > span { align-self: stretch; display: flex; align-items: center; border-right: 1px solid var(--ac-border); padding: 0 .7rem; color: var(--ac-text-muted); font-size: .85rem; font-weight: 700; }
+.form-grid .phone-input-shell input { flex: 1; width: 100%; min-width: 0; min-height: 2.7rem; border: 0; border-radius: 0; padding: .6rem .7rem; background: transparent; box-shadow: none; }
+.form-grid .phone-input-shell input:focus { outline: 0; }
+.field-error { color: var(--ac-danger); font-size: .72rem; font-weight: 600; }
+.form-grid input[readonly] { background: var(--ac-surface-muted); cursor: default; }
 .feedback { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; border-radius: .7rem; padding: .75rem .9rem; font-size: .88rem; }
 .error { border: 1px solid var(--ac-danger); background: var(--ac-danger-bg); color: var(--ac-danger); }
 .success { border: 1px solid var(--ac-success); background: var(--ac-success-bg); color: var(--ac-success); }
@@ -705,7 +766,6 @@ button:disabled { opacity: .58; cursor: wait; }
 .status-pill { flex: 0 0 auto; border-radius: 999px; padding: .22rem .55rem; font-size: .68rem; font-weight: 800; }
 .is-active { background: var(--ac-success-bg); color: var(--ac-success); }
 .is-inactive { background: var(--ac-surface-muted); color: var(--ac-text-muted); }
-.is-review { background: var(--ac-warning-bg); color: var(--ac-warning); }
 .card dl { display: grid; gap: .45rem; margin: .9rem 0 0; }
 .card dl div { display: grid; grid-template-columns: minmax(6.5rem, .7fr) minmax(0, 1.3fr); gap: .5rem; font-size: .8rem; }
 .card dt { color: var(--ac-text-muted); }

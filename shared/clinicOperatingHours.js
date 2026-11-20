@@ -66,6 +66,12 @@ export const clinicOperatingRangesForDate = (operatingHours, dateKey, legacyClin
   const legacyDays = Array.isArray(legacyClinic.openDays)
     ? legacyClinic.openDays.map((value) => DAY_ALIASES[String(value || '').toLowerCase()]).filter(Boolean)
     : null
+  const hasLegacyHours = Boolean(String(legacyClinic.openTime || '').trim() || String(legacyClinic.closeTime || '').trim())
+  const hasLegacySchedule = legacyDays !== null || hasLegacyHours
+  // Older clinic records may not have opening hours at all. In that case,
+  // practitioner schedules are the available booking window. An explicitly
+  // configured hours object or legacy schedule still takes precedence.
+  if (!hasLegacySchedule) return [{ start: 0, end: 24 * 60 }]
   if (legacyDays && !legacyDays.includes(day)) return []
   const legacyRange = normalizeRanges([{ open: legacyClinic.openTime, close: legacyClinic.closeTime }])
   return legacyRange

@@ -9,7 +9,7 @@
             <p class="appointments-eyebrow">{{ isUnpaidAppointmentsPage ? 'Payment centre' : 'My care' }}</p>
             <h1 class="appointments-title">{{ isUnpaidAppointmentsPage ? 'Unpaid Appointments' : 'My Appointments' }}</h1>
             <p v-if="isUnpaidAppointmentsPage" class="appointments-subtitle">Sign your agreement and pay within the slot-hold window. Verified payment confirms your appointment.</p>
-            <p v-else class="appointments-subtitle">See every request, upcoming visit, online consultation, and completed service in one place.</p>
+            <p v-else class="appointments-subtitle">See your upcoming visits, online consultations, payment steps, and completed services in one place.</p>
           </div>
           <button v-if="!isUnpaidAppointmentsPage && unpaidAppointments.length" type="button" class="appointments-pay-link" @click="router.push({ name: 'customer-unpaid-appointments' })">
             Pay {{ unpaidAppointments.length }} unpaid appointment{{ unpaidAppointments.length === 1 ? '' : 's' }}

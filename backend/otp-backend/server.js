@@ -4370,8 +4370,8 @@ const buildBookingAppointmentPayload = ({
   // Payment is governed only by the clinic-wide Payment Policy. Listing-level
   // installment flags are legacy data and must never change a transaction.
   const installmentsAllowed = false
-  // A payment cannot make a booking active until the shop has approved it.
-  // This protects the legacy finalize endpoint from bypassing approval.
+  // Direct customer bookings are approved by the booking route. Payment still
+  // has to be verified before the appointment becomes Scheduled.
   const isApproved = normalizeBookingStatus(reservation.approvalStatus) === 'approved' || Boolean(reservation.approvedAt)
   const isPaid = isApproved && (Boolean(paymongo?.paymentId) || String(reservation.paymentStatus || '').trim().toLowerCase() === 'paid')
   const paymentStatus = isPaid ? 'Paid' : String(reservation.paymentStatus || 'Pending').trim() || 'Pending'
@@ -7078,7 +7078,7 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
       }
     }
 
-    return res.json({ success: true, practitioners, schedules, leaves, busyWindows, customerBusyDates, operatingHours: clinic.operatingHours || {}, legacyOperatingHours: { openDays: clinic.openDays || [], openTime: clinic.openTime || '', closeTime: clinic.closeTime || '' } })
+    return res.json({ success: true, practitioners, schedules, leaves, busyWindows, customerBusyDates, operatingHours: clinic.operatingHours || {}, legacyOperatingHours: { openDays: clinic.openDays, openTime: clinic.openTime, closeTime: clinic.closeTime } })
   } catch (error) {
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to load practitioner availability.' })
   }
@@ -7351,7 +7351,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
       return res.status(422).json({
         success: false,
         code: 'POLICY_ACKNOWLEDGEMENT_REQUIRED',
-        error: 'Please review and acknowledge the clinic policies before submitting the booking request.',
+        error: 'Please review and acknowledge the clinic policies before booking.',
       })
     }
     const consultationRequiredIds = (reservation.groupBooking ? [] : selectedServices)
@@ -7388,7 +7388,8 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
     const bookingPayload = {
       ...reservation,
       customerId,
-      status: 'requested',
+      approvalStatus: initialApprovalStatus,
+      status: initialBookingStatus,
       createdBy: req.user?.uid || null,
       branchId,
       practitionerId,
@@ -7405,7 +7406,7 @@ app.post('/bookings/create', requireAuth, async (req, res) => {
         status: initialBookingStatus,
         paymentStatus: 'Pending',
         paymentCoverage: 'pending',
-        source: walkIn ? 'walk_in' : 'customer_booking_request',
+        source: walkIn ? 'walk_in' : 'customer_booking',
         bookingId: bookingRef.id,
       ...(directOnlineBooking ? { paymentHoldStatus: 'active', paymentHoldExpiresAt } : {}),
         clinicPolicySnapshot,

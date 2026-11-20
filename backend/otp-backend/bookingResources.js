@@ -236,14 +236,18 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   const commissionAmount = appointmentCommissionAmount(pricingSnapshot.subtotal)
   const merchantNetAmount = Math.round((pricingSnapshot.subtotal - commissionAmount) * 100) / 100
   const clinicContractConfigured = contractPolicy.clientContract?.configured === true
-  const contractDocument = clinicContractConfigured ? buildClientContractDocument(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking_request', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions }) : null
+  const contractDocument = clinicContractConfigured ? buildClientContractDocument(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions }) : null
+  const serviceName = String(offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service').trim()
+  const fallbackTerms = [
+    `${serviceName} booking agreement`,
+    `Appointment: ${day} at ${String(reservation.time || '').trim()} (Asia/Manila).`,
+    `Amount due to confirm this appointment: PHP ${total.toFixed(2)}.`,
+    String(offer.termsAndConditions || '').trim(),
+    'By signing, I confirm that I reviewed the service, appointment time, amount due, and clinic policies shown during booking. Payment is required to confirm the appointment. I may contact the clinic with questions before the service begins.',
+  ].filter(Boolean).join('\n\n')
   let terms = clinicContractConfigured
-    ? buildClientContract(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking_request', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions })
-    : `${offer.title || offer.name || 'Service'}\n${String(offer.termsAndConditions || '').trim()}`
-  if (!clinicContractConfigured) {
-    check(String(offer.termsAndConditions || '').trim(), 'Publish contract terms before booking.')
-    check(services.every((service) => String(service.termsAndConditions || '').trim()), 'The clinic must publish contract terms for each selected service before it can be booked.')
-  }
+    ? buildClientContract(contractPolicy, { branch: contractBranch, source: reservation.source || 'customer_booking', serviceName: offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service', serviceTerms: offer.termsAndConditions })
+    : fallbackTerms
   if (isOnline) {
     const notice = `Online consultation: ${duration} minutes from the verified start. Join up to five minutes early. Arrival grace: ${consultationPolicy.graceMinutes} minutes. If the assigned practitioner is present and the customer has not entered the waiting room by the end of this period, the appointment is automatically recorded as a no-show and the payment is retained. If a clinic-side or connection issue prevented attendance, report it within 48 hours for clinic review.`
     terms += '\n\n' + notice

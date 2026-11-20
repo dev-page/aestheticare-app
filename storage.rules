@@ -24,6 +24,8 @@ service firebase.storage {
       return isSignedIn()
         && (request.auth.uid == ownerId
           || isSuperadmin()
+          || userData().get('ownerId', '') == ownerId
+          || userData().get('owner', '') == ownerId
           || userData().organizationOwnerId == ownerId
           || (userData().branchId != null
             && (firestore.get(/databases/(default)/documents/clinics/$(userData().branchId)).data.get('ownerId', '') == ownerId

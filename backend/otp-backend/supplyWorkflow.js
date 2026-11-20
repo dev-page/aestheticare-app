@@ -6,6 +6,15 @@ import { analyzeFdaLtoText } from './supplierLtoOcr.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
+const normalizeSupplierContactNumber = value => {
+  let digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('0063')) digits = digits.slice(4)
+  else if (digits.startsWith('63') && digits.length >= 12) digits = digits.slice(2)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  if (!digits) return ''
+  demand(/^9\d{9}$/.test(digits), 'Enter a valid Philippine mobile number: 10 digits starting with 9.', 400)
+  return `+63${digits}`
+}
 // Older workflow records did not always include relationship links.
 const linksOf = record => Array.isArray(record?.links) ? record.links.filter(Boolean) : []
 const names = { request: 'IR', procurement: 'PR', rfq: 'RFQ', quotation: 'QT', evaluation: 'EV', budget: 'BD', budgetRequest: 'BR', financeApproval: 'FA', budgetAllocation: 'BA', po: 'PO', supplierConfirmation: 'PC', receiving: 'RC', inspection: 'INSP', discrepancy: 'DS', invoice: 'INV', threeWayMatch: 'MT', payment: 'PAY' }
@@ -248,7 +257,7 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     allow(ctx, 'suppliers:create'); const input = req.body, branchId = cleanId(input.branchId); await branchAccess(ctx, branchId)
     const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
     const ref = db.collection('suppliers').doc(), associationRef = db.collection('clinicSuppliers').doc()
-    const data = { businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), contactNumber: String(input.phone || ''), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Active', sharedDirectory: false, createdForClinicId: String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid), createdBy: ctx.uid, createdAt: stamp(), updatedAt: stamp() }
+    const data = { businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), contactNumber: normalizeSupplierContactNumber(input.phone), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Active', sharedDirectory: false, createdForClinicId: String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid), createdBy: ctx.uid, createdAt: stamp(), updatedAt: stamp() }
     await db.runTransaction(async tx => {
       tx.set(ref, data)
       tx.set(associationRef, { clinicId: String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid), branchId, supplierId: ref.id, status: 'Active', internalNotes: '', associatedAt: stamp(), createdBy: ctx.uid, updatedBy: ctx.uid, updatedAt: stamp() })
