@@ -101,11 +101,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const { initSubscription, activePlan, hasFeature } = useSubscription()
     const { hasPermission, isClinicAdminOwner } = usePermissions()
     const activeStep = ref(1)
-    const todayDate = currentDateInManila()
     const scheduleStepRef = ref(null)
     const commissionEditorRef = ref(null)
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: {} })
-    const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' })
+    const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 })
     const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
     const canUseHr = computed(() => hasFeature('hr'))
     const canViewShifts = computed(() => canUseHr.value && hasPermission('hr:view'))
@@ -292,7 +291,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       activeStep.value = 1
       scheduleDraft.value = { branchId: '', effectiveFrom: '', weeklyHoursCap: 40, assignments: {} }
-      basePay.value = { basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' }
+      basePay.value = { basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 }
       commissionDraft.value = { approvedServiceIds: [], rates: [] }
       practitionerIdFile.value = null
       practitionerOcrSequence += 1
@@ -497,10 +496,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const monthlyHours = Number(basePay.value.monthlyBaseHours)
       if (!['hourly', 'daily', 'monthly-retainer'].includes(basePay.value.basePayModel)) return 'Choose a valid pay model.'
       if (!Number.isFinite(monthlyHours) || monthlyHours < 1 || monthlyHours > 744) return 'Agreed monthly hours must be between 1 and 744.'
-      if (!hasRate && !basePay.value.employmentStartDate) return 'Enter a base pay rate or an employment start date.'
       if (hasRate && (!Number.isFinite(rate) || rate <= 0 || rate > 1000000)) return 'Enter a base pay rate from PHP 0.01 to PHP 1,000,000.'
       if (hasRate && !/^\d+(\.\d{1,2})?$/.test(rawValue)) return 'Base pay may contain up to two decimal places.'
-      if (basePay.value.employmentStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(basePay.value.employmentStartDate)) return 'Enter a valid employment start date.'
       return ''
     })
 
@@ -853,11 +850,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             engagementType: currentStaff.value.engagementType,
             employmentType: currentStaff.value.employmentType,
             weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
+            employmentStartDate: String(scheduleDraft.value.effectiveFrom || currentMondayDate()),
             ...(canManagePay.value && !isStudentIntern.value ? {
               basePayModel: basePay.value.basePayModel,
               basePay: String(basePay.value.basePay || '').trim() ? Number(basePay.value.basePay) : null,
               monthlyBaseHours: Number(basePay.value.monthlyBaseHours || 176),
-              employmentStartDate: String(basePay.value.employmentStartDate || ''),
             } : {}),
             userType: 'Staff',
             branchId: currentStaff.value.clinicBranch,
@@ -994,7 +991,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       saveStaff,
       resetForm,
       activeStep,
-      todayDate,
       scheduleStepRef,
       commissionEditorRef,
       scheduleDraft,
@@ -1386,10 +1382,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <label v-if="basePay.basePayModel === 'monthly-retainer'" class="block text-sm font-medium text-slate-200">Agreed monthly hours
                 <input v-model.number="basePay.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
               </label>
-              <label class="block text-sm font-medium text-slate-200">Employment start date
-                <input v-model="basePay.employmentStartDate" type="date" :min="todayDate" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
-              </label>
-              <p class="sm:col-span-2 text-xs text-slate-400">Enter a rate or a start date to continue. Start date supports paid leave eligibility; payroll uses saved pay terms and attendance.</p>
+              <p class="sm:col-span-2 text-xs text-slate-400">The employee start date uses the effective week in Shift Assignment. Payroll uses saved pay terms and attendance.</p>
               <p v-if="basePayError" class="sm:col-span-2 text-sm text-rose-300" role="alert">{{ basePayError }}</p>
             </div>
 

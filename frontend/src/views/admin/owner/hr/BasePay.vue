@@ -54,7 +54,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             basePayModel: staff.basePayModel || 'hourly',
             monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
             basePay: staff.basePay == null || staff.basePay === '' ? '' : Number(staff.basePay),
-            employmentStartDate: String(staff.employmentStartDate || '')
           }))
       } catch (error) {
         console.error('Failed to load staff for base pay:', error)
@@ -72,8 +71,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       let validationMessage = ''
       if (!['hourly', 'daily', 'monthly-retainer'].includes(staff.basePayModel) || !Number.isFinite(Number(staff.monthlyBaseHours)) || staff.monthlyBaseHours < 1 || staff.monthlyBaseHours > 744) {
         validationMessage = 'Choose a valid pay model and monthly hour divisor.'
-      } else if (!hasBasePay && !staff.employmentStartDate) {
-        validationMessage = 'Enter base pay or an employment start date before saving.'
+      } else if (!hasBasePay) {
+        validationMessage = 'Enter a base pay rate before saving.'
       } else if (hasBasePay && !Number.isFinite(basePayValue)) {
         validationMessage = 'Base pay must be a valid number.'
       } else if (hasBasePay && basePayValue <= 0) {
@@ -82,8 +81,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         validationMessage = 'Base pay cannot exceed PHP 1,000,000.00 for this pay model.'
       } else if (hasBasePay && !/^\d+(\.\d{1,2})?$/.test(rawValue)) {
         validationMessage = 'Base pay may contain up to two decimal places.'
-      } else if (staff.employmentStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(staff.employmentStartDate)) {
-        validationMessage = 'Enter a valid employment start date.'
       }
       if (validationMessage) {
         basePayErrors.value = { ...basePayErrors.value, [staff.id]: validationMessage }
@@ -95,12 +92,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       basePayErrors.value = nextErrors
       savingId.value = staff.id
       try {
-        const updates = { employmentStartDate: String(staff.employmentStartDate || '') }
-        if (hasBasePay) Object.assign(updates, {
+        const updates = {
           basePay: Number(basePayValue.toFixed(2)),
           basePayModel: staff.basePayModel,
           monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
-        })
+        }
         await updateDoc(doc(db, 'users', staff.id), updates)
 
         await logActivity(db, {
@@ -248,7 +244,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           Student interns / OJT are excluded from employee payroll. Record each approved allowance in <a class="underline underline-offset-2" href="/finance/expenses-payments?tab=other">Finance → Other Expenses</a> with category “Student intern / OJT allowance,” the intern as payee, and the coverage period in the notes. Then record the payment there.
         </p>
         <p class="mb-4 text-sm text-slate-400">Hourly pay uses worked hours; daily pay uses completed attendance days. A fixed monthly retainer pays the full agreed monthly amount without automatic proration. Configure its agreed monthly hours for the hourly equivalent.</p>
-        <p class="mb-4 text-sm text-slate-400">Employment start date is used to check paid leave eligibility; it does not set or change payroll amounts.</p>
+        <p class="mb-4 text-sm text-slate-400">New employee start dates use the effective week set in Shift Assignment. Paid leave eligibility uses that recorded start date; payroll amounts use pay terms and attendance.</p>
         <table class="w-full text-left min-w-[620px] border-collapse">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">
@@ -323,10 +319,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <label v-if="editingStaff.basePayModel === 'monthly-retainer'" class="block text-sm font-medium">Agreed monthly hours
             <input v-model.number="editingStaff.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
           </label>
-          <label class="block text-sm font-medium">Employment start date
-            <input v-model="editingStaff.employmentStartDate" type="date" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
-          </label>
-          <p class="text-xs text-slate-400">Used for paid leave eligibility; payroll amounts are calculated from the saved pay terms and attendance.</p>
+          <p class="text-xs text-slate-400">Payroll is calculated from the saved pay terms and attendance. New employee start dates use the effective week set under Shift Assignment.</p>
           <p v-if="basePayErrors[editingStaff.id]" :id="`base-pay-error-${editingStaff.id}`" class="text-sm text-rose-300" role="alert">{{ basePayErrors[editingStaff.id] }}</p>
         </div>
 

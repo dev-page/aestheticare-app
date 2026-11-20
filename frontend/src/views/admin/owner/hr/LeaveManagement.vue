@@ -25,7 +25,7 @@
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 class="text-lg font-semibold text-white">Paid leave rule</h2>
-              <p class="mt-1 max-w-3xl text-sm text-slate-400">Set the annual allowance and service wait for standard paid leave. HR records employment start dates in Base Pay.</p>
+              <p class="mt-1 max-w-3xl text-sm text-slate-400">Set the annual allowance and service wait for standard paid leave. New employee start dates use the effective week in Shift Assignment.</p>
             </div>
             <button type="button" class="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50" :disabled="savingPolicy || !policyBranchId" @click="saveLeavePolicy">
               {{ savingPolicy ? 'Saving...' : 'Save rule' }}

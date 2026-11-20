@@ -461,7 +461,7 @@
                         </button>
                       </div>
                       <div v-else class="mt-3 rounded-xl border border-dashed border-[#d9be9b] bg-[#fff7ec] px-4 py-6 text-sm text-[#6f4a2d]">
-                        {{ hasBookingAvailability ? 'No slot fits the full service duration within both clinic opening hours and practitioner availability.' : 'No booking schedule is available yet for this branch.' }}
+                        {{ hasBookingAvailability ? 'No slot fits the full service duration within both clinic opening hours and practitioner availability.' : bookingAvailabilityHint || 'No bookable time is available for this selection.' }}
                       </div>
                     </div>
                     <div class="mt-4 border-t border-[#e6cfb0] pt-4">
@@ -790,13 +790,76 @@ const availabilityMessage = ref('')
 const hasBookingAvailability = computed(() => bookingSlots.value.length > 0)
 const bookingAvailabilityHint = computed(() => {
   if (hasBookingAvailability.value) return ''
+  if (!selectedServices.value.length) return ''
   if (!practitioners.value.length) {
-    return 'Booking is not available yet because this branch has no practitioners with consultation access.'
+    return 'No available dates: this branch has no active practitioners with consultation access.'
   }
-  if (!Object.keys(practitionerSchedules.value || {}).length) {
-    return 'Booking is not available yet because no practitioner schedules have been assigned yet.'
+
+  const selected = selectedServices.value[0]
+  const requiredServices = selected?.type === 'Package' ? selected.packageComponents || [] : [selected]
+  const eligiblePractitioners = practitioners.value.filter(practitioner => requiredServices.every(service => {
+    const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
+    return !lead || (
+      practitioner.practitionerType === lead.type
+      && practitioner.approvedServiceIds?.map(String).includes(String(service.id))
+      && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified)
+    )
+  }))
+  if (!eligiblePractitioners.length) {
+    return 'No available dates: no practitioner is approved for this service. In Employee Profiles, approve the service for a qualified practitioner and verify required credentials.'
   }
-  return 'Booking is not available yet because no time slots can be generated from the current schedules.'
+
+  let scheduledDays = 0
+  let clinicOverlapDays = 0
+  let durationFitDays = 0
+  let leaveDays = 0
+  const duration = Number(bookingDurationMinutes.value || 0)
+  const today = new Date()
+  const todayKey = toDateInput(today)
+  const nowMinutes = today.getHours() * 60 + today.getMinutes()
+
+  for (let offset = 0; offset < SLOT_DAYS_LOOKAHEAD; offset += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() + offset)
+    const dateKey = toDateInput(date)
+    const dayKey = weekdayForDateKey(dateKey)
+    const dayName = dayKey ? `${dayKey[0].toUpperCase()}${dayKey.slice(1)}` : ''
+    const weekKey = getWeekStartKey(date)
+
+    eligiblePractitioners.forEach(practitioner => {
+      const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
+      if (!scheduleWindow) return
+      scheduledDays += 1
+      const scheduleWindows = intersectClinicHoursAndShift(center.value.operatingHours, dateKey, scheduleWindow, center.value.legacyOperatingHours)
+      if (!scheduleWindows.length) return
+      clinicOverlapDays += 1
+      if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) {
+        leaveDays += 1
+        return
+      }
+
+      const canFitDuration = scheduleWindows.some(range => {
+        let start = range.start
+        if (dateKey === todayKey && start <= nowMinutes) start = nowMinutes + SLOT_STEP_MINUTES
+        return start + duration <= range.end
+      })
+      if (canFitDuration) durationFitDays += 1
+    })
+  }
+
+  if (!scheduledDays) {
+    return 'No available dates: practitioners approved for this service do not have an effective shift assigned. Assign recurring shifts in HR → Shift Assignment.'
+  }
+  if (!clinicOverlapDays) {
+    return 'No available dates: practitioner shifts do not overlap the clinic’s opening hours. Check Clinic Setup hours and the assigned shifts.'
+  }
+  if (!durationFitDays && leaveDays === clinicOverlapDays) {
+    return 'No available dates: practitioners are on approved leave during their scheduled clinic hours.'
+  }
+  if (!durationFitDays) {
+    return `No available dates: the matching shifts do not have a continuous ${duration}-minute opening for this appointment.`
+  }
+  return 'No available dates were generated. Check the practitioner’s effective shift, clinic opening hours, service approval, and leave dates.'
 })
 const selectedServiceTotal = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0)

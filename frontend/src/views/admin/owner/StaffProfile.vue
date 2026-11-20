@@ -62,13 +62,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       date.setUTCDate(date.getUTCDate() + ((8 - date.getUTCDay()) % 7))
       return date.toISOString().slice(0, 10)
     }
-    const todayInManila = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: blankAssignments(), assignmentLabels: {} })
     const originalScheduleDraft = ref(null)
     const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
     const originalCommissionDraft = ref(null)
-    const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' })
-    const originalBasePay = ref(null)
+    const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 })
     const staffList = ref([])
     const branches = ref([])
     const customRoles = ref([])
@@ -293,9 +291,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         basePayModel: staff.basePayModel || 'hourly',
         basePay: staff.basePay == null ? '' : Number(staff.basePay),
         monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
-        employmentStartDate: String(staff.employmentStartDate || ''),
       }
-      originalBasePay.value = JSON.stringify(basePay.value)
       commissionDraft.value = { approvedServiceIds: [], rates: [] }
       originalCommissionDraft.value = null
       scheduleDraft.value = {
@@ -477,16 +473,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (showPractitionerFields.value && staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
       const credentialNumber = String(staff.credentialNumber || '').trim()
       if (showPractitionerFields.value && credentialNumber && !/^\d{7}$/.test(credentialNumber)) errors.credentialNumber = 'Enter exactly 7 digits.'
-      if (canManagePay.value && !isStudentIntern.value && (String(basePay.value.basePay || '').trim() || basePay.value.employmentStartDate)) {
-        let previousStartDate = ''
-        try { previousStartDate = JSON.parse(originalBasePay.value || '{}').employmentStartDate || '' } catch {}
+      if (canManagePay.value && !isStudentIntern.value && String(basePay.value.basePay || '').trim()) {
         const rawRate = String(basePay.value.basePay || '').trim()
         const rate = Number(rawRate)
         if (!['hourly', 'daily', 'monthly-retainer'].includes(basePay.value.basePayModel)) errors.basePay = 'Choose a valid pay model.'
         else if (!Number.isFinite(Number(basePay.value.monthlyBaseHours)) || Number(basePay.value.monthlyBaseHours) < 1 || Number(basePay.value.monthlyBaseHours) > 744) errors.basePay = 'Agreed monthly hours must be between 1 and 744.'
-        else if (!rawRate && !basePay.value.employmentStartDate) errors.basePay = 'Enter a base pay rate or employment start date.'
-        else if (rawRate && (!Number.isFinite(rate) || rate <= 0 || rate > 1000000 || !/^\d+(\.\d{1,2})?$/.test(rawRate))) errors.basePay = 'Enter a valid base pay rate up to PHP 1,000,000 with two decimal places.'
-        else if (basePay.value.employmentStartDate && (!/^\d{4}-\d{2}-\d{2}$/.test(basePay.value.employmentStartDate) || (basePay.value.employmentStartDate < todayInManila() && basePay.value.employmentStartDate !== previousStartDate))) errors.basePay = 'Choose today or a future employment start date.'
+        else if (!Number.isFinite(rate) || rate <= 0 || rate > 1000000 || !/^\d+(\.\d{1,2})?$/.test(rawRate)) errors.basePay = 'Enter a valid base pay rate up to PHP 1,000,000 with two decimal places.'
       }
 
       editErrors.value = errors
@@ -622,13 +614,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (canManageRoles.value) staffUpdates.customRoleIds = selectedRoleIds
           await compensationApi(`/staff/${encodeURIComponent(currentStaff.value.id)}/profile`, 'PATCH', staffUpdates)
           profileSaved = true
-          if (canManagePay.value && !isStudentIntern.value && (String(basePay.value.basePay || '').trim() || basePay.value.employmentStartDate)) {
-            const payUpdates = { employmentStartDate: String(basePay.value.employmentStartDate || '') }
-            if (String(basePay.value.basePay || '').trim()) Object.assign(payUpdates, {
+          if (canManagePay.value && !isStudentIntern.value && String(basePay.value.basePay || '').trim()) {
+            const payUpdates = {
               basePay: Number(Number(basePay.value.basePay).toFixed(2)),
               basePayModel: basePay.value.basePayModel,
               monthlyBaseHours: Number(basePay.value.monthlyBaseHours || 176),
-            })
+            }
             await updateDoc(doc(db, 'users', currentStaff.value.id), payUpdates)
           }
           if (scheduleChanged && canAssignShifts.value) {
@@ -691,7 +682,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       commissionEditorRef,
       commissionLoadError,
       basePay,
-      todayInManila,
       canViewShifts,
       canCreateShifts,
       canAssignShifts,
@@ -923,8 +913,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   <div class="employee-edit-field"><ContractAppearanceSelect id="employee-edit-pay-model" v-model="basePay.basePayModel" label="Pay model" :disabled="!canManagePay" :options="[{ value: 'hourly', label: 'Hourly / Professional Fee' }, { value: 'daily', label: 'Daily' }, { value: 'monthly-retainer', label: 'Monthly Retainer' }]" /></div>
                   <label>Rate (PHP)<input v-model="basePay.basePay" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" :disabled="!canManagePay" /><span v-if="editErrors.basePay" class="employee-edit-error">{{ editErrors.basePay }}</span></label>
                   <label v-if="basePay.basePayModel === 'monthly-retainer'">Agreed Monthly Hours<input v-model.number="basePay.monthlyBaseHours" type="number" min="1" max="744" step="1" :disabled="!canManagePay" /></label>
-                  <label>Employment Start Date<input v-model="basePay.employmentStartDate" type="date" :min="todayInManila()" :disabled="!canManagePay" /></label>
                 </div>
+                <p class="employee-edit-caption">New employee start dates use the effective week set under Shift Assignment. Existing recorded start dates are retained for paid-leave eligibility.</p>
               </template>
               <h3>Service Commissions</h3>
               <p v-if="commissionLoadError" class="employee-edit-error" role="alert">{{ commissionLoadError }}</p>
