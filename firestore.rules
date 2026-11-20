@@ -232,7 +232,41 @@ service cloud.firestore {
         && (userData().organizationOwnerId == ownerId
           || (userData().branchId != null
             && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
-            && clinicDoc(userData().branchId).data.ownerId == ownerId));
+            && (clinicDoc(userData().branchId).data.get('ownerId', '') == ownerId
+              || clinicDoc(userData().branchId).data.get('organizationOwnerId', '') == ownerId)));
+    }
+
+    function supplierClinicCanRead(data) {
+      let ownerId = data.get('createdForClinicId', '');
+      let branchId = data.get('branchId', '');
+      return (ownerId is string && ownerId.size() > 0
+          && (request.auth.uid == ownerId || isStaffOfOwner(ownerId)
+            || (userData().branchId != null
+              && exists(/databases/$(database)/documents/clinics/$(userData().branchId))
+              && (clinicDoc(userData().branchId).data.get('ownerId', '') == ownerId
+                || clinicDoc(userData().branchId).data.get('organizationOwnerId', '') == ownerId)
+              && clinicDoc(userData().branchId).data.branchAdminId == request.auth.uid)))
+        || (ownerId == '' && branchId is string && branchId.size() > 0
+          && canAccessBranch(branchId));
+    }
+
+    function validSupplierLtoPath(data, supplierId) {
+      let regulatory = data.get('regulatory', {});
+      let ltoDocument = regulatory.get('ltoDocument', null);
+      return ltoDocument == null
+        || (data.get('createdForClinicId', '') is string
+          && data.get('createdForClinicId', '').matches('^[A-Za-z0-9_-]{1,150}$')
+          && supplierId.matches('^[A-Za-z0-9_-]{1,150}$')
+          && ltoDocument is map
+          && ltoDocument.get('name', '') is string
+          && ltoDocument.get('name', '').size() <= 200
+          && ltoDocument.get('contentType', '') in ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+          && ltoDocument.get('size', 0) is number
+          && ltoDocument.get('size', 0) > 0
+          && ltoDocument.get('size', 0) <= 10 * 1024 * 1024
+          && ltoDocument.get('storagePath', '') is string
+          && ltoDocument.get('storagePath', '').matches(
+            '^supplier-fda-documents/' + data.get('createdForClinicId', '') + '/' + supplierId + '/[A-Za-z0-9_.-]{1,180}$'));
     }
 
     function isAssignedClinicRole(roleId) {
@@ -833,21 +867,19 @@ service cloud.firestore {
 
     match /suppliers/{supplierId} {
       // Suppliers are business contact records, never authenticated platform users.
-      // Only contacts explicitly marked shared are discoverable outside their clinic.
-      allow read: if isSignedIn() && (isSuperadmin()
-        || resource.data.sharedDirectory == true
-        || resource.data.createdForClinicId == request.auth.uid
-        || isStaffOfOwner(resource.data.createdForClinicId)
-        || (resource.data.branchId != null && canAccessBranch(resource.data.branchId)
-          && (isOwnerOfBranch(resource.data.branchId) || hasPermission('inventory:view') || hasPermission('procurement:view')
-            || hasPermission('suppliers:create') || hasPermission('suppliers:update'))));
+      // Supplier details and FDA LTO metadata are private to the clinic that added them.
+      allow read: if isSignedIn() && (isSuperadmin() || supplierClinicCanRead(resource.data));
       allow create: if isSignedIn() && hasPermission('suppliers:create')
         && request.resource.data.createdForClinicId != null
-        && (request.resource.data.createdForClinicId == request.auth.uid || isStaffOfOwner(request.resource.data.createdForClinicId))
+        && supplierClinicCanRead(request.resource.data)
+        && request.resource.data.get('sharedDirectory', false) == false
+        && validSupplierLtoPath(request.resource.data, supplierId)
         && !request.resource.data.keys().hasAny(['ownerId', 'supplierUserId', 'offeredItems', 'verificationStatus']);
       allow update: if isSignedIn() && hasPermission('suppliers:update')
-        && (resource.data.createdForClinicId == request.auth.uid || isStaffOfOwner(resource.data.createdForClinicId))
+        && supplierClinicCanRead(resource.data)
         && request.resource.data.createdForClinicId == resource.data.createdForClinicId
+        && request.resource.data.get('sharedDirectory', false) == false
+        && validSupplierLtoPath(request.resource.data, supplierId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'supplierUserId', 'offeredItems']);
       allow delete: if false;
     }

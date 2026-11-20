@@ -1,15 +1,15 @@
 <template>
-  <div class="flex min-h-screen owner-theme bg-[#2a180f] text-[#f3e7e0]">
+  <div class="role-page-root flex min-h-0 owner-theme bg-[#2a180f] text-[#f3e7e0]">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, variant: 'role-management' }" class="flex-1 px-4 py-6 md:px-8 role-page-shell">
-      <div class="mx-auto max-w-7xl space-y-6">
-        <section class="rounded-[2rem] border border-[#5a3927] bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.08),_transparent_42%),linear-gradient(180deg,_rgba(58,36,23,0.98),_rgba(42,24,15,0.98))] p-6 shadow-[0_24px_60px_rgba(20,12,8,0.45)]">
-          <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+    <main v-page-loading="{ active: pageLoading, variant: 'role-management' }" class="role-page-shell min-h-0 flex-1 overflow-hidden px-3 py-3 md:px-5">
+      <div class="role-page-layout mx-auto grid h-full min-h-0 max-w-7xl grid-rows-[auto_minmax(0,1fr)] gap-3">
+        <section class="role-overview-panel rounded-2xl border border-[#5a3927] bg-[#2a180f] p-4">
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.28em] text-[#d2b7a6]">Clinic Administration</p>
-              <h1 class="mt-2 text-3xl font-bold tracking-tight text-[#f3e7e0]">Role Management</h1>
-              <p class="mt-3 max-w-3xl text-sm leading-6 text-[#e2c7b6]">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#d2b7a6]">Clinic Administration</p>
+              <h1 class="mt-1 text-2xl font-bold tracking-tight text-[#f3e7e0]">Role Management</h1>
+              <p class="mt-1 max-w-3xl text-sm leading-5 text-[#e2c7b6]">
                 Start with protected built-in roles, customize their permissions, or create clinic-owned roles for your staff.
               </p>
             </div>
@@ -35,22 +35,24 @@
             </div>
           </div>
 
-          <div class="mt-6 grid gap-4 md:grid-cols-3">
+          <div class="mt-3 grid gap-2 md:grid-cols-3">
             <article
               v-for="card in statsCards"
               :key="card.label"
-              class="rounded-2xl border border-[#5a3927] bg-[rgba(42,24,15,0.96)] p-4 shadow-sm"
+              class="role-stat-card rounded-xl border border-[#5a3927] bg-[#24160f] px-3 py-2"
             >
-              <p class="text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">{{ card.label }}</p>
-              <div v-if="loading" class="mt-3 h-8 w-20 animate-pulse rounded-lg bg-[#5a3927]"></div>
-              <p v-else class="mt-2 text-2xl font-semibold text-[#f3e7e0]">{{ card.value }}</p>
-              <p class="mt-1 text-sm text-[#e2c7b6]">{{ card.description }}</p>
+              <div class="flex items-baseline justify-between gap-3">
+                <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#d2b7a6]">{{ card.label }}</p>
+                <div v-if="loading" class="h-5 w-10 animate-pulse rounded bg-[#5a3927]"></div>
+                <p v-else class="text-xl font-semibold leading-none text-[#f3e7e0]">{{ card.value }}</p>
+              </div>
+              <p class="mt-1 text-xs leading-4 text-[#e2c7b6]">{{ card.description }}</p>
             </article>
           </div>
         </section>
 
-        <section class="overflow-hidden rounded-[2rem] border border-[#5a3927] bg-[rgba(42,24,15,0.96)] shadow-[0_24px_60px_rgba(20,12,8,0.4)]">
-          <div class="border-b border-[#5a3927] px-4 py-4 sm:px-6">
+        <section class="role-management-panel flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#5a3927] bg-[rgba(42,24,15,0.96)]">
+          <div class="flex-none border-b border-[#5a3927] px-3 py-2 sm:px-4">
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="tab in tabs"
@@ -67,19 +69,22 @@
             </div>
           </div>
 
-          <div class="grid min-h-[38rem] gap-0 xl:grid-cols-[320px_minmax(0,1fr)]">
-            <aside class="border-b border-[#5a3927] bg-[#24160f] xl:border-b-0 xl:border-r xl:border-[#5a3927]">
-              <div class="border-b border-[#5a3927] px-5 py-4">
+          <div class="role-workspace-grid grid min-h-0 flex-1 overflow-hidden gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <aside class="role-directory flex min-h-0 flex-col border-b border-[#5a3927] bg-[#24160f] xl:border-b-0 xl:border-r xl:border-[#5a3927]">
+              <div class="flex-none border-b border-[#5a3927] px-4 py-3">
                 <p class="text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">Role Directory</p>
-                <h2 class="mt-1 text-lg font-semibold text-[#f3e7e0]">Created Roles</h2>
-                <p class="mt-1 text-sm text-[#e2c7b6]">Select a role to view details or update permissions.</p>
+                <div class="mt-1 flex items-center justify-between gap-2">
+                  <h2 class="text-base font-semibold text-[#f3e7e0]">Created Roles</h2>
+                  <span class="text-xs text-[#d2b7a6]">{{ roles.length }} roles</span>
+                </div>
+                <p class="mt-1 text-xs text-[#e2c7b6]">Select a role to view or edit it.</p>
               </div>
 
-              <div v-if="loading" class="space-y-3 p-4">
+              <div v-if="loading" class="role-directory-list min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
                 <div v-for="item in 4" :key="item" class="h-20 animate-pulse rounded-2xl border border-[#5a3927] bg-[#3a2417]"></div>
               </div>
 
-              <div v-else-if="!roles.length" class="p-5">
+              <div v-else-if="!roles.length" class="role-directory-list min-h-0 flex-1 overflow-y-auto p-3">
                 <div class="rounded-2xl border border-dashed border-[#5a3927] bg-[#2a180f] px-4 py-8 text-center">
                   <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#5a3927] bg-[#3a2417] text-[#d2b7a6]">
                     <Icon icon="mdi:shield-outline" class="h-7 w-7" />
@@ -99,7 +104,7 @@
                 </div>
               </div>
 
-              <div v-else class="space-y-3 p-4">
+              <div v-else class="role-directory-list min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
                 <button
                   v-for="role in roles"
                   :key="role.id"
@@ -132,8 +137,8 @@
               </div>
             </aside>
 
-            <div class="min-h-0 min-w-0 overflow-y-auto bg-[#24160f]">
-              <div v-if="loading" class="p-5 sm:p-6">
+            <div class="role-content-pane min-h-0 min-w-0 overflow-y-auto overscroll-contain bg-[#24160f]">
+              <div v-if="loading" class="p-4 sm:p-5">
                 <div class="space-y-5 rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5">
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div class="space-y-3">
@@ -175,7 +180,7 @@
                 </div>
               </div>
 
-              <div v-else-if="activeTab === 'roles'" class="p-5 sm:p-6">
+              <div v-else-if="activeTab === 'roles'" class="p-4 sm:p-5">
                 <div class="rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5">
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -247,7 +252,7 @@
                 </div>
               </div>
 
-              <div v-else-if="activeTab === 'add'" class="p-5 sm:p-6">
+              <div v-else-if="activeTab === 'add'" class="p-4 sm:p-5">
                 <div class="mx-auto max-w-3xl rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5 sm:p-6">
                   <p class="text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">New Role</p>
                   <h3 class="mt-1 text-xl font-semibold text-[#f3e7e0]">Add a Clinic Role</h3>
@@ -286,7 +291,7 @@
                 </div>
               </div>
 
-              <div v-else-if="activeTab === 'details'" class="p-5 sm:p-6">
+              <div v-else-if="activeTab === 'details'" class="p-4 sm:p-5">
                 <div v-if="selectedRole" class="mx-auto max-w-4xl rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5 sm:p-6">
                   <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div class="flex items-center gap-4">
@@ -352,7 +357,7 @@
                               <span
                                 v-for="permission in suggestedPermissions"
                                 :key="permission"
-                                class="rounded-full border border-[#5a3927] bg-[#2a180f] px-3 py-1 text-xs text-[#e2c7b6]"
+                                class="suggestion-chip rounded-full border px-3 py-1 text-xs"
                               >
                                 {{ permissionLabel(permission) }}
                               </span>
@@ -390,7 +395,7 @@
                 </div>
               </div>
 
-              <div v-else-if="activeTab === 'permissions'" class="p-5 sm:p-6">
+              <div v-else-if="activeTab === 'permissions'" class="p-4 sm:p-5">
                 <div v-if="selectedRole" class="mx-auto max-w-5xl rounded-[1.5rem] border border-[#5a3927] bg-[#2a180f] p-5 sm:p-6">
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -445,7 +450,7 @@
                           <span
                             v-for="permission in suggestedPermissions"
                             :key="permission"
-                            class="rounded-full border border-[#5a3927] bg-[#2a180f] px-3 py-1 text-xs text-[#e2c7b6]"
+                            class="suggestion-chip rounded-full border px-3 py-1 text-xs"
                           >
                             {{ permissionLabel(permission) }}
                           </span>
@@ -1507,11 +1512,36 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <style scoped>
+.role-page-root {
+  width: 100%;
+  height: calc(100dvh - 4.1rem);
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+.role-page-shell,
+.role-page-layout {
+  height: 100%;
+  min-height: 0;
+}
+
 .role-page-shell {
-  background:
-    radial-gradient(circle at top left, rgba(230, 193, 150, .26), transparent 28%),
-    radial-gradient(circle at 82% 8%, rgba(241, 213, 181, .38), transparent 22%),
-    linear-gradient(180deg, var(--ac-bg) 0%, var(--ac-bg-soft) 52%, var(--ac-bg-deep) 100%);
+  background: var(--ac-bg);
+}
+
+.role-workspace-grid {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(9rem, .38fr) minmax(0, 1fr);
+}
+
+.role-directory-list,
+.role-content-pane {
+  scrollbar-gutter: stable;
+}
+
+.role-page-shell [class*="shadow-"],
+.role-page-shell :is(section, article, aside, form, footer, div, span, button, a, input, select, textarea)[class*="rounded-"][class*="bg-"] {
+  box-shadow: none !important;
 }
 
 .tab-button {
@@ -1560,7 +1590,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .role-list-item:hover {
   border-color: var(--ac-border-strong);
   background: var(--ac-surface-soft);
-  transform: translateX(2px);
 }
 
 .role-list-item-active {
@@ -1574,7 +1603,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   border-radius: 999px;
   flex-shrink: 0;
   background: #d2a679;
-  box-shadow: 0 0 0 3px var(--ac-surface-soft);
 }
 
 .role-badge {
@@ -1585,7 +1613,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   height: 4rem;
   border-radius: 1.25rem;
   background: #d2a679;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 20px 40px rgba(87, 56, 35, 0.18);
 }
 
 .field-block {
@@ -1614,7 +1641,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 .discord-input:focus {
   border-color: var(--ac-border-strong);
-  box-shadow: 0 0 0 3px rgba(185, 121, 79, .16);
+  outline: 2px solid color-mix(in srgb, var(--ac-primary) 32%, transparent);
+  outline-offset: 1px;
+  box-shadow: none;
 }
 
 .discord-textarea {
@@ -1706,13 +1735,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   border: 1px solid color-mix(in srgb, var(--ac-danger) 48%, var(--ac-border));
   background: var(--ac-danger-bg);
   color: var(--ac-danger);
-  box-shadow: 0 1px 2px rgba(35, 20, 12, 0.08);
+  box-shadow: none;
 }
 
 .danger-action:hover {
   border-color: var(--ac-danger);
   background: color-mix(in srgb, var(--ac-danger-bg) 82%, var(--ac-danger) 18%);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--ac-danger) 16%, transparent);
+  box-shadow: none;
 }
 
 .danger-action:active {
@@ -1782,6 +1811,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   color: var(--ac-text-secondary) !important;
 }
 
+.suggestion-chip {
+  border-color: var(--ac-border) !important;
+  background: var(--ac-surface-muted) !important;
+  color: var(--ac-text-secondary) !important;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .permission-meta {
   color: var(--ac-text-muted) !important;
   line-height: 1.4;
@@ -1818,6 +1855,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+}
+
+@media (min-width: 1280px) {
+  .role-workspace-grid {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 }
 </style>

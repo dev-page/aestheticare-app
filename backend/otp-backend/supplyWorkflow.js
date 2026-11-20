@@ -2,13 +2,14 @@ import crypto from 'node:crypto'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
 import { demand, money, quantity, required, dateKey, day, quoteTotals, invoiceMatch, stockSignals, availableStock, categoriesMatch, hasPermission, permissionsByKind } from './supplyModel.js'
 import { reconcileLotsToInventory, summarizeInventoryLotReconciliation } from './inventoryLots.js'
+import { analyzeFdaLtoText } from './supplierLtoOcr.js'
 
 const docs = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }))
 const cleanId = value => { const id = String(value || ''); demand(/^[A-Za-z0-9_-]{1,150}$/.test(id), 'Invalid record identifier.', 400); return id }
 // Older workflow records did not always include relationship links.
 const linksOf = record => Array.isArray(record?.links) ? record.links.filter(Boolean) : []
 const names = { request: 'IR', procurement: 'PR', rfq: 'RFQ', quotation: 'QT', evaluation: 'EV', budget: 'BD', budgetRequest: 'BR', financeApproval: 'FA', budgetAllocation: 'BA', po: 'PO', supplierConfirmation: 'PC', receiving: 'RC', inspection: 'INSP', discrepancy: 'DS', invoice: 'INV', threeWayMatch: 'MT', payment: 'PAY' }
-export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContext, storageBucket }) => {
+export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContext, storageBucket, createVisionClient, getDocumentOcr }) => {
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const identity = async req => {
     const ctx = await loadUserContext(req.user.uid)
@@ -112,8 +113,9 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
         .map(value => String(value || '').trim())
         .filter((value, index, values) => value && values.indexOf(value) === index)
         .join(', ')
-      return { id, name: c.clinicBranch || c.clinicName || id, address, latitude: String(c.clinicLocationLat || ''), longitude: String(c.clinicLocationLng || '') }
+      return { id, name: c.clinicBranch || c.clinicName || id, address, latitude: String(c.clinicLocationLat || ''), longitude: String(c.clinicLocationLng || ''), ownerId: String(c.ownerId || c.organizationOwnerId || ctx.uid) }
     }))
+    const branchOwnerById = new Map(branches.map(branch => [branch.id, branch.ownerId]))
     const requestedScope = String(req.query.branchId || branches[0]?.id || '')
     const allBranches = requestedScope === 'all'
     const branchId = allBranches ? 'all' : requestedScope
@@ -129,19 +131,25 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     const stockReconciliation = hasPermission(ctx, 'inventory:view') && req.query.reconcile === '1'
       ? summarizeInventoryLotReconciliation(items, await scopedDocs('supplyLots'))
       : []
-    // Supplier contacts are global/business records. Branch eligibility and
-    // private purchasing notes live in clinicSuppliers, so never infer access
-    // from the legacy suppliers.branchId field.
+    // Supplier records are clinic-owned. A relationship to a supplier created
+    // by a different clinic never grants access to that clinic's private file.
     let suppliers = []
     if (supplierRead) {
       const associationDocs = await scopedDocs('clinicSuppliers')
+      const branchBelongsToSupplier = (supplier, branchId) => {
+        const ownerId = branchOwnerById.get(branchId)
+        if (!ownerId) return false
+        if (supplier.createdForClinicId) return supplier.createdForClinicId === ownerId
+        return supplier.branchId === branchId
+      }
       const supplierIds = [...new Set(associationDocs.map(link => String(link.supplierId || '')).filter(Boolean))]
       const supplierDocs = await Promise.all(supplierIds.map(async id => {
         const snapshot = await db.collection('suppliers').doc(id).get()
-        const association = associationDocs.find(link => link.supplierId === id)
-        return snapshot.exists ? { id, ...(snapshot.data() || {}), associationStatus: association?.status || 'Active', clinicSupplierId: association?.id || '', clinicSupplierNotes: association?.internalNotes || '' } : null
+        const supplier = snapshot.exists ? { id, ...(snapshot.data() || {}) } : null
+        const association = supplier && associationDocs.find(link => link.supplierId === id && branchBelongsToSupplier(supplier, link.branchId))
+        return association ? { ...supplier, associationStatus: association.status || 'Active', clinicSupplierId: association.id || '', clinicSupplierNotes: association.internalNotes || '' } : null
       }))
-      const legacySuppliers = await scopedDocs('suppliers')
+      const legacySuppliers = (await scopedDocs('suppliers')).filter(supplier => branchBelongsToSupplier(supplier, supplier.branchId))
       suppliers = [...supplierDocs.filter(Boolean), ...legacySuppliers.filter(legacy => !supplierDocs.some(supplier => supplier?.id === legacy.id))]
     }
     // Historical POs can reference a supplier record that was later relinked
@@ -153,7 +161,15 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       const referencedIds = [...new Set(records.map(record => String(record.supplierId || '')).filter(Boolean))]
       const referenced = await Promise.all(referencedIds.filter(id => !known.has(id)).map(async id => {
         const snapshot = await db.collection('suppliers').doc(id).get()
-        return snapshot.exists ? { id, ...(snapshot.data() || {}) } : null
+        const supplier = snapshot.exists ? { id, ...(snapshot.data() || {}) } : null
+        if (!supplier) return null
+        const visibleFromRecord = records.some(record => {
+          if (record.supplierId !== id) return false
+          const ownerId = branchOwnerById.get(record.branchId)
+          return Boolean(ownerId && (supplier.createdForClinicId === ownerId
+            || (!supplier.createdForClinicId && supplier.branchId === record.branchId)))
+        })
+        return visibleFromRecord ? supplier : null
       }))
       suppliers = [...suppliers, ...referenced.filter(Boolean)]
     }
@@ -164,6 +180,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
 
   app.post('/supply/items', requireAuth, wrap(async (req, res, ctx) => {
     allow(ctx, 'inventory:create'); const input = req.body, branchId = cleanId(input.branchId); await branchAccess(ctx, branchId)
+    const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
+    const clinicOwnerId = String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid)
     const ref = db.collection('inventoryItems').doc(input.id ? cleanId(input.id) : crypto.randomUUID())
     await db.runTransaction(async tx => {
       const existing = await tx.get(ref), old = existing.data() || {}
@@ -174,8 +192,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       if (supplierId && (!existing.exists || supplierId !== String(old.supplierId || ''))) {
         const associationSnapshot = await tx.get(db.collection('clinicSuppliers').where('branchId', '==', branchId))
         const associated = docs(associationSnapshot).some(link => link.supplierId === supplierId && link.status === 'Active')
-        const legacyBranchSupplier = supplier?.branchId === branchId && supplier.status === 'Active'
-        demand(supplier && supplier.status === 'Active' && (associated || legacyBranchSupplier), 'Choose an active supplier associated with this clinic branch.', 400)
+        const clinicOwned = supplier?.createdForClinicId === clinicOwnerId || (!supplier?.createdForClinicId && supplier?.branchId === branchId)
+        demand(supplier && clinicOwned && supplier.status === 'Active' && (associated || supplier.branchId === branchId), 'Choose an active supplier associated with this clinic branch.', 400)
       }
       const lotSnapshot = await tx.get(db.collection('supplyLots').where('itemId', '==', ref.id))
       const currentStock = quantity(input.currentStock, true), minStock = quantity(input.minStock, true), targetStock = quantity(input.targetStock, true), maxStock = quantity(input.maxStock, true)
@@ -230,13 +248,102 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     allow(ctx, 'suppliers:create'); const input = req.body, branchId = cleanId(input.branchId); await branchAccess(ctx, branchId)
     const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
     const ref = db.collection('suppliers').doc(), associationRef = db.collection('clinicSuppliers').doc()
-    const data = { businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), contactNumber: String(input.phone || ''), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Active', sharedDirectory: false, createdForClinicId: String(clinic.ownerId || ctx.uid), createdBy: ctx.uid, createdAt: stamp(), updatedAt: stamp() }
+    const data = { businessName: required(input.name, 'Company name'), contactPerson: required(input.contactPerson, 'Contact person'), email: String(input.email || ''), contactNumber: String(input.phone || ''), address: String(input.address || ''), category: String(input.category || ''), registrationNumber: String(input.registrationNumber || ''), status: 'Active', sharedDirectory: false, createdForClinicId: String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid), createdBy: ctx.uid, createdAt: stamp(), updatedAt: stamp() }
     await db.runTransaction(async tx => {
       tx.set(ref, data)
-      tx.set(associationRef, { clinicId: String(clinic.ownerId || ctx.uid), branchId, supplierId: ref.id, status: 'Active', internalNotes: '', associatedAt: stamp(), createdBy: ctx.uid, updatedBy: ctx.uid, updatedAt: stamp() })
+      tx.set(associationRef, { clinicId: String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid), branchId, supplierId: ref.id, status: 'Active', internalNotes: '', associatedAt: stamp(), createdBy: ctx.uid, updatedBy: ctx.uid, updatedAt: stamp() })
       tx.set(db.collection('supplyAudit').doc(), { branchId, recordId: ref.id, actorId: ctx.uid, actorName: ctx.userData.fullName || ctx.userData.email || ctx.uid, role: ctx.roleKey, module: 'supplier', action: 'manual-supplier-created', after: data, ...ctx.auditContext, createdAt: stamp() })
     })
     res.json({ success: true, data: { id: ref.id } })
+  }))
+
+  app.post('/supply/suppliers/ocr', requireAuth, wrap(async (req, res, ctx) => {
+    allowAny(ctx, ['suppliers:create', 'suppliers:update'])
+    const branchId = cleanId(req.body?.branchId)
+    const supplierId = cleanId(req.body?.supplierId)
+    await branchAccess(ctx, branchId)
+    const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
+    const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid)
+    const storagePath = String(req.body?.storagePath || '')
+    const expectedPrefix = `supplier-fda-documents/${ownerId}/${supplierId}/`
+    const fileName = storagePath.startsWith(expectedPrefix) ? storagePath.slice(expectedPrefix.length) : ''
+    demand(fileName && !fileName.includes('/') && /^[A-Za-z0-9_.-]{1,180}$/.test(fileName), 'The uploaded LTO document does not belong to this clinic.', 403)
+
+    const bucketName = String(storageBucket?.() || admin.app().options.storageBucket || '')
+    demand(bucketName, 'FDA LTO document processing is temporarily unavailable.', 503)
+    const file = admin.storage().bucket(bucketName).file(storagePath)
+    let metadata
+    try { [metadata] = await file.getMetadata() } catch (error) {
+      if (Number(error?.code) === 404) demand(false, 'Upload the FDA LTO document again before processing it.', 400)
+      throw error
+    }
+    const contentType = String(metadata.contentType || '').toLowerCase()
+    const size = Number(metadata.size || 0)
+    demand(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(contentType)
+      && size > 0 && size <= 10 * 1024 * 1024, 'Upload a JPG, PNG, WEBP, or PDF document up to 10 MB.', 400)
+    const visionClient = createVisionClient?.()
+    demand(visionClient && typeof getDocumentOcr === 'function', 'FDA LTO OCR is temporarily unavailable. You can save the document for manual review.', 503)
+    const [bytes] = await file.download()
+    const ocr = await getDocumentOcr({
+      visionClient, bucketName, storagePath, contentType, bytes, uid: ctx.uid,
+      docKey: `supplier-lto-${supplierId}`,
+    })
+    res.json({ success: true, data: analyzeFdaLtoText(ocr?.extractedText || '') })
+  }))
+
+  app.get('/supply/suppliers/:supplierId/lto-document-url', requireAuth, wrap(async (req, res, ctx) => {
+    allowAny(ctx, ['inventory:view', 'procurement:view', 'procurement:requests:view', 'procurement:orders:view', 'finance:payables:view', 'finance:invoices:view', 'reports:view', 'suppliers:create', 'suppliers:update'])
+    const branchId = cleanId(req.query.branchId)
+    const supplierId = cleanId(req.params.supplierId)
+    await branchAccess(ctx, branchId)
+    const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
+    const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid)
+    const supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
+    demand(supplier && (supplier.createdForClinicId === ownerId || (!supplier.createdForClinicId && supplier.branchId === branchId)), 'Supplier record not found for this clinic.', 404)
+    const storagePath = String(supplier.regulatory?.ltoDocument?.storagePath || '')
+    const expectedPrefix = `supplier-fda-documents/${ownerId}/${supplierId}/`
+    const fileName = storagePath.startsWith(expectedPrefix) ? storagePath.slice(expectedPrefix.length) : ''
+    demand(fileName && !fileName.includes('/') && /^[A-Za-z0-9_.-]{1,180}$/.test(fileName), 'No FDA LTO document is attached to this supplier.', 404)
+    const bucketName = String(storageBucket?.() || admin.app().options.storageBucket || '')
+    demand(bucketName, 'FDA LTO document access is temporarily unavailable.', 503)
+    const [url] = await admin.storage().bucket(bucketName).file(storagePath).getSignedUrl({
+      action: 'read', expires: Date.now() + 5 * 60 * 1000,
+      responseDisposition: `inline; filename="${fileName}"`,
+    })
+    res.json({ success: true, data: { url } })
+  }))
+
+  app.post('/supply/suppliers/lto-document-cleanup', requireAuth, wrap(async (req, res, ctx) => {
+    allowAny(ctx, ['suppliers:create', 'suppliers:update'])
+    const branchId = cleanId(req.body?.branchId)
+    const supplierId = cleanId(req.body?.supplierId)
+    const storagePath = String(req.body?.storagePath || '')
+    await branchAccess(ctx, branchId)
+    const clinic = (await db.collection('clinics').doc(branchId).get()).data() || {}
+    const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid)
+    const expectedPrefix = `supplier-fda-documents/${ownerId}/${supplierId}/`
+    const fileName = storagePath.startsWith(expectedPrefix) ? storagePath.slice(expectedPrefix.length) : ''
+    demand(fileName && !fileName.includes('/') && /^[A-Za-z0-9_.-]{1,180}$/.test(fileName), 'The document path does not belong to this clinic.', 403)
+
+    const supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
+    if (supplier) {
+      demand(supplier.createdForClinicId === ownerId || (!supplier.createdForClinicId && supplier.branchId === branchId), 'Supplier record not found for this clinic.', 404)
+      demand(supplier.regulatory?.ltoDocument?.storagePath !== storagePath, 'This LTO document is still attached to the supplier.', 409)
+    }
+
+    const bucketName = String(storageBucket?.() || admin.app().options.storageBucket || '')
+    demand(bucketName, 'FDA LTO document cleanup is temporarily unavailable.', 503)
+    const file = admin.storage().bucket(bucketName).file(storagePath)
+    let metadata
+    try { [metadata] = await file.getMetadata() } catch (error) {
+      if (Number(error?.code) === 404) return res.json({ success: true, data: { deleted: false } })
+      throw error
+    }
+    if (!supplier) {
+      demand(metadata.metadata?.uploadedBy === ctx.uid, 'Only the uploader can remove an unlinked LTO document.', 403)
+    }
+    await file.delete({ ignoreNotFound: true })
+    res.json({ success: true, data: { deleted: true } })
   }))
 
   // Read the branch's workflow records inside each transaction. Stage writes so all
@@ -262,8 +369,17 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     ])
     const supplierLinks = docs(supplierLinkSnap)
     const supplierDocs = await Promise.all(supplierLinks.map(link => tx.get(db.collection('suppliers').doc(cleanId(link.supplierId)))))
-    const associationSuppliers = supplierDocs.map((snapshot, index) => snapshot.exists ? ({ id: snapshot.id, ...(snapshot.data() || {}), associationStatus: supplierLinks[index]?.status || 'Active' }) : null).filter(Boolean)
-    const records = docs(recordSnap), items = docs(itemSnap), suppliers = [...associationSuppliers, ...docs(legacySupplierSnap).filter(legacy => !associationSuppliers.some(supplier => supplier.id === legacy.id))], documents = docs(documentSnap)
+    const clinicData = clinicSnap.data() || {}
+    const clinicOwnerId = String(clinicData.ownerId || clinicData.organizationOwnerId || ctx.uid)
+    const isClinicSupplier = supplier => supplier.createdForClinicId
+      ? supplier.createdForClinicId === clinicOwnerId
+      : supplier.branchId === branchId
+    const associationSuppliers = supplierDocs.map((snapshot, index) => {
+      if (!snapshot.exists) return null
+      const supplier = { id: snapshot.id, ...(snapshot.data() || {}), associationStatus: supplierLinks[index]?.status || 'Active' }
+      return isClinicSupplier(supplier) ? supplier : null
+    }).filter(Boolean)
+    const records = docs(recordSnap), items = docs(itemSnap), suppliers = [...associationSuppliers, ...docs(legacySupplierSnap).filter(legacy => isClinicSupplier(legacy) && !associationSuppliers.some(supplier => supplier.id === legacy.id))], documents = docs(documentSnap)
     const writes = [], financialWrites = [], now = stamp()
     const get = (id, kind) => { const r = records.find(r => r.id === id && r.kind === kind); demand(r, `${kind} record not found.`, 404); return r }
     // Some records created before the current workflow did not retain every
@@ -597,7 +713,6 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     demand(result, 'No action was performed.')
     // Notification recipients are best-effort. A legacy or deactivated staff
     // account must never turn a completed supply action into a server error.
-    const clinicData = clinicSnap.data() || {}
     const notificationUserIds = new Set([...docs(staffSnap).map(user => user.id), clinicData.ownerId, clinicData.branchAdminId].filter(uid => uid && uid !== ctx.uid))
     const staffResults = await Promise.allSettled([...notificationUserIds].map(uid => loadUserContext(uid)))
     const staffContexts = staffResults.filter(result => result.status === 'fulfilled').map(result => result.value)
@@ -667,7 +782,10 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
     demand(record.mode !== 'Online', 'Historical online supplier transactions are read-only.', 403)
     allowAny(ctx, ['procurement:orders:manage', 'procurement:create'])
     const supplierId = cleanId(req.body.supplierId), supplier = (await db.collection('suppliers').doc(supplierId).get()).data()
-    demand(supplier && (record.supplierId === supplierId || record.supplierIds?.includes(supplierId)), 'Supplier is not part of this record.', 403)
+    const clinic = (await db.collection('clinics').doc(record.branchId).get()).data() || {}
+    const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || ctx.uid)
+    const belongsToClinic = supplier?.createdForClinicId === ownerId || (!supplier?.createdForClinicId && supplier?.branchId === record.branchId)
+    demand(supplier && belongsToClinic && (record.supplierId === supplierId || record.supplierIds?.includes(supplierId)), 'Supplier is not part of this clinic record.', 403)
     const channel = required(req.body.channel, 'External communication channel')
     demand(['Email', 'Phone', 'Physical document', 'External platform'].includes(channel), 'Choose a valid external communication channel.', 400)
     const ref = db.collection('supplyMessages').doc(), message = required(req.body.message, 'Communication notes'), now = stamp()

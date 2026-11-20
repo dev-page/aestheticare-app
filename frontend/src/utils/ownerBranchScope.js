@@ -35,7 +35,7 @@ export const loadOwnerBranchScope = async (db, userId) => {
   const isStaffUser = userType === 'staff' || userType === 'employee'
   const directBranchId = normalizeText(userProfile.branchId || userProfile.clinicBranch || '')
   const assignedBranchIds = Array.isArray(userProfile.branchIds) ? userProfile.branchIds.map(normalizeText).filter(Boolean) : []
-  const fallbackOwnerId = normalizeText(userProfile.ownerId || userProfile.owner || '')
+  const fallbackOwnerId = normalizeText(userProfile.ownerId || userProfile.owner || userProfile.organizationOwnerId || '')
   let ownerId = fallbackOwnerId
   let branchId = directBranchId
 
@@ -43,7 +43,7 @@ export const loadOwnerBranchScope = async (db, userId) => {
     const branchSnap = await getDoc(doc(db, 'clinics', branchId))
     if (branchSnap.exists()) {
       const branchData = branchSnap.data() || {}
-      ownerId = ownerId || normalizeText(branchData.ownerId || '')
+      ownerId = ownerId || normalizeText(branchData.ownerId || branchData.organizationOwnerId || '')
     }
   }
 
@@ -56,12 +56,16 @@ export const loadOwnerBranchScope = async (db, userId) => {
   assignedBranchIds.forEach((id) => branchIds.add(id))
 
   if (!isStaffUser && ownerId) {
-    const ownerClinicsSnapshot = await getDocs(
-      query(collection(db, 'clinics'), where('ownerId', '==', ownerId))
-    )
-    ownerClinicsSnapshot.docs.forEach((snap) => branchIds.add(snap.id))
-    if (!branchId && ownerClinicsSnapshot.docs.length > 0) {
-      branchId = ownerClinicsSnapshot.docs[0].id
+    const [ownerClinicsSnapshot, organizationClinicsSnapshot] = await Promise.all([
+      getDocs(query(collection(db, 'clinics'), where('ownerId', '==', ownerId))),
+      getDocs(query(collection(db, 'clinics'), where('organizationOwnerId', '==', ownerId))).catch(() => ({ docs: [] })),
+    ])
+    const ownerClinics = [...new Map(
+      [...ownerClinicsSnapshot.docs, ...organizationClinicsSnapshot.docs].map((snap) => [snap.id, snap])
+    ).values()]
+    ownerClinics.forEach((snap) => branchIds.add(snap.id))
+    if (!branchId && ownerClinics.length > 0) {
+      branchId = ownerClinics[0].id
     }
   }
 

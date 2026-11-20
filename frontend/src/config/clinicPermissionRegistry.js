@@ -125,7 +125,7 @@ const legacyPermissionGroups = [
         description: 'Inventory, clinic supplier records, and replenishment requests.',
         permissions: [
           { key: 'inventory:view', label: 'View Inventory', description: 'Open inventory items, receiving, and stock pages.', icon: 'mdi:package-variant-closed' },
-          { key: 'suppliers:create', label: 'Create Suppliers', description: 'View the supplier directory, create clinic contacts, and associate shared contacts with the clinic.', icon: 'mdi:account-plus-outline' },
+          { key: 'suppliers:create', label: 'Create Suppliers', description: 'View this clinic’s private supplier directory, add supplier contacts, and attach FDA LTO documents.', icon: 'mdi:account-plus-outline' },
           { key: 'suppliers:update', label: 'Manage Suppliers', description: 'View the supplier directory and edit clinic-managed supplier details and relationships.', icon: 'mdi:account-edit-outline' },
           { key: 'inventory:create', label: 'Manage Inventory Receiving', description: 'Create replenishment requests, inspect deliveries, resolve discrepancies, and onboard accepted stock.', icon: 'mdi:cart-plus' },
           { key: 'inventory:review', label: 'Review Inventory Requests', description: 'Approve, reject, return, and manage inventory requests.', icon: 'mdi:cart-check' },

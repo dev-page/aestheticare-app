@@ -3861,7 +3861,12 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
   }
 })
 
-registerSupplyWorkflow(app, { admin, requireAuth, loadUserContext, storageBucket: () => firebaseStorageBucket })
+registerSupplyWorkflow(app, {
+  admin, requireAuth, loadUserContext,
+  storageBucket: () => firebaseStorageBucket,
+  createVisionClient,
+  getDocumentOcr: getRegistrationDocumentOcr,
+})
 registerPharmacyWorkflow(app, { admin, requireAuth, loadUserContext })
 registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 const refundWorkflow = registerRefundWorkflow(app, {

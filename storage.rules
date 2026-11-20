@@ -20,6 +20,16 @@ service firebase.storage {
           || userData().branchId == branchId);
     }
 
+    function canAccessSupplierOwner(ownerId) {
+      return isSignedIn()
+        && (request.auth.uid == ownerId
+          || isSuperadmin()
+          || userData().organizationOwnerId == ownerId
+          || (userData().branchId != null
+            && (firestore.get(/databases/(default)/documents/clinics/$(userData().branchId)).data.get('ownerId', '') == ownerId
+              || firestore.get(/databases/(default)/documents/clinics/$(userData().branchId)).data.get('organizationOwnerId', '') == ownerId)));
+    }
+
     function isImageUpload() {
       return request.resource != null
         && request.resource.contentType.matches('image/.*')
@@ -32,6 +42,14 @@ service firebase.storage {
           || request.resource.contentType == 'application/pdf')
         // The registration UI accepts files up to 10 MB.
         && request.resource.size <= 10 * 1024 * 1024;
+    }
+
+    function isSupplierLtoUpload() {
+      return request.resource != null
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+        && request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.metadata.uploadedBy == request.auth.uid;
     }
 
     function isLeaveAttachmentUpload() {
@@ -50,18 +68,22 @@ service firebase.storage {
     }
     
     match /supplier-item-images/{userId}/{itemId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperadmin());
       allow create, update, delete: if false;
     }
 
-    match /supplier-fda-documents/{userId}/{itemId}/document {
-      allow read: if isSignedIn();
-      allow create, update, delete: if false;
+    match /supplier-fda-documents/{ownerId}/{supplierId}/{fileName} {
+      // LTO documents are readable by clinic members only. New uploads are
+      // immutable so a document can only be replaced with a new file name.
+      allow read: if canAccessSupplierOwner(ownerId);
+      allow create: if canAccessSupplierOwner(ownerId) && isSupplierLtoUpload();
+      allow update, delete: if false;
     }
 
     match /supplier-fda-documents/{userId}/{fileName} {
-      // Retain access to documents saved before the one-document-per-item path.
-      allow read: if isSignedIn();
+      // Older files do not identify a clinic owner reliably, so keep them
+      // private until their owning clinic can be confirmed and migrated.
+      allow read: if false;
       allow write: if false;
     }
 
