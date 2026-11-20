@@ -52,7 +52,7 @@
             </div>
           </section>
           <section v-else-if="bookingStep === 2" class="desk-card walk-in-step-panel">
-            <div class="section-heading"><div><p class="eyebrow">Step 2 of 3</p><h2>Choose the visit and time</h2><p class="muted small">Schedule one or more appointments for {{ clientFor(selectedClientId)?.fullName || 'the selected client' }}. Each appointment needs its own date and time.</p><p class="muted small">Assign required support staff through Treatment team in Appointment Management before treatment starts.</p></div></div>
+            <div class="section-heading"><div><p class="eyebrow">Step 2 of 3</p><h2>Choose the visit and time</h2><p class="muted small">Schedule one or more appointments for {{ clientFor(selectedClientId)?.fullName || 'the selected client' }}. Each appointment needs its own date and time and is handled by one assigned practitioner.</p></div></div>
             <article class="client-card">
               <div class="client-heading"><h3>{{ clientFor(selectedClientId)?.fullName || 'Selected client' }}</h3></div>
               <p v-if="clientFor(selectedClientId)" class="client-contact">{{ clientFor(selectedClientId).email || 'Email missing — update this client first' }} <span>·</span> {{ clientFor(selectedClientId).phone || clientFor(selectedClientId).contactNumber || 'No contact number' }}</p>

@@ -17,7 +17,7 @@ export const getAppointmentSlots = ({ date, practitionerId, schedules = {}, appo
   const midnight = new Date(`${date}T00:00:00+08:00`).getTime()
   if (!Number.isFinite(midnight)) return []
   const blocks = appointments.filter(a => a.date === date
-    && [a.practitionerId, a.assignedPractitionerId, a.staffId, a.assignedTo, ...(a.treatmentTeam || []).map(member => member.employeeId)].includes(practitionerId)
+    && (a.assignedPractitionerId || a.practitionerId || a.staffId || a.assignedTo) === practitionerId
     && !isBookingPaymentHoldReleased(a, now)
     && !['cancelled', 'rejected', 'expired', 'no-show'].includes(String(a.status || '').trim().toLowerCase())
   ).map(a => {

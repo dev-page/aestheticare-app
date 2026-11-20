@@ -308,7 +308,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const assignedAppointments = computed(() =>
       sortRecordsNewestFirst(
-        appointments.value.filter((item) => (hasPermission('appointments:review') || isAssignedToPractitioner(item) || item.treatmentTeam?.some(member => member.employeeId === currentUserId.value)) && !item.isGroupParent && !item.isBookingOrderParent)
+        appointments.value.filter((item) => (hasPermission('appointments:review') || isAssignedToPractitioner(item)) && !item.isGroupParent && !item.isBookingOrderParent)
       )
     )
 

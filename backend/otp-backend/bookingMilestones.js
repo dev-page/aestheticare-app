@@ -248,7 +248,6 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
           } else if (transition === 'worker_complete') {
             check(worker, 'Only the assigned worker can finish the service.', 403)
             check(status === 'ongoing' && appointment.startedAt, 'Start the service before marking it done.')
-            check(!(appointment.treatmentTeam || []).some(member => !member.participationConfirmed), 'Every team member must confirm their own participation before completion.')
             const onlineConsultation = normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'
             if (onlineConsultation) {
               const window = getOnlineConsultationWindow(appointment)
@@ -386,7 +385,6 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
             check(!online || appointment.consultationDispute?.status !== 'Open', 'The clinic must review your reported problem before completion.')
             if (online) {
               check(String(appointment.treatmentNotes || '').trim().length >= 10, 'The practitioner must save consultation notes before completion can be confirmed.')
-              check(!(appointment.treatmentTeam || []).some(member => !member.participationConfirmed), 'The treatment team must confirm participation before completion can be confirmed.')
             }
             update.customerCompleted = true; update.customerCompletedAt = timestamp
             update.status = balanceSettled(appointment) ? 'Completed' : 'Balance Due'

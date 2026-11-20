@@ -171,10 +171,12 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   }
   check(practitioner, 'Select an eligible practitioner for this appointment.', 400)
   const staffingRequirements = normalizeStaffing(services[0].staffingRequirements)
-  if (staffingRequirements.length) {
-    const profile = (await tx.get(db.collection('practitionerProfiles').doc(workerId))).data()
-    const lead = staffingRequirements.find(row => row.responsibility === 'lead')
-    check(profile?.type === lead.type && profile.approvedServiceIds?.includes(services[0].id) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'Choose a credentialed lead practitioner approved for this service.')
+  const profile = (await tx.get(db.collection('practitionerProfiles').doc(workerId))).data()
+  const requiredServices = packageComponents.length ? packageComponents : services
+  for (const requiredService of requiredServices) {
+    const requirements = normalizeStaffing(requiredService.staffingRequirements)
+    const lead = requirements.find(row => row.responsibility === 'lead')
+    if (lead) check(profile?.type === lead.type && profile.approvedServiceIds?.includes(requiredService.id) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'Choose one credentialed lead practitioner approved for every service in this package.')
   }
   const schedules = await tx.get(db.collection('users').doc(workerId).collection('schedules'))
   const calendarDay = new Date(day + 'T00:00:00Z')

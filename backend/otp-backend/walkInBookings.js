@@ -335,7 +335,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           const count = appointment.treatmentPlan.totalSessions
           if (count > 1 && appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance') for (let number = 1; number <= count; number++) tx.set(db.collection('treatmentSessions').doc(`${childRefs[index].id}-${number}`), {
             branchId, treatmentPlanAppointmentId: childRefs[index].id, customerId: appointment.customerId, customerName: appointment.customerName,
-            practitionerId: number === 1 ? appointment.practitionerId : '', sessionNumber: number, totalSessions: count,
+            practitionerId: appointment.assignedPractitionerId || appointment.practitionerId, sessionNumber: number, totalSessions: count,
             status: number === 1 ? 'Scheduled' : 'Unscheduled', appointmentId: number === 1 ? childRefs[index].id : '',
             ...(number === 1 ? { date: appointment.date, time: appointment.time } : {}),
             sessionIntervalDays: appointment.treatmentPlan.sessionIntervalDays || 1, createdAt: now, updatedAt: now

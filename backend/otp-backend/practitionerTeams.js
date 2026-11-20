@@ -1,14 +1,13 @@
 import { practitionerTypes, normalizePractitionerProfile, normalizeStaffing, rateFor, teamMeetsRequirements, appointmentStaffIds, appointmentServiceId, sessionEarningBase, calculateStaffEarnings } from '../../shared/practitionerTeam.js'
-import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { compareRegistrationFields } from './registrationComparisons.js'
 const check = (ok, message, status = 409) => { if (!ok) throw Object.assign(new Error(message), { status }) }
-const closed = row => ['completed', 'cancelled', 'rejected', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(String(row.status || '').toLowerCase())
 const serviceIdFor = appointmentServiceId
 const nameFor = user => user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Practitioner'
 
 export const prepareTeamStart = async (tx, db, appointment, id) => {
   const leadId = appointment.assignedPractitionerId || appointment.practitionerId
-  const team = appointment.treatmentTeam?.length ? appointment.treatmentTeam : [{ employeeId: leadId, responsibility: 'lead' }]
+  check(leadId, 'Assign one lead practitioner before treatment starts.')
+  const team = [{ employeeId: leadId, responsibility: 'lead' }]
   const requirements = normalizeStaffing(appointment.staffingRequirements)
   const members = [], terms = []
   for (const member of team) {
@@ -16,19 +15,19 @@ export const prepareTeamStart = async (tx, db, appointment, id) => {
     const profile = (await tx.get(db.collection('practitionerProfiles').doc(member.employeeId))).data()
     check(user && !user.archived && String(user.status).toLowerCase() === 'active' && [user.branchId, ...(user.branchIds || [])].includes(appointment.branchId), 'A team member is inactive or no longer assigned to this branch.')
     if (requirements.length) check(profile && profile.approvedServiceIds.includes(serviceIdFor(appointment)) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'Configure verified credentials and approved services for every required team member.')
-    const entry = { employeeId: member.employeeId, name: nameFor(user), type: profile?.type || 'Other', responsibility: member.responsibility, participationConfirmed: member.responsibility === 'lead' }
+    const entry = { employeeId: member.employeeId, name: nameFor(user), type: profile?.type || 'Other', responsibility: 'lead', participationConfirmed: true }
     members.push(entry)
     const rateSnapshot = rateFor(profile, serviceIdFor(appointment), member.responsibility, appointment.date)
-    if (profile || requirements.length) check(rateSnapshot, 'Configure an effective compensation agreement for every team member before treatment starts (use zero for unpaid assistance).')
+    if (profile || requirements.length) check(rateSnapshot, 'Configure an effective compensation agreement for the lead practitioner before treatment starts.')
     terms.push({ ...entry, rateSnapshot })
   }
-  check(teamMeetsRequirements(members, requirements), 'Assign the full required treatment team before starting.')
+  check(teamMeetsRequirements(members, requirements), 'The assigned practitioner does not meet this service’s specialty requirement.')
   if (terms.every(member => member.rateSnapshot)) {
     const plan = appointment.treatmentPlanAppointmentId ? (await tx.get(db.collection('appointments').doc(appointment.treatmentPlanAppointmentId))).data() : appointment
     check(plan, 'The original treatment plan is missing.')
     const base = sessionEarningBase(appointment, plan)
     const forecast = calculateStaffEarnings(terms.map(member => ({ ...member, participationConfirmed: true })), base)
-    check(forecast.reduce((sum, row) => sum + Math.round(row.amount * 100), 0) <= Math.round(base * 100), 'The configured team earnings exceed this session’s allocated service price. Correct the agreements before starting.')
+    check(forecast.reduce((sum, row) => sum + Math.round(row.amount * 100), 0) <= Math.round(base * 100), 'The lead practitioner’s earnings exceed this session’s allocated service price. Correct the agreement before starting.')
   }
   return { members, termsRef: db.collection('appointmentStaffTerms').doc(id), terms: { branchId: appointment.branchId, appointmentId: id, members: terms } }
 }
@@ -135,7 +134,7 @@ export const readPractitionerLicenseOcr = async ({ visionClient, bytes, getVisio
   return { annotation, extractedText }
 }
 
-export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence }) => {
+export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserContext, authorizeClinicAction, createVisionClient, getVisionResponseError, getVisionWordConfidence }) => {
   const db = admin.firestore(), now = () => admin.firestore.FieldValue.serverTimestamp()
   const route = (method, path, fn) => app[method](path, requireAuth, async (req, res) => {
     try { const context = await loadUserContext(req.user.uid); res.json({ success: true, data: await fn(req, context) }) }
@@ -276,60 +275,8 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     }
     return { appointment, people }
   })
-  route('post', '/appointments/:id/team', async req => db.runTransaction(async tx => {
-    const ref = db.collection('appointments').doc(req.params.id), appointment = (await tx.get(ref)).data()
-    check(appointment, 'Appointment not found.', 404)
-    await authorizeClinicAction(req.user.uid, appointment.branchId, 'appointments:update')
-    check(!appointment.startedAt && !closed(appointment) && !appointment.isGroupParent && !appointment.isBookingOrderParent, 'Team assignments are locked once the service starts or closes.')
-    const requested = req.body?.members
-    check(Array.isArray(requested) && requested.length >= 1 && requested.length <= 8 && new Set(requested.map(row => row.employeeId)).size === requested.length, 'Choose one to eight different team members.', 400)
-    check(requested.filter(row => row.responsibility === 'lead').length === 1 && requested.find(row => row.responsibility === 'lead').employeeId === (appointment.assignedPractitionerId || appointment.practitionerId), 'Keep the booked practitioner as the lead.', 400)
-    const range = getBookingRange(appointment)
-    check(range, 'The appointment needs a valid schedule.')
-    const lock = db.collection('bookingResourceLocks').doc(appointment.branchId)
-    await tx.get(lock)
-    const appointments = (await tx.get(db.collection('appointments').where('branchId', '==', appointment.branchId))).docs
-    const held = (await tx.get(db.collection('bookingReservations').where('branchId', '==', appointment.branchId))).docs
-    const members = []
-    for (const row of requested) {
-      check(['lead', 'assistant'].includes(row.responsibility), 'Invalid team responsibility.', 400)
-      const user = (await tx.get(db.collection('users').doc(String(row.employeeId)))).data()
-      const profile = (await tx.get(db.collection('practitionerProfiles').doc(row.employeeId))).data()
-      check(user && profile && !user.archived && String(user.status).toLowerCase() === 'active' && [user.branchId, ...(user.branchIds || [])].includes(appointment.branchId), 'Choose active practitioners from this branch.')
-      check(profile.approvedServiceIds.includes(serviceIdFor(appointment)) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'A member is not credentialed and approved for this service.')
-      const schedule = (await tx.get(db.collection('users').doc(row.employeeId).collection('schedules'))).docs.map(doc => ({ ...doc.data(), id: doc.id }))
-      const day = new Date(appointment.date + 'T00:00:00Z'), week = new Date(day)
-      week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7)
-      const weekSchedule = schedule.find(item => (item.weekStart || item.id) === week.toISOString().slice(0, 10))
-      const recurringSchedule = schedule.find(item => item.id === 'recurring' || item.recurring || item.type === 'recurring')
-      const selected = weekSchedule || (recurringSchedule ? resolveRecurringScheduleVersion(recurringSchedule, appointment.date) : null) || {}
-      const weekday = day.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
-      const availability = selected.availability?.[weekday], assignment = selected.assignments?.[weekday]
-      const shifts = (await tx.get(db.collection('shifts').where('branchId', '==', appointment.branchId))).docs.map(doc => ({ ...doc.data(), id: doc.id }))
-      const shift = shifts.find(item => item.id === assignment)
-      const label = String(selected.assignmentLabels?.[weekday] || assignment || '').split('||').pop().trim().split(' - ')
-      const working = availability?.enabled !== false && availability?.start && availability?.end ? getBookingRange({ time: availability.start, endTime: availability.end }) : selected.historical && label.length === 2 ? getBookingRange({ time: label[0], endTime: label[1] }) : shift ? getBookingRange({ time: shift.start, endTime: shift.end }) : label.length === 2 ? getBookingRange({ time: label[0], endTime: label[1] }) : null
-      check(working && range.start >= working.start && range.end <= working.end, 'A team member is outside their published availability.')
-      const leave = await tx.get(db.collection('leaveRequests').where('requesterId', '==', row.employeeId))
-      check(!leave.docs.some(doc => { const data = doc.data(); return String(data.status).toLowerCase() === 'approved' && (data.startDate || data.date) <= appointment.date && (data.endDate || data.date || data.startDate) >= appointment.date }), 'A team member is on approved leave.')
-      check(!appointments.some(doc => { const data = doc.data(), other = getBookingRange(data); return doc.id !== ref.id && !data.isGroupParent && !data.isBookingOrderParent && !closed(data) && data.date === appointment.date && appointmentStaffIds(data).includes(row.employeeId) && other && rangesOverlap(range.start, range.end, other.start, other.end) }), 'A team member already has an overlapping appointment.')
-      check(!held.some(doc => { const data = doc.data(), other = getBookingRange(data); const expires = data.expiresAt?.toDate?.() || new Date(data.expiresAt); return data.status === 'held' && expires > new Date() && data.date === appointment.date && data.practitionerId === row.employeeId && other && rangesOverlap(range.start, range.end, other.start, other.end) }), 'A team member has an active booking reservation at this time.')
-      members.push({ employeeId: row.employeeId, name: nameFor(user), type: profile.type, responsibility: row.responsibility, participationConfirmed: false })
-    }
-    check(teamMeetsRequirements(members, appointment.staffingRequirements), 'The selected team does not meet this service’s staffing requirements.')
-    tx.update(ref, { treatmentTeam: members, teamAssignedBy: req.user.uid, updatedAt: now() })
-    tx.set(lock, { updatedAt: now() }, { merge: true })
-    tx.set(db.collection('appointmentAudit').doc(), { appointmentId: ref.id, branchId: appointment.branchId, actorId: req.user.uid, action: 'team_assigned', members, createdAt: now() })
-    return members
-  }))
-  route('post', '/appointments/:id/team/participation', async req => db.runTransaction(async tx => {
-    const ref = db.collection('appointments').doc(req.params.id), appointment = (await tx.get(ref)).data()
-    check(appointment?.status === 'Ongoing', 'Confirm participation while the service is ongoing.')
-    check(appointment.treatmentTeam?.some(member => member.employeeId === req.user.uid), 'Only an assigned team member can confirm their own participation.', 403)
-    const members = appointment.treatmentTeam.map(member => member.employeeId === req.user.uid ? { ...member, participationConfirmed: true, participationConfirmedAt: new Date().toISOString() } : member)
-    tx.update(ref, { treatmentTeam: members, updatedAt: now() })
-    return members
-  }))
+  route('post', '/appointments/:id/team', async () => { check(false, 'Appointments use the single booked lead practitioner. Assistant assignments are no longer supported.', 410) })
+  route('post', '/appointments/:id/team/participation', async () => { check(false, 'Only the booked lead practitioner is assigned to an appointment.', 410) })
   route('get', '/staff-earnings', async (req, context) => {
     const branchId = String(req.query.branchId || '')
     await authorizeClinicAction(req.user.uid, branchId, context.permissions.has('payroll:update') ? 'payroll:update' : 'payroll:view')
@@ -339,7 +286,7 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     const branchId = String(req.query.branchId || '')
     await authorizeClinicAction(req.user.uid, branchId, 'payroll:view')
     const records = await db.collection('appointments').where('branchId', '==', branchId).get()
-    const fields = ['branchId', 'customerName', 'clientName', 'service', 'date', 'time', 'completedAt', 'treatmentTeam', 'staffEarningsStatus', 'consultationNeedsReview', 'consultationActualDurationSeconds']
+    const fields = ['branchId', 'customerName', 'clientName', 'practitionerName', 'assignedPractitionerName', 'practitionerId', 'assignedPractitionerId', 'service', 'date', 'time', 'completedAt', 'treatmentTeam', 'staffEarningsStatus', 'consultationNeedsReview', 'consultationActualDurationSeconds']
     return records.docs.filter(doc => doc.data().status === 'Completed' && !doc.data().isGroupParent && !doc.data().isBookingOrderParent).map(doc => ({ id: doc.id, ...Object.fromEntries(fields.map(key => [key, doc.data()[key] ?? null])) }))
   })
   route('get', '/appointments/:id/staff-earnings', async req => {
@@ -379,7 +326,8 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
     const ref = db.collection('appointments').doc(req.params.id), appointment = (await tx.get(ref)).data()
     check(appointment?.status === 'Completed', 'Staff earnings require a completed appointment.')
     await authorizeClinicAction(req.user.uid, appointment.branchId, 'payroll:view')
-    check((context.permissions.has('payroll:approve') || context.permissions.has('administrator:full_access')) && !appointmentStaffIds(appointment).includes(req.user.uid), 'An independent owner or Finance reviewer must approve staff earnings.', 403)
+    const historicalTeamIds = (appointment.treatmentTeam || []).map(member => member.employeeId)
+    check((context.permissions.has('payroll:approve') || context.permissions.has('administrator:full_access')) && ![...appointmentStaffIds(appointment), ...historicalTeamIds].includes(req.user.uid), 'An independent owner or Finance reviewer must approve staff earnings.', 403)
     check(appointment.staffEarningsStatus !== 'Approved', 'Staff earnings are already approved.')
     const reviewNote = String(req.body?.reviewNote || '').trim().slice(0, 1000)
     if (appointment.consultationNeedsReview) check(reviewNote.length >= 10, 'Review the flagged consultation and explain why these earnings should be approved.', 400)

@@ -2195,7 +2195,6 @@ const canConfirmCompletion = (appointment) => {
   if (!online) return true
   return appointment?.consultationDispute?.status !== 'Open'
     && String(appointment?.treatmentNotes || '').trim().length >= 10
-    && !(appointment?.treatmentTeam || []).some(member => !member.participationConfirmed)
 }
 
 const canJoinOnlineConsultation = appointment => isOnlineConsultationAppointment(appointment)

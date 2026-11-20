@@ -38,7 +38,7 @@
 
         <section v-if="historySession" class="mt-6 rounded-xl border border-slate-700 bg-slate-800 p-5"><div class="flex justify-between"><h2 class="font-semibold">Visit {{ historySession.sessionNumber }} history</h2><button @click="historySession = null">Close</button></div><p v-if="!history.length" class="mt-3 text-slate-400">No recorded changes yet.</p><ol v-else class="mt-3 space-y-3"><li v-for="entry in history" :key="entry.id" class="rounded-lg bg-slate-900 p-3"><strong>{{ entry.action }}</strong> · {{ entry.previousStatus || 'New' }} → {{ entry.nextStatus }}<span v-if="entry.date"> · {{ formatCourseDate(entry.date) }} {{ formatClockTime(entry.time) }}</span><small class="mt-1 block text-slate-400">{{ entry.actorName || entry.actorId }} · {{ formatDate(entry.createdAt) }}</small></li></ol></section>
 
-        <form v-if="target" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 p-4" @submit.prevent="schedule" :aria-busy="savingSchedule"><section class="w-full max-w-sm rounded-xl bg-slate-800 p-5"><h2 class="text-lg font-semibold">{{ String(target.status).includes('Requested') ? 'Review requested time' : 'Schedule' }} visit {{ target.sessionNumber }}</h2><p class="mt-1 text-sm text-slate-300">{{ target.serviceName }}</p><p v-if="target.requestedDate" class="mt-2 text-sm text-slate-300">Customer requested {{ formatCourseDate(target.requestedDate) }} at {{ formatClockTime(target.requestedTime) }}. You may confirm it or choose another available time.</p><ContractAppearanceSelect id="session-lead-practitioner" label="Lead practitioner" v-model="practitionerId" :options="practitioners.map(person => ({ value: person.id, label: person.fullName + (person.practitionerType ? ' (' + person.practitionerType + ')' : '') }))" /><label class="mt-4 block">Date</label><AppointmentCalendar v-model="date" :min-date="sessionMinDate" :disabled="!practitionerId" :availability-aware="false" :help-text="practitionerId ? 'Choose a date. Availability is checked when the clinic confirms the schedule.' : 'Choose a practitioner first.'" @update:model-value="time = ''"/><label class="mt-3 block">Time<input v-model="time" type="time" required class="field"/></label><div class="mt-5 flex justify-end gap-2"><button type="button" @click="target = null">Cancel</button><button class="btn" type="submit" :disabled="savingSchedule">{{ savingSchedule ? 'Saving schedule…' : 'Propose schedule' }}</button></div></section></form>
+        <form v-if="target" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 p-4" @submit.prevent="schedule" :aria-busy="savingSchedule"><section class="w-full max-w-sm rounded-xl bg-slate-800 p-5"><h2 class="text-lg font-semibold">{{ String(target.status).includes('Requested') ? 'Review requested time' : 'Schedule' }} visit {{ target.sessionNumber }}</h2><p class="mt-1 text-sm text-slate-300">{{ target.serviceName }}</p><p class="mt-2 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200">Lead practitioner: {{ target.practitionerName || 'From original booking' }}</p><p v-if="target.requestedDate" class="mt-2 text-sm text-slate-300">Customer requested {{ formatCourseDate(target.requestedDate) }} at {{ formatClockTime(target.requestedTime) }}. You may confirm it or choose another available time.</p><label class="mt-4 block">Date</label><AppointmentCalendar v-model="date" :min-date="sessionMinDate" :disabled="!target.practitionerId" :availability-aware="false" :help-text="target.practitionerId ? 'Choose a date. Availability is checked when the clinic confirms the schedule.' : 'This treatment plan needs an assigned lead practitioner first.'" @update:model-value="time = ''"/><label class="mt-3 block">Time<input v-model="time" type="time" required class="field"/></label><div class="mt-5 flex justify-end gap-2"><button type="button" @click="target = null">Cancel</button><button class="btn" type="submit" :disabled="savingSchedule || !target.practitionerId">{{ savingSchedule ? 'Saving schedule…' : 'Propose schedule' }}</button></div></section></form>
       </div>
     </main>
   </div>
@@ -47,7 +47,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { usePageLoading } from '@/composables/usePageLoading'
-import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import AppointmentCalendar from '@/components/common/AppointmentCalendar.vue'
 import { useRoute } from 'vue-router'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
@@ -61,7 +60,6 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 const route = useRoute()
 const { pageLoading, trackPageLoad } = usePageLoading()
 const sessions = ref([]), error = ref(''), target = ref(null), savingSchedule = ref(false), date = ref(''), time = ref(''), history = ref([]), historySession = ref(null)
-const practitioners = ref([]), practitionerId = ref('')
 const today = manilaDate()
 let branchId = ''
 const sessionMinDate = computed(() => String(target.value?.earliestScheduleDate || '') > today ? String(target.value.earliestScheduleDate) : today)
@@ -118,20 +116,12 @@ const openSchedule = async session => {
   const requestedDate = String(session.requestedDate || '')
   date.value = requestedDate >= sessionMinDate.value ? requestedDate : ''
   time.value = date.value ? session.requestedTime || '' : ''
-  practitionerId.value = session.practitionerId || ''
-  try {
-    const token = await auth.currentUser.getIdToken()
-    const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(branchId)}/practitioners`, { headers: { Authorization: `Bearer ${token}` } })
-    const payload = await response.json()
-    if (!response.ok) throw new Error(payload.error || 'Unable to load practitioners.')
-    practitioners.value = payload.practitioners || []
-  } catch (cause) { toast.error(cause.message) }
 }
 const schedule = async () => {
   if (savingSchedule.value) return
   savingSchedule.value = true
   try {
-    await api(`/treatment-sessions/${target.value.id}/schedule`, { date: date.value, time: time.value, practitionerId: practitionerId.value })
+    await api(`/treatment-sessions/${target.value.id}/schedule`, { date: date.value, time: time.value })
     toast.success('Schedule proposed. The customer must confirm it.')
     target.value = null
     await load()

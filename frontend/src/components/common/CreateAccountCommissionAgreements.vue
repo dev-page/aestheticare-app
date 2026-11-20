@@ -76,7 +76,7 @@ const validationError = computed(() => {
   for (let index = 0; index < form.rates.length; index += 1) {
     const rate = form.rates[index]
     const amount = Number(rate.amount)
-    if (!['lead', 'assistant'].includes(rate.responsibility) || !['percent', 'fixed'].includes(rate.model)) return 'Choose a valid commission responsibility and type.'
+    if (rate.responsibility !== 'lead' || !['percent', 'fixed'].includes(rate.model)) return 'Commission agreements apply to the lead practitioner.'
     if (String(rate.amount ?? '').trim() === '' || !Number.isFinite(amount) || amount < 0 || (rate.model === 'percent' && amount > 100)) return 'Enter a valid commission rate. Percentages must be between 0 and 100.'
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveFrom || '') || (rate.effectiveUntil && (!/^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveUntil) || rate.effectiveUntil < rate.effectiveFrom))) return 'Enter valid commission effective dates.'
     if (rate.serviceId && !form.approvedServiceIds.includes(rate.serviceId)) return 'Approve each specific service that has a commission rate.'
@@ -131,7 +131,7 @@ const addRate = () => form.rates.push({
 
     <div v-for="(rate, index) in form.rates" :key="index" class="mt-3 grid gap-3 rounded-lg border border-[#ead2b2] bg-[#fffdf9] p-3 sm:grid-cols-2">
       <ContractAppearanceSelect :id="`new-staff-commission-service-${index}`" v-model="rate.serviceId" label="Service" :options="[{ value: '', label: 'All approved services' }, ...serviceOptions]" />
-      <ContractAppearanceSelect :id="`new-staff-commission-responsibility-${index}`" v-model="rate.responsibility" label="Responsibility" :options="[{ value: 'lead', label: 'Lead' }, { value: 'assistant', label: 'Assistant' }]" />
+      <p class="rounded-lg border border-[#ead2b2] bg-[#fffaf3] px-3 py-2 text-sm text-[#5d4536]">Lead practitioner commission</p>
       <ContractAppearanceSelect :id="`new-staff-commission-model-${index}`" v-model="rate.model" label="Commission type" :options="[{ value: 'percent', label: 'Percentage' }, { value: 'fixed', label: 'Fixed fee (PHP)' }]" />
       <label class="block text-sm font-medium text-[#5d4536]">Rate
         <input v-model.number="rate.amount" type="number" min="0" :max="rate.model === 'percent' ? 100 : undefined" step="0.01" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />

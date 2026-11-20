@@ -14,7 +14,7 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
         const update = { updatedAt: stamp() }
         if (action === 'review') {
           await authorizeClinicAction(req.user.uid, appointment.branchId, 'appointments:review')
-          check(!customer && !worker && !(appointment.treatmentTeam || []).some(member => member.employeeId === req.user.uid), 'An independent clinic reviewer must handle this consultation.', 403)
+          check(!customer && !worker, 'An independent clinic reviewer must handle this consultation.', 403)
           check(appointment.consultationNeedsReview || appointment.consultationDispute?.status === 'Open', 'This consultation does not need review.')
           check(note.length >= 10, 'Record the review findings (at least 10 characters).', 400)
           const outcome = req.body?.outcome
@@ -25,7 +25,6 @@ export const registerConsultationEvents = (app, { admin, requireAuth, authorizeC
           update.consultationNeedsReview = outcome !== 'received'
           if (outcome === 'received') {
             check(appointment.startedAt && appointment.workerCompleted && String(appointment.treatmentNotes || '').trim().length >= 10, 'Document the delivered consultation before resolving it as received.')
-            check(!(appointment.treatmentTeam || []).some(member => !member.participationConfirmed), 'Team participation must be confirmed before resolution.')
             update.status = balanceSettled(appointment) ? 'Completed' : 'Balance Due'
             update.completedAt = stamp()
             update.consultationAdjudicated = true

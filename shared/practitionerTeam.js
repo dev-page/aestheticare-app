@@ -22,16 +22,17 @@ export const basePayForPeriod = ({ model = 'hourly', rate, hours = 0, days = 0, 
 export const normalizeStaffing = (value) => {
   if (value == null) return []
   check(Array.isArray(value) && value.length <= 8, 'Configure at most eight staffing requirements.')
-  const result = value.map(row => {
+  // Older listings may still contain assistant requirements. Ignore those
+  // legacy entries so they cannot block a booking under the single-lead model.
+  check(value.every(row => row && ['lead', 'assistant'].includes(row.responsibility)), 'Only legacy assistant requirements or one lead requirement are supported.')
+  const result = value.filter(row => row?.responsibility === 'lead').map(row => {
     check(practitionerTypes.includes(row.type), 'Choose a valid practitioner specialty.')
-    check(['lead', 'assistant'].includes(row.responsibility), 'Choose lead or assistant.')
     const count = Number(row.count)
     check(Number.isInteger(count) && count >= 1 && count <= 8, 'Staff count must be from 1 to 8.')
-    check(row.responsibility !== 'lead' || count === 1, 'An appointment has one lead practitioner.')
+    check(count === 1, 'A service has exactly one lead practitioner.')
     return { type: row.type, responsibility: row.responsibility, count }
   })
-  check(!result.length || result.filter(row => row.responsibility === 'lead').length === 1, 'Configure exactly one lead practitioner.')
-  check(result.reduce((sum, row) => sum + row.count, 0) <= 8, 'A treatment team supports at most eight staff.')
+  check(result.length <= 1, 'Configure only one lead practitioner specialty.')
   check(new Set(result.map(row => row.type + row.responsibility)).size === result.length, 'Combine duplicate staffing requirements.')
   return result
 }
@@ -43,7 +44,7 @@ export const normalizePractitionerProfile = (body) => {
   const approvedServiceIds = [...new Set(body.approvedServiceIds || [])]
   check(approvedServiceIds.length <= 100 && approvedServiceIds.every(id => typeof id === 'string' && id.length <= 150 && !id.includes('/')), 'Invalid approved services.')
   const rates = (body.rates || []).map(rate => {
-    check(['lead', 'assistant'].includes(rate.responsibility) && ['percent', 'fixed'].includes(rate.model), 'Choose a valid responsibility and compensation model.')
+    check(rate.responsibility === 'lead' && ['percent', 'fixed'].includes(rate.model), 'Service compensation is configured for the lead practitioner.')
     const amount = Number(rate.amount)
     check(rate.amount !== '' && Number.isFinite(amount) && amount >= 0 && (rate.model !== 'percent' || amount <= 100), 'Enter a valid nonnegative staff rate; percentages cannot exceed 100.')
     check(/^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveFrom || '') && (!rate.effectiveUntil || /^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveUntil) && rate.effectiveUntil >= rate.effectiveFrom), 'Enter valid agreement dates.')
@@ -61,7 +62,12 @@ export const rateFor = (profile, serviceId, responsibility, date) => {
   return active.find(rate => rate.serviceId === serviceId) || active.find(rate => !rate.serviceId) || null
 }
 export const teamMeetsRequirements = (team, requirements) => normalizeStaffing(requirements).every(row => team.filter(member => member.type === row.type && member.responsibility === row.responsibility).length === row.count)
-export const appointmentStaffIds = appointment => [...new Set([appointment.practitionerId, appointment.assignedPractitionerId, ...(appointment.treatmentTeam || []).map(member => member.employeeId)].filter(Boolean))]
+// Appointment availability and assignment use the booked lead only. Historical
+// treatment-team snapshots remain available for payroll and audit records.
+export const appointmentStaffIds = appointment => {
+  const leadId = appointment.assignedPractitionerId || appointment.practitionerId
+  return leadId ? [leadId] : []
+}
 export const sessionEarningBase = (appointment, plan = appointment) => {
   const sessions = Math.max(1, Number(plan.treatmentPlan?.totalSessions || 1))
   const number = Math.max(1, Number(appointment.sessionNumber || 1))

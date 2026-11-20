@@ -16,7 +16,7 @@ onBeforeUnmount(() => clearInterval(timer))
 const online = computed(() => String(props.appointment.type).toLowerCase() === 'consultation' && props.appointment.consultationMode === 'online')
 const windowInfo = computed(() => onlineWindow(props.appointment))
 const worker = computed(() => !props.customer && auth.currentUser?.uid === (props.appointment.assignedPractitionerId || props.appointment.practitionerId))
-const reviewer = computed(() => !props.customer && !worker.value && props.appointment.customerId !== auth.currentUser?.uid && !(props.appointment.treatmentTeam || []).some(member => member.employeeId === auth.currentUser?.uid) && hasPermission('appointments:review'))
+const reviewer = computed(() => !props.customer && !worker.value && props.appointment.customerId !== auth.currentUser?.uid && hasPermission('appointments:review'))
 const active = computed(() => props.appointment.status === 'Ongoing')
 const remaining = computed(() => Math.max(0, Math.ceil((windowInfo.value.end.getTime() - now.value) / 1000)))
 const canExtend = computed(() => active.value && windowInfo.value.reservedEnd > windowInfo.value.end)
@@ -63,7 +63,7 @@ const send = async (action, extra = {}) => {
         <p v-if="appointment.consultationDispute?.status === 'Open'" class="notice">Your reported problem is awaiting independent clinic review: {{ appointment.consultationDispute.note }}</p>
         <p v-if="appointment.consultationReview">Review: {{ appointment.consultationReview.outcome }} — {{ appointment.consultationReview.note }}</p>
         <p v-if="appointment.treatmentNotes"><strong>Saved consultation notes:</strong> {{ appointment.treatmentNotes }}</p>
-        <p v-if="customer && appointment.workerCompleted && !appointment.customerCompleted && (String(appointment.treatmentNotes || '').trim().length < 10 || (appointment.treatmentTeam || []).some(member => !member.participationConfirmed))" class="notice">The practitioner must save consultation notes and the treatment team must confirm participation before you can confirm completion. You can still report a problem below.</p>
+        <p v-if="customer && appointment.workerCompleted && !appointment.customerCompleted && String(appointment.treatmentNotes || '').trim().length < 10" class="notice">The practitioner must save consultation notes before you can confirm completion. You can still report a problem below.</p>
         <p v-if="appointment.consultationInterruption?.open" class="notice">An interruption is recorded. Both participants can rejoin the same Google Meet link. The practitioner can reopen it with Join Call, then confirm reconnection here. Reconnection remains available while the consultation is ongoing.</p>
         <label for="consultation-note">{{ worker ? 'Consultation notes or connection issue' : reviewer ? 'Review findings' : 'Describe a problem or connection issue' }}</label>
         <textarea id="consultation-note" v-model="note" rows="4" maxlength="2000" placeholder="Provide details (at least 10 characters)." />

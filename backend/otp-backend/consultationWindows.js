@@ -37,7 +37,6 @@ export const closeExpiredConsultations = async admin => {
         const endedAt = deadline < now ? deadline : now
         const durationSeconds = Math.max(0, Math.floor((endedAt - start) / 1000))
         const notesComplete = String(appointment.treatmentNotes || '').trim().length >= 10
-        const teamIncomplete = (appointment.treatmentTeam || []).some(member => !member.participationConfirmed)
         const status = 'Awaiting Customer Confirmation'
         tx.update(doc.ref, {
           status,
@@ -46,7 +45,7 @@ export const closeExpiredConsultations = async admin => {
           consultationEndedAt: appointment.consultationEndedAt || endedAt.toISOString(),
           consultationEndedById: appointment.consultationEndedById || 'system',
           consultationActualDurationSeconds: durationSeconds,
-          consultationNeedsReview: Boolean(appointment.consultationNeedsReview) || durationSeconds < window.duration * 60 * 0.8 || !notesComplete || teamIncomplete,
+          consultationNeedsReview: Boolean(appointment.consultationNeedsReview) || durationSeconds < window.duration * 60 * 0.8 || !notesComplete,
           updatedAt: stamp,
         })
         tx.set(db.collection('appointmentAudit').doc(), { appointmentId: doc.id, branchId: appointment.branchId, actorId: 'system', action: 'consultation_window_expired', previousStatus: appointment.status, nextStatus: status, createdAt: stamp })

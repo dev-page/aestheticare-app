@@ -933,7 +933,7 @@ const buildBlockedRanges = (appointmentList = []) => {
         ? end
         : start + appointmentDuration
 
-    for (const id of new Set([practitionerId, ...(appointment.treatmentTeam || []).map(member => member.employeeId)])) {
+    for (const id of [practitionerId]) {
       const key = date + '|' + id
       const nextList = blocked.get(key) || []
       nextList.push({ start, end: normalizedEnd })
@@ -1700,9 +1700,11 @@ const bookingSlots = computed(() => {
 
     practitioners.value.forEach((practitioner) => {
       const selected = selectedServices.value[0]
-      const service = selected?.type === 'Package' ? selected.packageComponents?.[0] : selected
-      const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
-      if (lead && (practitioner.practitionerType !== lead.type || !practitioner.approvedServiceIds?.includes(service.id) || ['Doctor', 'Registered Nurse'].includes(lead.type) && !practitioner.credentialsVerified)) return
+      const eligibleServices = selected?.type === 'Package' ? selected.packageComponents || [] : [selected].filter(Boolean)
+      if (!eligibleServices.every(service => {
+        const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
+        return !lead || (practitioner.practitionerType === lead.type && practitioner.approvedServiceIds?.includes(service.id) && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
+      })) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return
@@ -1881,9 +1883,11 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
 
     practitionerList.forEach((practitioner) => {
       const selected = selectedServices.value[0]
-      const service = selected?.type === 'Package' ? selected.packageComponents?.[0] : selected
-      const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
-      if (lead && (practitioner.practitionerType !== lead.type || !practitioner.approvedServiceIds?.includes(service.id) || ['Doctor', 'Registered Nurse'].includes(lead.type) && !practitioner.credentialsVerified)) return
+      const eligibleServices = selected?.type === 'Package' ? selected.packageComponents || [] : [selected].filter(Boolean)
+      if (!eligibleServices.every(service => {
+        const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
+        return !lead || (practitioner.practitionerType === lead.type && practitioner.approvedServiceIds?.includes(service.id) && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
+      })) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
       if (!scheduleWindow) return

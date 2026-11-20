@@ -20,7 +20,7 @@ const panel = ref(null)
 const title = computed(() => props.service.title || props.service.name || 'Service details')
 const online = computed(() => props.service.type === 'Consultation' && props.service.consultationMode === 'online')
 const policy = computed(() => onlinePolicy(props.service.consultationPolicy))
-const staffing = computed(() => Array.isArray(props.service.staffingRequirements) ? props.service.staffingRequirements.filter(member => member?.type && Number(member.count) > 0) : [])
+const staffing = computed(() => Array.isArray(props.service.staffingRequirements) ? props.service.staffingRequirements.filter(member => member?.type && member.responsibility === 'lead') : [])
 const price = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value) || 0)
 const vatDescription = offer => offer?.vatPriceMode === 'inclusive' ? '12% VAT included' : '12% VAT added at checkout'
 const profession = value => ({ doctor: 'Doctor', nurse: 'Registered nurse', aesthetician: 'Aesthetician / facialist', other: 'Practitioner' }[value] || value)
@@ -91,9 +91,10 @@ onUnmounted(() => {
               <p class="service-details-follow-up">{{ service.followUpAllowed ? `Follow-ups are available${service.followUpWindowDays ? ` within ${service.followUpWindowDays} days` : ''}.` : 'Follow-up bookings are not enabled for this listing.' }}</p>
               <p v-if="service.type === 'Package'">You book the first visit now. The clinic arranges each later visit after the previous visit is completed or resolved. The minimum gaps shown above guide scheduling; available clinic dates determine the confirmed appointments.</p>
             </section>
-            <section v-if="staffing.length" class="service-details-section">
-              <h3>Treatment team</h3>
-              <ul class="service-details-list"><li v-for="(member, index) in staffing" :key="index">{{ member.count }} {{ profession(member.type) }} · {{ member.responsibility === 'lead' ? 'Lead practitioner' : 'Assisting practitioner' }}</li></ul>
+            <section class="service-details-section">
+              <h3>Practitioner</h3>
+              <p>One practitioner is assigned to each appointment<span v-if="service.type === 'Package'"> and stays with the package for all visits</span>.</p>
+              <p v-if="staffing.length">Required specialty: {{ profession(staffing[0].type) }}.</p>
             </section>
             <section v-if="online" class="service-details-section">
               <h3>Online consultation</h3>

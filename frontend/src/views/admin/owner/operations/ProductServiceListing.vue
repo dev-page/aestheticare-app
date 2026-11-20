@@ -774,7 +774,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               ? Math.min(...packageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
           consultationPolicy: consultationPolicyForGrace(form.value),
-          staffingRequirements: JSON.parse(JSON.stringify(form.value.staffingRequirements || [])),
+          staffingRequirements: JSON.parse(JSON.stringify((form.value.staffingRequirements || []).filter(row => row.responsibility === 'lead').slice(0, 1).map(row => ({ ...row, count: 1 })))),
           sessionCount: postType === 'Package' ? treatmentCourseVisitCount(courseSteps) : 1,
           sessionIntervalDays: postType === 'Package' ? Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
@@ -985,7 +985,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               ? Math.min(...editPackageFollowUpComponents.map((post) => Number(post.followUpWindowDays || 14)))
               : null,
           consultationPolicy: consultationPolicyForGrace(editForm.value),
-          staffingRequirements: JSON.parse(JSON.stringify(editForm.value.staffingRequirements || [])),
+          staffingRequirements: JSON.parse(JSON.stringify((editForm.value.staffingRequirements || []).filter(row => row.responsibility === 'lead').slice(0, 1).map(row => ({ ...row, count: 1 })))),
           sessionCount: editForm.value.postType === 'Package' ? treatmentCourseVisitCount(editCourseSteps) : 1,
           sessionIntervalDays: editForm.value.postType === 'Package' ? Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: editForm.value.postType === 'Product'

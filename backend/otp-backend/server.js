@@ -4829,6 +4829,8 @@ app.get('/treatment-sessions', requireAuth, async (req, res) => {
       const definition = parent.treatmentPlan?.sessions?.[Number(session.sessionNumber || 1) - 1]
       return {
         ...session,
+        practitionerId: parent.assignedPractitionerId || parent.practitionerId || session.practitionerId || '',
+        practitionerName: parent.assignedPractitionerName || parent.practitionerName || '',
         planName: parent.treatmentPlan?.planName || parent.service || 'Treatment course',
         serviceName: definition?.serviceName || parent.service || 'Treatment visit',
         stageNumber: Number(definition?.stageNumber || 1),
@@ -4859,13 +4861,14 @@ app.post('/treatment-sessions/:id/schedule', requireAuth, async (req, res) => {
     const result = await firestore.runTransaction(async tx => {
       const snap = await tx.get(ref); assertWorkflow(snap.exists, 'Treatment session not found.', 404)
       const session = snap.data() || {}; await authorizeClinicAction(req.user.uid, session.branchId, 'appointments:update')
-      const practitionerId = String(req.body?.practitionerId || session.practitionerId || '').trim()
-      assertWorkflow(practitionerId, 'Choose a lead practitioner for this session.', 400)
-      assertWorkflow(!(await getApprovedLeaveForDate(practitionerId, date)), 'The selected practitioner is on approved leave.')
       const currentStatus = normalizeBookingStatus(session.status)
       assertWorkflow(['unscheduled', 'reschedule eligible', 'schedule requested', 'reschedule requested'].includes(currentStatus), 'Only an unscheduled, requested, or eligible session can be scheduled.')
       const parentRef = firestore.collection('appointments').doc(session.treatmentPlanAppointmentId); const parent = await tx.get(parentRef)
       assertWorkflow(parent.exists, 'Treatment plan appointment not found.', 404)
+      const parentData = parent.data() || {}
+      const practitionerId = String(parentData.assignedPractitionerId || parentData.practitionerId || session.practitionerId || '').trim()
+      assertWorkflow(practitionerId, 'Assign a lead practitioner to the treatment plan before scheduling its visits.', 400)
+      assertWorkflow(!(await getApprovedLeaveForDate(practitionerId, date)), 'The assigned lead practitioner is on approved leave.')
       // Later visits are intentionally not booked in advance. The immediately
       // preceding visit must be resolved before staff can confirm this one.
       const sessionNumber = Number(session.sessionNumber || 1)
@@ -4879,7 +4882,7 @@ app.post('/treatment-sessions/:id/schedule', requireAuth, async (req, res) => {
         assertWorkflow(Number(session.rescheduleCount || 0) < allowance, 'This treatment session has reached the reschedule limit.', 409)
         if (session.rescheduleCountAtRequest !== undefined) assertWorkflow(Number(session.rescheduleCountAtRequest) === Number(session.rescheduleCount || 0), 'The reschedule allowance changed while this request was pending.', 409)
       }
-      const parentData = parent.data() || {}, definition = parentData.treatmentPlan?.sessions?.[sessionNumber - 1]
+      const definition = parentData.treatmentPlan?.sessions?.[sessionNumber - 1]
       const requestedRange = getBookingRange({ time, totalServiceDurationMinutes: definition?.durationMinutes || parentData.totalServiceDurationMinutes || 60 })
       const [otherAppointments, otherSessions] = await Promise.all([
         tx.get(firestore.collection('appointments').where('branchId', '==', session.branchId)),
