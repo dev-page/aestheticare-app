@@ -557,9 +557,6 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'birRegistration', label: 'BIR 2303 or Certificate of Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
   ]
-  if (docs.governmentIdSelfieWithId) {
-    definitions.splice(2, 0, { key: 'governmentIdSelfieWithId', label: 'Selfie Holding the Same Government-Issued ID' })
-  }
   if (docs.authorizationLetter) {
     definitions.push({ key: 'authorizationLetter', label: 'Authorization Letter / Proof of Authority' })
   }
@@ -582,7 +579,6 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
 const verificationDocumentOrder = [
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
-  'governmentIdSelfieWithId',
   'businessPermit',
   'dohAccreditation',
   'birRegistration',
@@ -599,6 +595,7 @@ const normalizeVerificationReason = (reason) => {
 }
 
 const mapVerificationResults = (verificationResults = {}) => Object.entries(verificationResults || {})
+  .filter(([key]) => verificationDocumentOrder.includes(key))
   .sort(([firstKey], [secondKey]) => {
     const firstIndex = verificationDocumentOrder.indexOf(firstKey)
     const secondIndex = verificationDocumentOrder.indexOf(secondKey)
@@ -645,7 +642,6 @@ const formatDateValue = (value) => {
 const documentLabel = (key) => ({
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
-  governmentIdSelfieWithId: 'Selfie Holding the Same Government-Issued ID',
   businessPermit: 'Business Permit/Registration',
   dohAccreditation: 'DOH License to Operate',
   birRegistration: 'BIR 2303 or Certificate of Registration',

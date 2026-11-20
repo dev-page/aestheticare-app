@@ -93,12 +93,11 @@ export function compareRegistrationFields({ docKey, text, application = {}, user
   const fullName = [firstName, middleName, lastName, suffix].filter(Boolean).join(' ')
   const evidenceConfidence = snapshot.source === 'legacy-review-time' ? null : confidence
   const isGovernmentIdFront = docKey === 'governmentIdRepresentativeFront'
-  const isGovernmentIdSelfie = docKey === 'governmentIdSelfieWithId'
   const isAuthorization = docKey === 'authorizationLetter'
   const permitHolderIsRegistrant = typeof snapshot.permitHolderIsRegistrant === 'boolean'
     ? snapshot.permitHolderIsRegistrant
     : application.permitHolderIsRegistrant !== false
-  if (isGovernmentIdFront || isGovernmentIdSelfie || isAuthorization) {
+  if (isGovernmentIdFront || isAuthorization) {
     const labels = isAuthorization
       ? ['registrant\\s+name', 'applicant\\s+name', 'authorized\\s+representative', 'representative(?:\\s+name)?', 'authorized\\s+person']
       : ['full\\s+name', 'name', 'name\\s+of\\s+holder']
@@ -110,7 +109,7 @@ export function compareRegistrationFields({ docKey, text, application = {}, user
     }
     results.push(comparison('registrantName', 'Registrant name', fullName, detected, evidenceConfidence, 'person'))
   }
-  if (isGovernmentIdFront || isGovernmentIdSelfie) {
+  if (isGovernmentIdFront) {
     const birth = hasSnapshot ? snapshot.birthDate : user.birthDate || application.birthDate
     const entered = birth && typeof birth.toDate === 'function' ? birth.toDate().toISOString().slice(0, 10) : birth instanceof Date ? birth.toISOString().slice(0, 10) : birth
     results.push(comparison('birthDate', 'Birth date', entered, extractLabelled(text, ['birth\\s*date', 'date\\s+of\\s+birth', 'dob']), evidenceConfidence, 'date'))

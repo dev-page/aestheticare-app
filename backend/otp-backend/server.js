@@ -199,18 +199,13 @@ const REGISTRATION_DOCUMENT_REQUIREMENTS = {
   clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'birRegistration', 'sanitaryCertificate'],
 }
 const AUTHORIZATION_DOCUMENT_KEY = 'authorizationLetter'
-const GOVERNMENT_ID_SELFIE_DOCUMENT_KEY = 'governmentIdSelfieWithId'
 const SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS = new Set([
   ...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic,
-  GOVERNMENT_ID_SELFIE_DOCUMENT_KEY,
   AUTHORIZATION_DOCUMENT_KEY,
 ])
 const getRegistrationDocumentRequirements = (applicantType, application = {}) => {
   const baseRequirements = REGISTRATION_DOCUMENT_REQUIREMENTS[applicantType] || []
   const requirements = [...baseRequirements]
-  if (applicantType === 'clinic' && application.governmentIdSelfieRequired === true) {
-    requirements.splice(2, 0, GOVERNMENT_ID_SELFIE_DOCUMENT_KEY)
-  }
   if (application.permitHolderIsRegistrant === false) requirements.push(AUTHORIZATION_DOCUMENT_KEY)
   return requirements
 }
@@ -233,13 +228,12 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
 ])
 const REGISTRATION_NAME_MATCH_DOCUMENTS = new Set([
   'governmentIdRepresentativeFront',
-  GOVERNMENT_ID_SELFIE_DOCUMENT_KEY,
   ...BUSINESS_NAME_REQUIREMENTS,
 ])
 const REGISTRATION_NAME_MATCH_POLICY_VERSION = 1
 const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
 const getRegistrationDocumentMinimumTextLength = (docKey) =>
-  ['governmentIdRepresentativeBack', GOVERNMENT_ID_SELFIE_DOCUMENT_KEY].includes(String(docKey || '').trim()) ? 10 : 30
+  String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
 const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
 const getRegistrationNameInputsHash = (application = {}, user = {}) => {
   const snapshot = application.registrationOcrSnapshot || {}
@@ -389,7 +383,6 @@ const hasActiveRegistrationExpiryHold = (verificationResults = {}) => Object.val
   return getOcrExpiryValidation(`Expiry date: ${expiry}`, true).accountHold
 })
 const registrationDocumentLabel = (key) => ({
-  governmentIdSelfieWithId: 'Selfie holding the same government-issued ID',
   businessPermit: 'Business Permit / Registration',
   dohAccreditation: 'DOH License to Operate',
   sanitaryCertificate: 'Sanitary Certificate',
@@ -406,11 +399,6 @@ const extractOcrDocumentNumber = (text) => {
     if (/^\d{2}-\d{2}-\d{4}$/.test(value) || /^\d{4}-\d{2}-\d{2}$/.test(value)) return false
     return /\d/.test(value)
   }) || ''
-}
-const normalizeOcrIdNumber = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-const maskOcrIdNumber = (value) => {
-  const normalized = normalizeOcrIdNumber(value)
-  return normalized.length > 4 ? `••••${normalized.slice(-4)}` : normalized ? '••••' : ''
 }
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -2461,7 +2449,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   const storageBucket = bucketName ? admin.storage().bucket(bucketName) : null
   const visionClient = createVisionClient()
   const results = {}
-  let governmentIdNumberFromFront = ''
   const persistDocumentProgress = async () => {
     const processedDocuments = Object.keys(results).length
     await firestore.runTransaction(async (transaction) => {
@@ -2521,9 +2508,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       continue
     }
     const documentContentType = String(document.type || '').toLowerCase()
-    const supportedDocumentTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
-      ? ['image/jpeg', 'image/png']
-      : ['application/pdf', 'image/jpeg', 'image/png']
+    const supportedDocumentTypes = ['application/pdf', 'image/jpeg', 'image/png']
     if (!documentContentType || !supportedDocumentTypes.includes(documentContentType)) {
       result.reason = 'Unsupported document type.'
       results[docKey] = result
@@ -2588,24 +2573,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
       const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
       const documentNumberDetected = requiresDocumentNumber ? Boolean(detectedDocumentNumber) : null
-      let identityDocumentNumberMatch = null
-      if (docKey === 'governmentIdRepresentativeFront') {
-        governmentIdNumberFromFront = detectedDocumentNumber
-      }
-      if (docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY) {
-        const frontNumber = normalizeOcrIdNumber(governmentIdNumberFromFront)
-        const selfieNumber = normalizeOcrIdNumber(detectedDocumentNumber)
-        identityDocumentNumberMatch = frontNumber && selfieNumber
-          ? frontNumber === selfieNumber ? true : false
-          : null
-        comparisons.push({
-          field: 'governmentIdNumber',
-          label: 'ID number in front photo and selfie',
-          enteredValue: maskOcrIdNumber(governmentIdNumberFromFront),
-          detectedValue: maskOcrIdNumber(detectedDocumentNumber),
-          status: identityDocumentNumberMatch === null ? 'needs_review' : identityDocumentNumberMatch ? 'match' : 'mismatch',
-        })
-      }
       // Registration does not ask applicants to type document numbers. OCR
       // therefore verifies that a number is readable; it does not falsely
       // report a mismatch against a non-existent applicant-entered value.
@@ -2623,7 +2590,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         + expiryScore * 0.05
       ))
       result.numberMatch = numberMatch
-      result.detectedDocumentNumber = ['governmentIdRepresentativeFront', GOVERNMENT_ID_SELFIE_DOCUMENT_KEY].includes(docKey)
+      result.detectedDocumentNumber = docKey === 'governmentIdRepresentativeFront'
         ? ''
         : detectedDocumentNumber
       result.ocrConfidence = ocrConfidence
@@ -2640,7 +2607,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         nameCheckType: isAuthorizationDocument ? 'authorization_parties' : requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         documentNumberDetected,
-        identityDocumentNumberMatch,
         expiryValid: expiryApplicable ? expiryValid : null,
         expiryDate: expiryValidation.validTo,
         expiryValidationType: expiryValidation.type,
@@ -2664,14 +2630,13 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.confidence = confidence
       const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
         && (!expiryApplicable || expiryValid)
-        && (docKey !== GOVERNMENT_ID_SELFIE_DOCUMENT_KEY || identityDocumentNumberMatch === true)
       const expiredDocument = expiryApplicable && expiryValidation.expired
       const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
       const expiryAccountHold = expiryApplicable && expiryValidation.accountHold
       result.status = expiredDocument || invalidValidityRange
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
-        : isAuthorizationDocument || docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY ? 'manual_review'
+        : isAuthorizationDocument ? 'manual_review'
         : hasReadableText && confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
@@ -2687,8 +2652,6 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
       } else if (comparisons.some((item) => item.status === 'needs_review')) {
         result.reason = 'OCR could not confidently compare every entered value. Inspect the original document before making a decision.'
-      } else if (docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY) {
-        result.reason = 'OCR compared readable ID details. An administrator must manually review the selfie and verify that the same person is holding the submitted ID.'
       } else if (expiryApplicable && expiryValid !== true) {
         result.reason = 'A labelled validity period or expiry date could not be confirmed. This document requires manual review.'
       } else if (requiresDocumentNumber && !documentNumberDetected) {
@@ -3081,7 +3044,7 @@ const recoverClinicVerificationJobs = async ({ uid = '' } = {}) => {
 
     if (!uid) {
       const recoveryVersion = 'registration-ocr-storagebucket-reference-v1'
-      const keys = [...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic, GOVERNMENT_ID_SELFIE_DOCUMENT_KEY, AUTHORIZATION_DOCUMENT_KEY]
+      const keys = [...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic, AUTHORIZATION_DOCUMENT_KEY]
       const failedSnapshots = await Promise.all(keys.flatMap((docKey) => [
         firestore.collection('clinics')
           .where(`verificationResults.${docKey}.processingError`, '==', 'storageBucket is not defined')
@@ -3171,12 +3134,9 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       return res.status(409).json({ success: false, error: 'The permit-holder details cannot be changed during document resubmission. Refresh your registration and try again.' })
     }
 
-    const requireGovernmentIdSelfie = clinic.governmentIdSelfieRequired === true
-      || Object.keys(clinic.submittedDocuments || {}).length === 0
     const requiredKeys = getRegistrationDocumentRequirements('clinic', {
       ...clinic,
       permitHolderIsRegistrant,
-      governmentIdSelfieRequired: requireGovernmentIdSelfie,
     })
     const verificationRunId = crypto.randomUUID()
     const expiryDeadline = getTimestampDate(clinic.expiryResubmissionExpiresAt)
@@ -3216,9 +3176,7 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
       const fileSize = Number(entry.size || 0)
       const fileType = String(entry.type || '').toLowerCase()
-      const allowedTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
-        ? ['image/jpeg', 'image/png']
-        : ['application/pdf', 'image/jpeg', 'image/png']
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png']
       if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > 10 * 1024 * 1024
         || !allowedTypes.includes(fileType)) {
         return res.status(400).json({ success: false, error: `The ${registrationDocumentLabel(docKey)} file type or size is invalid.` })
@@ -3255,9 +3213,7 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
       const storedSize = Number(metadata?.size || 0)
       const storedType = String(metadata?.contentType || '').toLowerCase()
-      const allowedStoredTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
-        ? ['image/jpeg', 'image/png']
-        : ['application/pdf', 'image/jpeg', 'image/png']
+      const allowedStoredTypes = ['application/pdf', 'image/jpeg', 'image/png']
       if (!Number.isFinite(storedSize) || storedSize <= 0 || storedSize > 10 * 1024 * 1024
         || storedSize !== Number(document.size)
         || storedType !== document.type
@@ -3532,7 +3488,6 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         },
         documentsSubmittedAt: timestamp,
         submittedDocuments,
-        governmentIdSelfieRequired: requireGovernmentIdSelfie,
         registrationOcrSnapshot: ocrSnapshot,
         permitHolderIsRegistrant,
         permitHolderName: submittedHolderName,
@@ -3814,9 +3769,7 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
     }
     const contentType = String(metadata?.contentType || '').toLowerCase()
     const size = Number(metadata?.size || 0)
-    const allowedPreflightTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
-      ? ['image/jpeg', 'image/png']
-      : ['application/pdf', 'image/jpeg', 'image/png']
+    const allowedPreflightTypes = ['application/pdf', 'image/jpeg', 'image/png']
     if (!allowedPreflightTypes.includes(contentType)
       || !Number.isFinite(size) || size <= 0 || size > 10 * 1024 * 1024
       || Number(file.size) !== size || String(file.type || '').toLowerCase() !== contentType) {

@@ -293,7 +293,6 @@ const birRegistrationFile = ref(null)
 const sanitaryCertificateFile = ref(null)
 const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
-const governmentIdSelfieWithIdFile = ref(null)
 const dohAccreditationFile = ref(null)
 const fdaApprovalFile = ref(null)
 const authorizationLetterFile = ref(null)
@@ -305,7 +304,6 @@ const existingSubmittedDocuments = ref({
   sanitaryCertificate: null,
   governmentIdRepresentativeFront: null,
   governmentIdRepresentativeBack: null,
-  governmentIdSelfieWithId: null,
   dohAccreditation: null,
   fdaApproval: null,
   authorizationLetter: null,
@@ -318,7 +316,6 @@ const documentPreviewUrls = ref({
   sanitaryCertificate: '',
   governmentIdRepresentativeFront: '',
   governmentIdRepresentativeBack: '',
-  governmentIdSelfieWithId: '',
   dohAccreditation: '',
   fdaApproval: '',
   authorizationLetter: '',
@@ -332,7 +329,6 @@ const documentUploadState = ref({
   sanitaryCertificate: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeFront: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
-  governmentIdSelfieWithId: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
   fdaApproval: { uploading: false, progress: 0, error: '' },
   authorizationLetter: { uploading: false, progress: 0, error: '' },
@@ -345,7 +341,6 @@ const documentFileMap = {
   sanitaryCertificate: sanitaryCertificateFile,
   governmentIdRepresentativeFront: governmentIdRepresentativeFrontFile,
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
-  governmentIdSelfieWithId: governmentIdSelfieWithIdFile,
   dohAccreditation: dohAccreditationFile,
   fdaApproval: fdaApprovalFile,
   authorizationLetter: authorizationLetterFile,
@@ -362,7 +357,6 @@ const documentLabelMap = {
   sanitaryCertificate: 'Sanitary Certificate',
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
-  governmentIdSelfieWithId: 'Selfie Holding the Same Government-Issued ID',
   dohAccreditation: 'DOH License to Operate',
   fdaApproval: 'FDA Approval',
   authorizationLetter: 'Authorization Letter / Proof of Authority',
@@ -375,7 +369,6 @@ const documentInputKeys = ref({
   sanitaryCertificate: 0,
   governmentIdRepresentativeFront: 0,
   governmentIdRepresentativeBack: 0,
-  governmentIdSelfieWithId: 0,
   dohAccreditation: 0,
   fdaApproval: 0,
   authorizationLetter: 0,
@@ -386,7 +379,6 @@ const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 const NAME_MATCH_REQUIRED_DOCUMENT_KEYS = new Set([
   'governmentIdRepresentativeFront',
-  'governmentIdSelfieWithId',
   'businessPermit',
   'dohAccreditation',
   'birRegistration',
@@ -577,19 +569,12 @@ const companyDocumentKeys = [
   'sanitaryCertificate',
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
-  'governmentIdSelfieWithId',
   'dohAccreditation',
 ]
 const requiredDocumentKeys = computed(() => {
-  const hasExistingSelfie = Boolean(existingSubmittedDocuments.value.governmentIdSelfieWithId)
-  // Older expiry-only resubmissions should replace only the documents that
-  // failed expiry review. A newly submitted application or full resubmission
-  // requires the selfie document.
-  const requiresSelfie = !expiryResubmissionExpiresAt.value || hasExistingSelfie
-  const baseKeys = companyDocumentKeys.filter((key) => key !== 'governmentIdSelfieWithId' || requiresSelfie)
   return permitHolderIsRegistrant.value === false
-    ? [...baseKeys, 'authorizationLetter']
-    : baseKeys
+    ? [...companyDocumentKeys, 'authorizationLetter']
+    : companyDocumentKeys
 })
 const isExpiryPartialResubmission = computed(() => Boolean(
   expiryResubmissionExpiresAt.value
@@ -628,7 +613,6 @@ const documentKeysExcludingGovId = computed(() =>
     (key) => ![
       'governmentIdRepresentativeFront',
       'governmentIdRepresentativeBack',
-      'governmentIdSelfieWithId',
     ].includes(key)
   )
 )
@@ -1248,11 +1232,6 @@ const handleDocumentFileChange = async (key, event) => {
   const selectedFile = selectedFiles[0] || null
   if (!selectedFile) return
   const resetInput = () => { documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1 }
-  if (key === 'governmentIdSelfieWithId' && !['image/png', 'image/jpeg'].includes(selectedFile.type)) {
-    toast.error('Please upload a clear PNG or JPEG selfie holding your government-issued ID.')
-    resetInput()
-    return
-  }
   if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
     toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
     resetInput()
@@ -1499,7 +1478,6 @@ const applyProfileData = (profile) => {
     sanitaryCertificate: storedDocuments?.sanitaryCertificate || null,
     governmentIdRepresentativeFront: storedDocuments?.governmentIdRepresentativeFront || storedDocuments?.governmentIdRepresentative || null,
     governmentIdRepresentativeBack: storedDocuments?.governmentIdRepresentativeBack || null,
-    governmentIdSelfieWithId: storedDocuments?.governmentIdSelfieWithId || null,
     dohAccreditation: storedDocuments?.dohAccreditation || null,
     fdaApproval: storedDocuments?.fdaApproval || null,
     authorizationLetter: storedDocuments?.authorizationLetter || null,
@@ -1733,7 +1711,6 @@ const handleEmailDraftInput = () => {
     sanitaryCertificateFile.value = null
     governmentIdRepresentativeFrontFile.value = null
     governmentIdRepresentativeBackFile.value = null
-    governmentIdSelfieWithIdFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
     authorizationLetterFile.value = null
@@ -1748,7 +1725,6 @@ const handleEmailDraftInput = () => {
       sanitaryCertificate: null,
       governmentIdRepresentativeFront: null,
       governmentIdRepresentativeBack: null,
-      governmentIdSelfieWithId: null,
       dohAccreditation: null,
       fdaApproval: null,
       authorizationLetter: null,
@@ -1839,7 +1815,6 @@ const resetClinicRegistrationFlow = () => {
   sanitaryCertificateFile.value = null
   governmentIdRepresentativeFrontFile.value = null
   governmentIdRepresentativeBackFile.value = null
-  governmentIdSelfieWithIdFile.value = null
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
   authorizationLetterFile.value = null
@@ -1853,7 +1828,6 @@ const resetClinicRegistrationFlow = () => {
     sanitaryCertificate: null,
     governmentIdRepresentativeFront: null,
     governmentIdRepresentativeBack: null,
-    governmentIdSelfieWithId: null,
     dohAccreditation: null,
     fdaApproval: null,
     authorizationLetter: null,
@@ -3493,7 +3467,6 @@ const handleRegistrationSubmit = () => {
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
                   <li>Your government-issued ID must show the registrant name entered in Step 1.</li>
                   <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
-                  <li>Upload a clear JPEG or PNG selfie holding the same ID, with your face and the ID text visible. OCR checks readable name and birth-date text; an administrator compares the photos manually.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
                   <li>Upload clear, complete, and unexpired documents. Each file must be 10 MB or smaller.</li>
@@ -3568,30 +3541,6 @@ const handleRegistrationSubmit = () => {
                     </div>
                   </div>
                   <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeBack }} will be kept from your previous submission.</div>
-                  <div v-if="documentsToUpload.includes('governmentIdSelfieWithId')" class="upload-card upload-card-full">
-                    <label for="registration-document-government-id-selfie" class="upload-label">{{ documentLabelMap.governmentIdSelfieWithId }}</label>
-                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">Keep your face and the front of the same ID clearly visible. Only PNG and JPEG photos are accepted.</p>
-                    <input id="registration-document-government-id-selfie" name="government-id-selfie-with-id" :key="documentInputKeys.governmentIdSelfieWithId" type="file" accept="image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdSelfieWithId', $event)" class="upload-input" />
-                    <img
-                      v-if="documentPreviewUrls.governmentIdSelfieWithId"
-                      :src="documentPreviewUrls.governmentIdSelfieWithId"
-                      :alt="`${documentLabelMap.governmentIdSelfieWithId} Preview`"
-                      class="upload-preview-image"
-                    />
-                    <p class="upload-file-name">
-                      {{ documentFileMap.governmentIdSelfieWithId?.value?.name || existingSubmittedDocuments.governmentIdSelfieWithId?.name || 'No file selected' }}
-                    </p>
-                    <div v-if="documentUploadState.governmentIdSelfieWithId.uploading" class="mt-3 space-y-1">
-                      <div class="flex items-center justify-between text-[11px] text-charcoal-500">
-                        <span>Uploading and checking readable ID details...</span>
-                        <span>{{ documentUploadState.governmentIdSelfieWithId.progress || 0 }}%</span>
-                      </div>
-                      <div class="h-2 overflow-hidden rounded-full bg-gold-100">
-                        <div class="h-full rounded-full bg-gold-600 transition-all duration-200" :style="{ width: `${documentUploadState.governmentIdSelfieWithId.progress || 0}%` }"></div>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-else class="upload-card upload-card-full flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdSelfieWithId }} will be kept from your previous submission.</div>
                 </div>
                 <div
                   v-for="docKey in documentKeysExcludingGovId"
