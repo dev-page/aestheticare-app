@@ -445,7 +445,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             const safeName = licenseFile.value.name.replace(/[^\w.\-]+/g, '_')
             const path = `practitioner-licenses/${ownerId}/${currentStaff.value.id}/${Date.now()}-${safeName}`
             const fileRef = storageRef(storage, path)
-            await uploadBytes(fileRef, licenseFile.value)
+            await uploadBytes(fileRef, licenseFile.value, { contentType: licenseFile.value.type })
             licenseDocument = { url: await getDownloadURL(fileRef), name: licenseFile.value.name }
           }
           if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || licenseDocument) {

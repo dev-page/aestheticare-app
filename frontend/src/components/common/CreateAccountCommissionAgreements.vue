@@ -91,46 +91,46 @@ const addRate = () => form.rates.push({
 </script>
 
 <template>
-  <div class="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4">
+  <div class="create-account-commission mt-4 rounded-xl border border-[#ead2b2] bg-[#fffaf3] p-4 text-[#3d281d]">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h4 class="font-semibold text-slate-100">Service commissions</h4>
+        <h4 class="font-semibold text-[#3d281d]">Service commissions</h4>
         <p class="mt-1 text-sm text-slate-400">Set the employee’s rate for completed services or consultations. These agreements use the same rules as Employee Compensation.</p>
       </div>
-      <button type="button" class="rounded-lg border border-amber-500/50 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50" :disabled="loading || !services.length" @click="addRate">Add commission rate</button>
+      <button type="button" class="rounded-lg border border-[#cf9f78] bg-[#fffdf9] px-3 py-2 text-sm font-semibold text-[#70482e] hover:bg-[#f8ead4] disabled:opacity-50" :disabled="loading || !services.length" @click="addRate">Add commission rate</button>
     </div>
 
     <p v-if="loading" class="mt-3 text-sm text-slate-400" role="status">Loading service listings…</p>
-    <p v-else-if="loadError" class="mt-3 text-sm text-amber-200" role="status">{{ loadError }} Commission agreements can be added later in Employee Compensation.</p>
-    <p v-else-if="!services.length" class="mt-3 text-sm text-slate-400">Create a service or consultation listing first. Commission agreements can be added later.</p>
+    <p v-else-if="loadError" class="mt-3 text-sm text-[#805337]" role="status">{{ loadError }} Commission agreements can be added later in Employee Compensation.</p>
+    <p v-else-if="!services.length" class="mt-3 text-sm text-[#765d4c]">Create a service or consultation listing first. Commission agreements can be added later.</p>
 
     <div v-if="services.length" class="mt-4">
-      <h5 class="text-sm font-medium text-slate-200">Services this practitioner may perform</h5>
+      <h5 class="text-sm font-medium text-[#5d4536]">Services this practitioner may perform</h5>
       <div class="mt-2 grid gap-2 sm:grid-cols-2">
-        <label v-for="service in services" :key="service.id" class="flex items-start gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300">
+        <label v-for="service in services" :key="service.id" class="flex items-start gap-2 rounded-lg border border-[#ead2b2] bg-[#fffdf9] px-3 py-2 text-sm text-[#5d4536]">
           <input v-model="form.approvedServiceIds" type="checkbox" :value="service.id" class="mt-0.5 accent-amber-600" />
           <span>{{ service.title || service.serviceName || service.consultationName || 'Untitled service' }}</span>
         </label>
       </div>
-      <p class="mt-2 text-xs text-slate-500">A practitioner must be approved for a service before they can be assigned to perform it.</p>
+      <p class="mt-2 text-xs text-[#765d4c]">A practitioner must be approved for a service before they can be assigned to perform it.</p>
     </div>
 
-    <p v-if="validationError" class="mt-3 text-sm text-rose-300" role="alert">{{ validationError }}</p>
+    <p v-if="validationError" class="mt-3 text-sm text-[#a13732]" role="alert">{{ validationError }}</p>
 
-    <div v-for="(rate, index) in form.rates" :key="index" class="mt-3 grid gap-3 rounded-lg border border-slate-700 p-3 sm:grid-cols-2">
+    <div v-for="(rate, index) in form.rates" :key="index" class="mt-3 grid gap-3 rounded-lg border border-[#ead2b2] bg-[#fffdf9] p-3 sm:grid-cols-2">
       <ContractAppearanceSelect :id="`new-staff-commission-service-${index}`" v-model="rate.serviceId" label="Service" :options="[{ value: '', label: 'All approved services' }, ...serviceOptions]" />
       <ContractAppearanceSelect :id="`new-staff-commission-responsibility-${index}`" v-model="rate.responsibility" label="Responsibility" :options="[{ value: 'lead', label: 'Lead' }, { value: 'assistant', label: 'Assistant' }]" />
       <ContractAppearanceSelect :id="`new-staff-commission-model-${index}`" v-model="rate.model" label="Commission type" :options="[{ value: 'percent', label: 'Percentage' }, { value: 'fixed', label: 'Fixed fee (PHP)' }]" />
-      <label class="block text-sm font-medium text-slate-300">Rate
-        <input v-model.number="rate.amount" type="number" min="0" :max="rate.model === 'percent' ? 100 : undefined" step="0.01" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+      <label class="block text-sm font-medium text-[#5d4536]">Rate
+        <input v-model.number="rate.amount" type="number" min="0" :max="rate.model === 'percent' ? 100 : undefined" step="0.01" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
-      <label class="block text-sm font-medium text-slate-300">Effective from
-        <input v-model="rate.effectiveFrom" type="date" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+      <label class="block text-sm font-medium text-[#5d4536]">Effective from
+        <input v-model="rate.effectiveFrom" type="date" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
-      <label class="block text-sm font-medium text-slate-300">Effective until (optional)
-        <input v-model="rate.effectiveUntil" type="date" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+      <label class="block text-sm font-medium text-[#5d4536]">Effective until (optional)
+        <input v-model="rate.effectiveUntil" type="date" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
-      <button type="button" class="justify-self-start rounded-lg border border-rose-500/40 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/10 sm:col-span-2" @click="form.rates.splice(index, 1)">Remove rate</button>
+      <button type="button" class="justify-self-start rounded-lg border border-[#e8bdb5] bg-[#fff8f6] px-3 py-2 text-sm text-[#a13732] hover:bg-[#fbe9e5] sm:col-span-2" @click="form.rates.splice(index, 1)">Remove rate</button>
     </div>
   </div>
 </template>

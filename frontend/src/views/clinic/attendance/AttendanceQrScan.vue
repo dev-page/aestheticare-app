@@ -1,6 +1,7 @@
 <template>
-  <div class="attendance-page module-theme min-h-screen bg-slate-900 p-4 md:p-8">
-    <main class="mx-auto max-w-5xl space-y-6">
+  <div class="attendance-page module-theme flex min-h-screen bg-slate-900 text-white">
+    <EmployeeSidebar />
+    <main class="mx-auto w-full min-w-0 max-w-7xl space-y-6 p-4 md:p-8">
       <header class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <button
@@ -128,12 +129,13 @@ import { auth, db, storage } from '@/config/firebaseConfig'
 import { parseClockToMinutes } from '@/utils/attendanceStatus'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import AttendanceCamera from '@/components/common/AttendanceCamera.vue'
+import EmployeeSidebar from '@/components/sidebar/EmployeeSidebar.vue'
 
 const READER_ID = 'attendance-qr-reader'
 
 export default {
   name: 'AttendanceQrScan',
-  components: { AttendanceCamera },
+  components: { AttendanceCamera, EmployeeSidebar },
   setup() {
     const router = useRouter()
 

@@ -101,7 +101,13 @@ export default {
         to: '/hr/attendance/scan',
         feature: 'attendance'
       })
-      baseItems.push({ label: 'My Payslips', icon: 'report', to: '/hr/my-payslips', permission: 'profile:view', feature: 'payroll' })
+      baseItems.splice(2, 0, {
+        label: 'My Payslips',
+        icon: 'report',
+        to: '/hr/my-payslips',
+        permission: 'profile:view',
+        feature: 'payroll'
+      })
 
       return baseItems
         .map((item) => {

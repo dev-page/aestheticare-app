@@ -5,7 +5,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -793,7 +793,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         const uid = userCredential.user.uid
-        let practitionerLicenseFileRef = null
         let profileCreated = false
         let scheduleWarning = ''
         let commissionWarning = ''
@@ -804,13 +803,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           let practitionerLicenseStoragePath = ''
 
           if (isPractitionerRole.value && practitionerIdFile.value) {
-            const ownerId = auth.currentUser?.uid || 'unknown'
+            const ownerId = auth.currentUser?.uid
+            if (!ownerId) throw new Error('Your session expired. Sign in again and retry.')
             const safeName = practitionerIdFile.value.name.replace(/[^\w.\-]+/g, '_')
             const filePath = `practitioner-licenses/${ownerId}/${uid}/${Date.now()}-${safeName}`
             const fileRef = storageRef(storage, filePath)
-            practitionerLicenseFileRef = fileRef
             practitionerLicenseStoragePath = filePath
-            await uploadBytes(fileRef, practitionerIdFile.value)
+            await uploadBytes(fileRef, practitionerIdFile.value, { contentType: practitionerIdFile.value.type })
             practitionerLicenseUrl = await getDownloadURL(fileRef)
             practitionerLicenseName = practitionerIdFile.value.name
           }
@@ -937,7 +936,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           // Step 3: Rollback Auth if Firestore fails
           await Promise.allSettled([
             userCredential.user.delete(),
-            practitionerLicenseFileRef ? deleteObject(practitionerLicenseFileRef) : Promise.resolve(),
           ])
           console.error("Error creating the employee profile:", firestoreError)
           toast.error(firestoreError.message || 'Failed to create the employee profile. The new account was rolled back.')
@@ -1025,10 +1023,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme w-full" :class="embedded ? 'fixed inset-0 z-[10000] items-center justify-center bg-black/70 p-2 sm:p-5' : inline ? 'min-w-0' : 'bg-slate-900 min-h-screen'" :tabindex="embedded ? -1 : undefined" @click.self="embedded && requestClose()" @keydown.esc.stop.prevent="embedded && requestClose()">
+  <div class="add-staff-root flex flex-row owner-theme w-full" :class="[embedded ? 'is-embedded fixed inset-0 z-[10000] items-center justify-center bg-black/70 p-2 sm:p-5' : inline ? 'min-w-0' : 'min-h-screen']" :tabindex="embedded ? -1 : undefined" @click.self="embedded && requestClose()" @keydown.esc.stop.prevent="embedded && requestClose()">
     <OwnerSidebar v-if="!embedded && !inline" />
 
-    <component v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 3, header: !embedded && !inline }" :is="embedded || inline ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? 'max-h-[96vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl sm:p-6' : inline ? 'w-full min-w-0' : 'p-4 md:p-8'" :role="embedded ? 'dialog' : undefined" :aria-modal="embedded ? 'true' : undefined" :aria-label="embedded ? 'Create employee account' : undefined">
+    <component v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 3, header: !embedded && !inline }" :is="embedded || inline ? 'div' : 'main'" class="add-staff-content flex-1 min-w-0" :class="embedded ? 'max-h-[96vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl sm:p-6' : inline ? 'w-full min-w-0' : 'p-4 md:p-8'" :role="embedded ? 'dialog' : undefined" :aria-modal="embedded ? 'true' : undefined" :aria-label="embedded ? 'Create employee account' : undefined">
       <!-- Page Header -->
       <div v-if="!embedded && !inline" class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
@@ -1047,7 +1045,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       </div>
 
       <!-- Add Staff Member Form -->
-      <div v-else :class="embedded || inline ? 'w-full' : 'mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8'">
+      <div v-else class="add-staff-form-card" :class="embedded || inline ? 'w-full' : 'mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8'">
         <form class="space-y-6" @submit.prevent="goToNextStep" :aria-busy="savingStaff">
           <header class="flex items-start justify-between gap-4 border-b border-slate-700 pb-4">
             <div>
@@ -1407,6 +1405,87 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 <style scoped>
 .owner-theme {
   --sidebar-width: 16rem;
+}
+
+.add-staff-root:not(.is-embedded) {
+  background: #fff7ec !important;
+}
+
+.add-staff-content {
+  --ac-surface: #fffdf9;
+  --ac-surface-soft: #fff7ec;
+  --ac-surface-muted: #f8ead4;
+  --ac-border: #ead2b2;
+  --ac-border-strong: #cf9f78;
+  --ac-text: #342419;
+  --ac-text-secondary: #624733;
+  --ac-text-muted: #795f4b;
+  --ac-on-primary: #fffaf3;
+  background: #fffdf9 !important;
+  color: #342419;
+}
+
+.add-staff-form-card {
+  background: #fffdf9 !important;
+  border-color: #ead2b2 !important;
+  color: #342419;
+}
+
+.add-staff-content :deep(.bg-slate-900),
+.add-staff-content :deep([class~="bg-slate-900/50"]),
+.add-staff-content :deep([class~="bg-slate-900/70"]),
+.add-staff-content :deep(.bg-slate-800),
+.add-staff-content :deep([class~="bg-slate-800/50"]) {
+  background-color: #fffaf3 !important;
+}
+
+.add-staff-content :deep(.text-white),
+.add-staff-content :deep(.text-slate-100),
+.add-staff-content :deep(.text-slate-200),
+.add-staff-content :deep(.text-slate-300) {
+  color: #3d281d !important;
+}
+
+.add-staff-content :deep(.text-slate-400),
+.add-staff-content :deep(.text-slate-500) {
+  color: #765d4c !important;
+}
+
+.add-staff-content :deep(.text-amber-100) {
+  color: #754824 !important;
+}
+
+.add-staff-content :deep(.text-amber-200),
+.add-staff-content :deep(.text-amber-300) {
+  color: #8a5734 !important;
+}
+
+.add-staff-content :deep(.text-emerald-100) {
+  color: #276448 !important;
+}
+
+.add-staff-content :deep(.text-rose-200),
+.add-staff-content :deep(.text-rose-300),
+.add-staff-content :deep(.text-red-400) {
+  color: #a13732 !important;
+}
+
+.add-staff-content :deep(.border-slate-700),
+.add-staff-content :deep(.border-slate-600) {
+  border-color: #ead2b2 !important;
+}
+
+.add-staff-content :deep(input:not([type="checkbox"]):not([type="radio"])),
+.add-staff-content :deep(select),
+.add-staff-content :deep(textarea) {
+  color-scheme: light;
+  background-color: #fffdf9 !important;
+  color: #342419 !important;
+  border-color: #dec19e !important;
+}
+
+.add-staff-content :deep(.bg-amber-700.text-white) {
+  color: #fffaf3 !important;
 }
 
 .add-staff-select {

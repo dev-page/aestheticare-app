@@ -9582,6 +9582,8 @@ app.put('/staff/:userId/recurring-schedule', requireAuth, async (req, res) => {
 // here.  In particular, a caller cannot write an arbitrary branchId/branchIds
 // pair directly to Firestore.
 app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'), async (req, res) => {
+  let profileCreated = false
+  let practitionerLicenseCleanup = null
   try {
     const targetId = String(req.params.userId || '').trim()
     const input = req.body || {}
@@ -9682,12 +9684,11 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       if (!practitionerLicenseUrl || !practitionerLicenseName || !practitionerLicenseStoragePath) {
         return res.status(400).json({ success: false, error: 'Upload a current practitioner license before creating this account.' })
       }
-      const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
       const expectedPrefix = `practitioner-licenses/${req.user.uid}/${targetId}/`
       const licenseObjectName = practitionerLicenseStoragePath.startsWith(expectedPrefix)
         ? practitionerLicenseStoragePath.slice(expectedPrefix.length)
         : ''
-      if (!bucketName || !/^\d+-[A-Za-z0-9_.-]+$/.test(licenseObjectName)) {
+      if (!/^\d+-[A-Za-z0-9_.-]+$/.test(licenseObjectName)) {
         return res.status(400).json({ success: false, error: 'The practitioner license upload is invalid. Upload the document again.' })
       }
       let parsedLicenseUrl
@@ -9698,11 +9699,22 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
         urlBucket = urlObject ? decodeURIComponent(urlObject[1]) : ''
         urlStoragePath = urlObject ? decodeURIComponent(urlObject[2]) : ''
       } catch {}
+      const projectId = String(firebaseProjectId || admin.app().options.projectId || '').trim()
+      const projectBuckets = new Set([
+        firebaseStorageBucket,
+        projectId ? `${projectId}.firebasestorage.app` : '',
+        projectId ? `${projectId}.appspot.com` : '',
+      ].filter(Boolean))
       if (parsedLicenseUrl?.origin !== 'https://firebasestorage.googleapis.com'
-        || urlBucket !== bucketName || urlStoragePath !== practitionerLicenseStoragePath) {
+        || !projectBuckets.has(urlBucket) || urlStoragePath !== practitionerLicenseStoragePath) {
         return res.status(400).json({ success: false, error: 'The practitioner license upload is invalid. Upload the document again.' })
       }
-      const licenseFile = admin.storage().bucket(bucketName).file(practitionerLicenseStoragePath)
+      // Firebase projects may still have an older .appspot.com bucket name
+      // configured on the backend while the web app uploads to the newer
+      // .firebasestorage.app bucket. Accept only known bucket names for this
+      // Firebase project and read the exact bucket named by the download URL.
+      practitionerLicenseCleanup = { bucket: urlBucket, path: practitionerLicenseStoragePath }
+      const licenseFile = admin.storage().bucket(urlBucket).file(practitionerLicenseStoragePath)
       let licenseMetadata
       try {
         [licenseMetadata] = await licenseFile.getMetadata()
@@ -9784,6 +9796,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       }, { merge: true })
     }
     await profileBatch.commit()
+    profileCreated = true
     res.status(201).json({ success: true, data: { id: targetId, branchId: branchIds[0], branchIds } })
   } catch (error) {
     console.error('Create staff profile failed:', error)
@@ -9794,6 +9807,19 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       ? String(error.message || 'Unable to create employee profile.')
       : 'Unable to create employee profile.'
     res.status(status).json({ success: false, error: message })
+  } finally {
+    // Browser Storage rules intentionally make credential uploads immutable.
+    // Clean up failed profile submissions with the trusted Admin SDK instead
+    // of issuing a client delete that would always be denied.
+    if (!profileCreated && practitionerLicenseCleanup) {
+      try {
+        await admin.storage().bucket(practitionerLicenseCleanup.bucket)
+          .file(practitionerLicenseCleanup.path)
+          .delete({ ignoreNotFound: true })
+      } catch (cleanupError) {
+        console.warn('Unable to clean up an unlinked practitioner license upload:', cleanupError?.message || cleanupError)
+      }
+    }
   }
 })
 

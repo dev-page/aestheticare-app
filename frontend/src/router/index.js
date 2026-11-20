@@ -66,7 +66,7 @@ const routes = [
   //Hidden routes
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },
   { path: "/workspace/dashboard", name: "workspace-dashboard", component: () => import("@/views/admin/owner/employee/EmployeeDashboard.vue"), meta: { requiresAuth: true, requiresEmployee: true } },
-  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage", requiresFeature: "payroll" } },
+  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view", requiresFeature: "payroll" } },
   { path: "/account/profile", name: "account-profile", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
   { path: "/account/change-password", name: "account-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
   { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "attendance" } },

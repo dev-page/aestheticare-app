@@ -42,26 +42,20 @@
           <p class="text-slate-400 text-sm mb-2">Platform Revenue</p>
           <p class="text-white text-3xl font-bold">{{ formatCurrency(platformRevenue) }}</p>
         </div>
-
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 md:col-span-2 xl:col-span-2">
-          <p class="text-slate-400 text-sm mb-2">Clinic Revenue (All Clinics)</p>
-          <p class="text-white text-3xl font-bold">{{ formatCurrency(clinicRevenue) }}</p>
-        </div>
       </div>
 
       <section class="subscription-overview rounded-2xl border p-5 sm:p-6">
         <div class="mb-5">
           <p class="subscription-overview__eyebrow">PLATFORM PLANS</p>
           <h2 class="mt-1 text-xl font-semibold">Subscription Overview</h2>
-          <p class="mt-1 text-sm">Number of clinics and users currently in trial, Basic, and Premium subscription states.</p>
+          <p class="mt-1 text-sm">Active subscriptions, counted once per clinic owner.</p>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">
           <article v-for="entry in subscriptionChart" :key="entry.key" class="subscription-card" :class="`subscription-card--${entry.key}`">
             <div class="subscription-card__heading"><span class="subscription-card__dot" aria-hidden="true"></span><span>{{ entry.label }}</span></div>
             <p class="subscription-card__value">{{ entry.value }}</p>
-            <div class="subscription-card__meta"><span>Relative to largest plan</span><span>{{ Math.round(entry.width) }}%</span></div>
-            <div class="subscription-card__track" role="meter" :aria-label="`${entry.label} relative count`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(entry.width)">
+            <div class="subscription-card__track" role="meter" :aria-label="`${entry.label} plan comparison`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(entry.width)">
               <div class="subscription-card__fill" :style="{ width: `${entry.width}%` }"></div>
             </div>
           </article>
@@ -80,41 +74,50 @@ import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
 import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 import DashboardSkeleton from '@/components/common/DashboardSkeleton.vue'
+import { subscriptionRecord } from '../../../../shared/subscriptionDates.js'
+import { subscriptionLifecycle } from '../../../../shared/subscriptionLifecycle.js'
 
 const toNumber = (value) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const normalizePlan = (value) => {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return null
-  if (raw === 'free-trial' || raw === 'trial') return 'freeTrial'
-  if (raw.includes('basic')) return 'basic'
-  if (raw.includes('premium')) return 'premium'
-  return null
-}
+const countActiveClinicSubscriptions = (clinics, users, now = new Date()) => {
+  const usersById = new Map(users.map((user) => [user.id, user]))
+  const usersByEmail = new Map(users
+    .map((user) => [String(user.email || '').trim().toLowerCase(), user])
+    .filter(([email]) => email))
+  const activeClinicGroups = new Map()
 
-const extractPlanFromRecord = (record = {}) => {
-  if (String(record.paymentStatus || '').trim().toLowerCase() === 'trial') return 'freeTrial'
-  const direct = [
-    record.subscriptionPlan,
-    record.plan,
-    record.planName,
-    record.selectedPlan,
-    record.tier,
-    record.package,
-    record.subscription?.plan,
-    record.subscription?.name,
-    record.subscriptionDetails?.plan
-  ]
+  clinics.forEach((clinic) => {
+    const approvalStatus = String(clinic.approvalStatus || '').trim().toLowerCase()
+    const centerStatus = String(clinic.status || clinic.moderationStatus || 'Active').trim().toLowerCase()
+    if (!approvalStatus.includes('approved') || centerStatus !== 'active') return
 
-  for (const candidate of direct) {
-    const normalized = normalizePlan(candidate)
-    if (normalized) return normalized
-  }
+    const ownerId = String(clinic.ownerId || clinic.ownerUid || clinic.userId || clinic.uid || clinic.id || '').trim()
+    const ownerEmail = String(clinic.ownerEmail || clinic.email || clinic.registrantEmail || '').trim().toLowerCase()
+    const ownerKey = ownerId || (ownerEmail ? `email:${ownerEmail}` : `clinic:${clinic.id}`)
+    if (!activeClinicGroups.has(ownerKey)) {
+      activeClinicGroups.set(ownerKey, { ownerId, ownerEmail, clinics: [] })
+    }
+    activeClinicGroups.get(ownerKey).clinics.push(clinic)
+  })
 
-  return null
+  const counts = { freeTrial: 0, basic: 0, premium: 0 }
+  activeClinicGroups.forEach(({ ownerId, ownerEmail, clinics: ownerClinics }) => {
+    const owner = (ownerId && usersById.get(ownerId)) || usersByEmail.get(ownerEmail) || {}
+    const clinic = ownerClinics.find((record) => record.id === ownerId)
+      || ownerClinics.find((record) => subscriptionLifecycle(record, now).plan)
+      || ownerClinics[0]
+    const lifecycle = subscriptionLifecycle(subscriptionRecord(owner, clinic), now)
+    if (!lifecycle.isOperational) return
+
+    if (lifecycle.trial) counts.freeTrial += 1
+    else if (lifecycle.plan === 'basic') counts.basic += 1
+    else if (lifecycle.plan === 'premium') counts.premium += 1
+  })
+
+  return counts
 }
 
 export default {
@@ -130,14 +133,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const totalUsers = ref(0)
     const activeSubscriptions = ref(0)
     const platformRevenue = ref(0)
-    const clinicRevenue = ref(0)
 
     const freeTrialCount = ref(0)
     const basicCount = ref(0)
     const premiumCount = ref(0)
-    // planPayments is the current, rule-protected subscription payment source.
-    // The older subscriptionPayments and payments collections have no client
-    // read rule and must not be queried from the browser dashboard.
+    // planPayments is used for platform revenue only. Subscription counts are
+    // derived from active, approved clinic owners rather than payment history.
     const realtimeCollections = ['clinics', 'users', 'planPayments']
     const realtimeUnsubscribers = []
     let refreshTimer = null
@@ -189,21 +190,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return total
     })
 
-    const loadPlanPaymentCounts = trackPageLoad(async () => {
-      const snapshot = await safeGetDocs('planPayments')
-      let basic = 0
-      let premium = 0
-
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() || {}
-        const plan = normalizePlan(data.planId || data.planName || data.plan)
-        if (plan === 'basic') basic += 1
-        if (plan === 'premium') premium += 1
-      })
-
-      return { basic, premium }
-    })
-
     const safeGetDocs = async (collectionName) => {
       try {
         return await getDocs(collection(db, collectionName))
@@ -223,10 +209,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       error.value = ''
 
       try {
-        const [clinicsSnap, usersSnap, paymentCounts] = await Promise.all([
+        const [clinicsSnap, usersSnap] = await Promise.all([
           safeGetDocs('clinics'),
           safeGetDocs('users'),
-          loadPlanPaymentCounts(),
         ])
 
         const clinics = clinicsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
@@ -234,32 +219,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
         totalClinics.value = clinics.length
         totalUsers.value = users.length
-        clinicRevenue.value = clinics.reduce((sum, clinic) => sum + toNumber(clinic.revenue), 0)
-
-        let free = 0
-        let basic = 0
-        let premium = 0
-
-        clinics.forEach((clinic) => {
-          const plan = extractPlanFromRecord(clinic)
-          if (plan === 'freeTrial') free += 1
-          if (plan === 'basic') basic += 1
-          if (plan === 'premium') premium += 1
-        })
-
-        users.forEach((user) => {
-          const plan = extractPlanFromRecord(user)
-          if (plan === 'freeTrial') free += 1
-          if (plan === 'basic') basic += 1
-          if (plan === 'premium') premium += 1
-        })
-
-        const paidBasic = paymentCounts.basic
-        const paidPremium = paymentCounts.premium
-
-        freeTrialCount.value = free
-        basicCount.value = paidBasic > 0 ? paidBasic : basic
-        premiumCount.value = paidPremium > 0 ? paidPremium : premium
+        const subscriptionCounts = countActiveClinicSubscriptions(clinics, users)
+        freeTrialCount.value = subscriptionCounts.freeTrial
+        basicCount.value = subscriptionCounts.basic
+        premiumCount.value = subscriptionCounts.premium
         activeSubscriptions.value = freeTrialCount.value + basicCount.value + premiumCount.value
 
         platformRevenue.value = await loadPaymentRevenue()
@@ -306,7 +269,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       totalUsers,
       activeSubscriptions,
       platformRevenue,
-      clinicRevenue,
       subscriptionChart,
       formatCurrency,
       loadDashboard,
@@ -326,7 +288,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .subscription-card__heading { display: flex; align-items: center; gap: .55rem; color: var(--ac-text-secondary); font-size: .9rem; font-weight: 700; }
 .subscription-card__dot { width: .6rem; height: .6rem; border-radius: 999px; background: var(--plan-color); }
 .subscription-card__value { color: var(--ac-text); font-size: clamp(1.8rem, 3vw, 2.35rem); font-weight: 800; line-height: 1; }
-.subscription-card__meta { display: flex; justify-content: space-between; gap: .75rem; color: var(--ac-text-muted); font-size: .72rem; }
 .subscription-card__track { height: .55rem; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--plan-color) 14%, var(--ac-surface)); }
 .subscription-card__fill { height: 100%; border-radius: inherit; background: var(--plan-color); transition: width .25s ease; }
 @media (max-width: 767px) { .subscription-card { gap: .65rem; padding: .95rem; } }
