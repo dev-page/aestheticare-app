@@ -5,7 +5,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getFirestore, collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { deleteApp, getApp, initializeApp } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import Swal from 'sweetalert2'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -15,7 +15,7 @@ import { useSubscription } from '@/composables/useSubscription'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
-import { employeeSpecialtyTypes } from '../../../../../shared/practitionerTeam.js'
+import { employeeSpecialtyTypes, hasPractitionerPermissions } from '../../../../../shared/practitionerTeam.js'
 import { builtInRoleTemplates, getTemplatePermissions } from '../../../../../shared/clinicRoleTemplates.js'
 
 const PASSWORD_LENGTH = 12
@@ -100,6 +100,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       status: 'Active'
     })
     const practitionerIdFile = ref(null)
+    const practitionerLicenseInput = ref(null)
+    const practitionerOcrBusy = ref(false)
+    const practitionerOcrResult = ref(null)
+    let practitionerOcrSequence = 0
     const savingStaff = ref(false)
     const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
 
@@ -261,6 +265,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         status: 'Active'
       }
       practitionerIdFile.value = null
+      practitionerOcrSequence += 1
+      practitionerOcrBusy.value = false
+      practitionerOcrResult.value = null
+      if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
       if (isBasicPlan.value && branches.value.length > 0) {
         currentStaff.value.clinicBranch = branches.value[0].id
         currentStaff.value.branchIds = [branches.value[0].id]
@@ -402,7 +410,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.practitionerType = 'Choose a professional specialty for this Practitioner.'
       }
       if (isPractitionerRole.value && !practitionerIdFile.value) {
-        errors.practitionerId = 'Practitioner credential image is required.'
+        errors.practitionerId = 'Practitioner license image is required.'
+      } else if (isPractitionerRole.value && practitionerOcrBusy.value) {
+        errors.practitionerId = 'Checking the license name and expiration date...'
+      } else if (isPractitionerRole.value && practitionerOcrResult.value?.accepted !== true) {
+        errors.practitionerId = practitionerOcrResult.value?.reason || 'Verify the license name and expiration date before creating this account.'
       }
 
       return errors
@@ -468,24 +480,50 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (emailCheckingTimer.value) clearTimeout(emailCheckingTimer.value)
     })
     const isPractitionerRole = computed(() =>
-      selectedCustomRoles.value.some((role) => String(role.name || '').toLowerCase().includes('practitioner'))
+      selectedCustomRoles.value.some((role) => /\bpractitioner\b/i.test(String(role.name || '')) || hasPractitionerPermissions(role.permissions))
       || String(currentStaff.value.role || '').toLowerCase() === 'practitioner'
     )
     const showCredentialUpload = computed(() => isPractitionerRole.value)
     watch(isPractitionerRole, (isPractitioner) => {
       if (isPractitioner) return
+      practitionerOcrSequence += 1
+      practitionerOcrBusy.value = false
+      practitionerOcrResult.value = null
       currentStaff.value.practitionerType = ''
       practitionerIdFile.value = null
+      if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
     })
+    watch(
+      () => [currentStaff.value.firstName, currentStaff.value.middleName, currentStaff.value.lastName, currentStaff.value.suffix].map(value => String(value || '').trim()).join('|'),
+      () => {
+        if (!practitionerOcrBusy.value && !practitionerOcrResult.value) return
+        practitionerOcrSequence += 1
+        practitionerOcrBusy.value = false
+        practitionerOcrResult.value = null
+        practitionerIdFile.value = null
+        if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
+      }
+    )
     const selectedCustomRoleName = computed(() => {
       return selectedCustomRoles.value.map((role) => role.name).join(', ')
     })
 
-    const handlePractitionerFile = (event) => {
+    const readFileBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+      reader.onerror = () => reject(new Error('Unable to read the selected license image.'))
+      reader.readAsDataURL(file)
+    })
+
+    const handlePractitionerFile = async (event) => {
+      const sequence = ++practitionerOcrSequence
+      practitionerOcrBusy.value = false
+      practitionerOcrResult.value = null
       if ((event?.target?.files?.length || 0) > 1) {
         toast.error('Select only one practitioner license file.')
         event.target.value = ''
         practitionerIdFile.value = null
+        practitionerOcrResult.value = null
         return
       }
       const file = event?.target?.files?.[0] || null
@@ -498,19 +536,64 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('Upload one JPEG or PNG image.')
         event.target.value = ''
         practitionerIdFile.value = null
+        practitionerOcrResult.value = null
         return
       }
       if (file.size > 5 * 1024 * 1024) {
         toast.error('File must be 5MB or smaller.')
         event.target.value = ''
         practitionerIdFile.value = null
+        practitionerOcrResult.value = null
         return
       }
       practitionerIdFile.value = file
+      practitionerOcrBusy.value = true
+      const employeeName = {
+        firstName: currentStaff.value.firstName.trim(),
+        middleName: currentStaff.value.middleName.trim(),
+        lastName: currentStaff.value.lastName.trim(),
+        suffix: currentStaff.value.suffix.trim(),
+      }
+      try {
+        if (!employeeName.firstName || !employeeName.lastName) throw new Error('Enter the employee first and last name before uploading the license.')
+        const branchId = currentStaff.value.branchIds?.[0] || currentStaff.value.clinicBranch
+        if (!branchId) throw new Error('Choose a clinic branch before checking the license.')
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Your session expired. Sign in again and retry.')
+        const base64 = await readFileBase64(file)
+        const response = await fetch(`${OTP_API_BASE}/practitioner-license/ocr`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ branchId, ...employeeName, contentType, base64 }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to validate the practitioner license.')
+        if (sequence !== practitionerOcrSequence) return
+        practitionerOcrResult.value = payload.data || null
+        if (payload.data?.accepted !== true) {
+          practitionerIdFile.value = null
+          event.target.value = ''
+          toast.error(payload.data?.reason || 'The license could not be validated. Upload a clear, current document.')
+        } else {
+          toast.success('Employee name and license expiration date verified.')
+        }
+      } catch (error) {
+        if (sequence !== practitionerOcrSequence) return
+        practitionerIdFile.value = null
+        event.target.value = ''
+        practitionerOcrResult.value = { accepted: false, reason: error.message || 'Unable to validate the license image.' }
+        toast.error(practitionerOcrResult.value.reason)
+      } finally {
+        if (sequence === practitionerOcrSequence) practitionerOcrBusy.value = false
+      }
     }
 
     const clearPractitionerFile = () => {
+      practitionerOcrSequence += 1
+      practitionerOcrBusy.value = false
       practitionerIdFile.value = null
+      practitionerOcrResult.value = null
+      if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
     }
 
     const sendStaffWelcomeEmail = async ({ email, fullName, defaultPassword, uid }) => {
@@ -600,16 +683,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         const uid = userCredential.user.uid
+        let practitionerLicenseFileRef = null
 
         try {
           let practitionerLicenseUrl = ''
           let practitionerLicenseName = ''
+          let practitionerLicenseStoragePath = ''
 
           if (isPractitionerRole.value && practitionerIdFile.value) {
             const ownerId = auth.currentUser?.uid || 'unknown'
             const safeName = practitionerIdFile.value.name.replace(/[^\w.\-]+/g, '_')
             const filePath = `practitioner-licenses/${ownerId}/${uid}/${Date.now()}-${safeName}`
             const fileRef = storageRef(storage, filePath)
+            practitionerLicenseFileRef = fileRef
+            practitionerLicenseStoragePath = filePath
             await uploadBytes(fileRef, practitionerIdFile.value)
             practitionerLicenseUrl = await getDownloadURL(fileRef)
             practitionerLicenseName = practitionerIdFile.value.name
@@ -645,6 +732,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             status: 'Pending Activation',
             practitionerLicenseUrl: practitionerLicenseUrl || null,
             practitionerLicenseName: practitionerLicenseName || null,
+            practitionerLicenseStoragePath: practitionerLicenseStoragePath || null,
+            credentialNumber: practitionerOcrResult.value?.licenseNumber || '',
             practitionerLicenseUploadedBy: practitionerLicenseUrl ? (auth.currentUser?.uid || null) : null,
             mustChangePassword: true,
             createdAt: new Date()
@@ -671,9 +760,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           resetForm()
         } catch (firestoreError) {
           // Step 3: Rollback Auth if Firestore fails
-          await userCredential.user.delete()
+          await Promise.allSettled([
+            userCredential.user.delete(),
+            practitionerLicenseFileRef ? deleteObject(practitionerLicenseFileRef) : Promise.resolve(),
+          ])
           console.error("Error creating the employee profile:", firestoreError)
-          toast.error("Failed to create the employee profile. The new account was rolled back.")
+          toast.error(firestoreError.message || 'Failed to create the employee profile. The new account was rolled back.')
         } finally {
           if (creatorAuth) {
             await signOut(creatorAuth).catch(() => {})
@@ -721,6 +813,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       showCredentialUpload,
       savingStaff,
       practitionerIdFile,
+      practitionerLicenseInput,
+      practitionerOcrBusy,
+      practitionerOcrResult,
       isFormEmpty,
       isBasicPlan,
       fieldErrors,
@@ -1013,6 +1108,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   <span v-if="!practitionerIdFile">Choose File</span>
                   <span v-else class="text-green-400">{{ practitionerIdFile.name }}</span>
                   <input
+                    ref="practitionerLicenseInput"
                     type="file"
                     accept="image/jpeg,image/png"
                     class="hidden"
@@ -1029,6 +1125,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 </button>
               </div>
               <p v-if="fieldErrors.practitionerId" class="mt-1 text-xs text-red-400">{{ fieldErrors.practitionerId }}</p>
+              <p v-else-if="practitionerOcrBusy" class="mt-1 text-xs text-slate-400" role="status">Checking the employee name and license expiration date…</p>
+              <p v-else-if="practitionerOcrResult?.accepted" class="mt-1 text-xs text-green-400" role="status">Name matched and license valid through {{ practitionerOcrResult.expiryDate }}.</p>
+              <p class="mt-1 text-xs text-slate-400">The image must show this employee’s name and a current expiration date. Both are checked before the account is created.</p>
               <p class="mt-1 text-xs text-slate-400">Accepted formats: one JPEG or PNG image (max 5MB).</p>
             </div>
           </div>

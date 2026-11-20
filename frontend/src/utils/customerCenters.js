@@ -1,6 +1,7 @@
 import { getCustomerCareListingName, isPublicClinicCustomerDiscoverable, isCustomerCareListing } from '../../../shared/customerCatalog.js'
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/config/firebaseConfig'
+import { OTP_API_BASE } from '@/utils/runtimeConfig'
 
 const FALLBACK_SERVICE = 'General Services'
 
@@ -119,25 +120,49 @@ const buildServiceMap = async (clinicIds) => {
   return serviceMap
 }
 
-export const fetchCustomerCenters = async () => {
-  // Read only published public profiles; clinic registration records stay private.
-  const clinicsSnapshot = await getDocs(
-    query(collection(db, 'publicClinics'), where('isPublished', '==', true))
-  )
-  const clinics = clinicsSnapshot.docs
-    .map((snap) => ({ id: snap.id, ...snap.data() }))
+const fetchPublicClinicProfiles = async () => {
+  const response = await fetch(`${OTP_API_BASE}/public/clinics`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.clinics)) {
+    throw new Error(payload?.error || 'Unable to load clinics right now.')
+  }
+  return payload.data.clinics
     .filter(isCenterDiscoverableClinic)
+}
+
+export const fetchPublicClinicProfile = async (branchId) => {
+  const normalizedBranchId = toText(branchId)
+  if (!normalizedBranchId) throw new Error('Branch not found.')
+  const response = await fetch(`${OTP_API_BASE}/public/clinics/${encodeURIComponent(normalizedBranchId)}/profile`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (response.status === 404) throw new Error('Branch not found.')
+  if (!response.ok || !payload?.success || !payload?.data?.clinic) {
+    throw new Error(payload?.error || 'Unable to load this clinic right now.')
+  }
+  return payload.data.clinic
+}
+
+export const fetchCustomerCenters = async () => {
+  const clinics = await fetchPublicClinicProfiles()
   const serviceMap = await buildServiceMap(clinics.map((clinic) => clinic.id))
   return buildCenters(clinics, serviceMap)
 }
 
 export const subscribeCustomerCenters = (onChange, onError) => {
-  let clinicUnsubscribe = null
   let serviceUnsubscribers = []
   let serviceSnapshots = new Map()
   let disposed = false
+  let refreshTimer = null
+  let refreshInFlight = false
+  let currentClinics = []
+  let currentClinicIds = ''
+  let refreshSequence = 0
 
-  const emit = (clinics) => {
+  const emit = () => {
     if (disposed) return
     const serviceMap = new Map()
     serviceSnapshots.forEach((posts, sourceKey) => {
@@ -152,7 +177,7 @@ export const subscribeCustomerCenters = (onChange, onError) => {
         serviceMap.get(branchId).add(serviceLabel)
       })
     })
-    onChange(buildCenters(clinics, serviceMap))
+    onChange(buildCenters(currentClinics, serviceMap))
   }
 
   const stopServiceListeners = () => {
@@ -167,54 +192,60 @@ export const subscribeCustomerCenters = (onChange, onError) => {
     serviceSnapshots = new Map()
   }
 
-  clinicUnsubscribe = onSnapshot(
-    query(collection(db, 'publicClinics'), where('isPublished', '==', true)),
-    (snapshot) => {
-      const clinics = snapshot.docs
-        .map((snap) => ({ id: snap.id, ...snap.data() }))
-        .filter(isCenterDiscoverableClinic)
+  const refresh = async () => {
+    if (disposed || refreshInFlight) return
+    refreshInFlight = true
+    const sequence = ++refreshSequence
+    try {
+      const clinics = await fetchPublicClinicProfiles()
+      if (disposed || sequence !== refreshSequence) return
+      const clinicIds = clinics.map((clinic) => clinic.id).sort().join('|')
+      currentClinics = clinics
+      if (clinicIds === currentClinicIds) {
+        emit()
+        return
+      }
+      currentClinicIds = clinicIds
       stopServiceListeners()
-
-      if (!clinics.length) {
-        emit([])
+      if (!currentClinics.length) {
+        emit()
         return
       }
 
-      const clinicIds = clinics.map((clinic) => clinic.id)
-      const chunks = chunkArray(clinicIds, 10)
+      const chunks = chunkArray(currentClinics.map((clinic) => clinic.id), 10)
       chunks.forEach((chunk) => {
         const sourceKey = chunk.join('|')
         const unsubscribe = onSnapshot(
           query(collection(db, 'productServicePosts'), where('branchId', 'in', chunk), where('financeStatus', '==', 'approved'), where('isPublished', '==', true)),
           (postsSnapshot) => {
-            serviceSnapshots.set(
-              sourceKey,
-              postsSnapshot.docs.map((docSnap) => docSnap.data() || {})
-            )
-            emit(clinics)
+            serviceSnapshots.set(sourceKey, postsSnapshot.docs.map((docSnap) => docSnap.data() || {}))
+            emit()
           },
           (error) => {
             console.warn('Could not load clinic service listings; using public profile services.', error)
             serviceSnapshots.delete(sourceKey)
-            emit(clinics)
+            emit()
           }
         )
         serviceUnsubscribers.push(unsubscribe)
       })
-
-      emit(clinics)
-    },
-    (error) => {
-      if (typeof onError === 'function') onError(error)
+      emit()
+    } catch (error) {
+      if (!currentClinics.length && typeof onError === 'function') onError(error)
+      else console.warn('Could not refresh public clinics; keeping the last result.', error)
+    } finally {
+      refreshInFlight = false
     }
-  )
+  }
+
+  void refresh()
+  refreshTimer = setInterval(() => { void refresh() }, 45000)
 
   return () => {
     disposed = true
+    refreshSequence += 1
+    if (refreshTimer) clearInterval(refreshTimer)
+    refreshTimer = null
     stopServiceListeners()
-    if (clinicUnsubscribe) {
-      clinicUnsubscribe()
-      clinicUnsubscribe = null
-    }
   }
 }

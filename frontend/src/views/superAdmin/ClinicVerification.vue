@@ -306,20 +306,13 @@
           <section class="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 class="text-white font-semibold">Document comparison and OCR</h3>
-                <p class="text-xs text-slate-400">Compare the entered details with the extracted values and the original documents. An administrator must review and approve the registration.</p>
+                <h3 class="text-white font-semibold">Document comparison and automatic OCR</h3>
+                <p class="text-xs text-slate-400">OCR runs automatically after the applicant submits. Review each original document and its comparisons manually before deciding.</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2 py-1 rounded-md text-xs border border-amber-500/40 bg-amber-500/20 text-amber-200 capitalize">
                   {{ selectedRecord.verificationStatus || 'Not processed' }}
                 </span>
-                <button
-                  v-if="isPendingRecord(selectedRecord)"
-                  type="button"
-                  class="rounded-lg border border-sky-500/50 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="processing || isAwaitingResubmission(selectedRecord) || isVerificationJobActive(selectedRecord)"
-                  @click="runClinicVerification"
-                >{{ isVerificationJobActive(selectedRecord) ? selectedRecord.verificationJob.status === 'queued' ? 'OCR queued' : 'OCR processing…' : processing ? 'Processing…' : selectedRecord.verificationResults?.length ? 'Run OCR again' : 'Run OCR' }}</button>
               </div>
             </div>
             <div v-if="selectedRecord.verificationJob" class="mt-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
@@ -564,6 +557,9 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
     { key: 'birRegistration', label: 'BIR 2303 or Certificate of Registration' },
     { key: 'sanitaryCertificate', label: 'Sanitary Certificate' },
   ]
+  if (docs.governmentIdSelfieWithId) {
+    definitions.splice(2, 0, { key: 'governmentIdSelfieWithId', label: 'Selfie Holding the Same Government-Issued ID' })
+  }
   if (docs.authorizationLetter) {
     definitions.push({ key: 'authorizationLetter', label: 'Authorization Letter / Proof of Authority' })
   }
@@ -586,6 +582,7 @@ const mapDocs = (submittedDocuments = {}, draftDocuments = {}) => {
 const verificationDocumentOrder = [
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
+  'governmentIdSelfieWithId',
   'businessPermit',
   'dohAccreditation',
   'birRegistration',
@@ -648,6 +645,7 @@ const formatDateValue = (value) => {
 const documentLabel = (key) => ({
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
+  governmentIdSelfieWithId: 'Selfie Holding the Same Government-Issued ID',
   businessPermit: 'Business Permit/Registration',
   dohAccreditation: 'DOH License to Operate',
   birRegistration: 'BIR 2303 or Certificate of Registration',
@@ -917,40 +915,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}. Ensure otp-backend is running.`)
     })
 
-    const refreshSelectedVerification = async (token) => {
-      const uid = selectedRecord.value?.id
-      if (!uid) throw new Error('The selected clinic registration is no longer available.')
-      const response = await fetchFromBackend(`/admin/clinic-review/${encodeURIComponent(uid)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Could not refresh OCR progress.')
-      const clinic = payload.data?.clinic || {}
-      selectedRecord.value = {
-        ...selectedRecord.value,
-        approvalStatus: clinic.approvalStatus || selectedRecord.value.approvalStatus,
-        registrationStatus: clinic.registrationStatus || selectedRecord.value.registrationStatus,
-        resubmissionRequired: Boolean(clinic.resubmissionRequired),
-        verificationStatus: clinic.verificationStatus || 'Not processed',
-        verificationThreshold: clinic.verificationThreshold ?? null,
-        verificationProcessedAt: clinic.verificationProcessedAt || null,
-        verificationResults: mapVerificationResults(clinic.verificationResults),
-        verificationJob: clinic.verificationJob || null,
-      }
-      return clinic.verificationJob || null
-    }
-
-    const waitForSelectedVerification = async (token, runId) => {
-      for (let attempt = 0; attempt < 160; attempt += 1) {
-        const job = await refreshSelectedVerification(token)
-        if (job?.runId !== runId) throw new Error('A newer OCR run replaced this job.')
-        if (job.status === 'completed') return job
-        if (job.status === 'failed') throw new Error(job.error || 'Clinic document OCR failed. You can run it again.')
-        await new Promise((resolve) => setTimeout(resolve, 1500))
-      }
-      throw new Error('OCR is still processing. The progress and retry status are saved on this registration.')
-    }
-
     const loadPendingClinics = () => {
       if (unsubscribeClinics) unsubscribeClinics()
       loading.value = true
@@ -1119,6 +1083,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         )
 
         pendingClinics.value = sortRecordsNewestFirst(rows)
+        const selectedFreshRecord = pendingClinics.value.find((clinic) => clinic.id === selectedRecord.value?.id)
+        if (selectedFreshRecord) {
+          selectedRecord.value = { ...selectedRecord.value, ...selectedFreshRecord }
+        }
         selectedOcrVerified.value = selectedOcrVerified.value.filter((id) => pendingClinics.value.some((clinic) => clinic.id === id && String(clinic.verificationStatus || '').toLowerCase() === 'ocr verified'))
       } catch (err) {
         console.error('Failed to load pending clinic registrations:', err)
@@ -1246,53 +1214,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         await Promise.all([loadPendingClinics(), loadVerifiedClinics(true)])
       } catch (err) {
         error.value = err?.message || 'Batch approval failed.'
-      } finally {
-        processing.value = false
-      }
-    }
-
-    const runClinicVerification = async () => {
-      if (!selectedRecord.value) return
-
-      const result = await systemAdminSwal.fire({
-        title: 'Run document OCR?',
-        text: 'The submitted documents will be processed again. An administrator must review the results and decide whether to approve the registration.',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Run verification',
-        cancelButtonText: 'Cancel',
-      })
-      if (!result.isConfirmed) return
-
-      processing.value = true
-      try {
-        const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : ''
-        if (!token) throw new Error('Missing authorization token')
-        const response = await fetchFromBackend('/admin/trigger-clinic-registration-verification', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ uid: selectedRecord.value.id, applicantType: 'clinic' }),
-        })
-        const payload = await response.json().catch(() => null)
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Automatic verification failed.')
-        const job = payload.data?.verificationJob
-        if (!job?.runId) throw new Error('The OCR job was not queued correctly.')
-        selectedRecord.value = { ...selectedRecord.value, verificationJob: job, verificationStatus: 'Queued for OCR' }
-        await waitForSelectedVerification(token, job.runId)
-
-        await systemAdminSwal.fire({
-          title: 'Verification Complete',
-          text: 'OCR processing finished. Review the updated comparisons and original documents before making a decision.',
-          icon: 'info',
-          confirmButtonText: 'Continue',
-        })
-        await Promise.all([loadPendingClinics(), loadVerifiedClinics(true)])
-      } catch (err) {
-        console.error('Failed to run clinic document verification:', err)
-        error.value = err?.message || 'Automatic verification failed. Please try again.'
       } finally {
         processing.value = false
       }
@@ -1525,7 +1446,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       batchApproveOcrVerified,
       requestResubmission,
       rejectSelected,
-      runClinicVerification,
       formatDateValue,
       documentLabel,
       documentUrl,

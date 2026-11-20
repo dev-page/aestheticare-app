@@ -43,7 +43,7 @@ export const findClinicNameMatches = (clinics = [], candidate = {}) => {
   if (!nameKey || nameKey.length < 3) return { sameName: false, sameLocation: false }
 
   const matchingClinics = clinics.filter((clinic) =>
-    normalizeClinicNameForMatch(clinic.clinicName) === nameKey
+    normalizeClinicNameForMatch(clinic.clinicName || clinic.businessName || clinic.companyName || clinic.organizationName) === nameKey
   )
   return {
     sameName: matchingClinics.length > 0,

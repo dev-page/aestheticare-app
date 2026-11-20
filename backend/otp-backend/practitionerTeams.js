@@ -1,5 +1,6 @@
 import { practitionerTypes, normalizePractitionerProfile, normalizeStaffing, rateFor, teamMeetsRequirements, appointmentStaffIds, appointmentServiceId, sessionEarningBase, calculateStaffEarnings } from '../../shared/practitionerTeam.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
+import { compareRegistrationFields } from './registrationComparisons.js'
 const check = (ok, message, status = 409) => { if (!ok) throw Object.assign(new Error(message), { status }) }
 const closed = row => ['completed', 'cancelled', 'rejected', 'expired', 'no-show', 'incomplete', 'forfeited'].includes(String(row.status || '').toLowerCase())
 const serviceIdFor = appointmentServiceId
@@ -46,6 +47,94 @@ export const extractPractitionerLicenseNumber = text => {
   return ''
 }
 
+const OCR_MONTH_PATTERN = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
+const OCR_DATE_TOKEN_PATTERN = `(?:\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}|\\d{1,2}[-\\/.]\\d{1,2}[-\\/.]\\d{4}|${OCR_MONTH_PATTERN}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?[,]?\\s+\\d{4}|\\d{1,2}(?:st|nd|rd|th)?\\s+${OCR_MONTH_PATTERN}\\.?[,]?\\s+\\d{4})`
+
+const normalizePractitionerLicenseDate = value => {
+  const raw = String(value || '').trim().toLowerCase().replace(/,/g, '')
+  const months = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6,
+    jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+  }
+  const numeric = raw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$|^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/)
+  let year = 0, month = 0, day = 0
+  if (numeric?.[1]) [year, month, day] = [Number(numeric[1]), Number(numeric[2]), Number(numeric[3])]
+  else if (numeric?.[6]) [year, month, day] = [Number(numeric[6]), Number(numeric[4]), Number(numeric[5])]
+  else {
+    const monthFirst = raw.match(new RegExp(`^(${OCR_MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(\\d{4})$`))
+    const dayFirst = raw.match(new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)?\\s+(${OCR_MONTH_PATTERN})\\.?\\s+(\\d{4})$`))
+    if (monthFirst) [year, month, day] = [Number(monthFirst[3]), months[monthFirst[1]], Number(monthFirst[2])]
+    else if (dayFirst) [year, month, day] = [Number(dayFirst[3]), months[dayFirst[2]], Number(dayFirst[1])]
+  }
+  if (!year || !month || !day) return ''
+  const date = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const parsed = new Date(`${date}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? date : ''
+}
+
+export const extractPractitionerLicenseExpiryDate = text => {
+  const expiryPattern = new RegExp(`(?:valid(?:ity)?(?:\\s+date)?\\s*(?:until|through|thru|to)?|valid\\s+up\\s+to|date\\s+valid\\s+(?:until|through|thru|to)|(?:date\\s+of\\s+)?expiry(?:\\s+date)?|(?:date\\s+of\\s+)?expiration(?:\\s+date)?|expires?(?:\\s+on)?)\\s*[:#-]?\\s*(${OCR_DATE_TOKEN_PATTERN})`, 'gi')
+  const dates = [...String(text || '').matchAll(expiryPattern)]
+    .map(match => normalizePractitionerLicenseDate(match[1]))
+    .filter(Boolean)
+  const unique = [...new Set(dates)]
+  return unique.length === 1 ? unique[0] : ''
+}
+
+export const validatePractitionerCredentialDocument = ({ text, firstName, middleName, lastName, suffix, confidence, today = null }) => {
+  const comparedName = compareRegistrationFields({
+    docKey: 'governmentIdRepresentativeFront',
+    text,
+    user: { firstName, middleName, lastName, suffix },
+    confidence,
+  }).find(result => result.field === 'registrantName') || { status: 'needs_review', detectedValue: '' }
+  const expectedMiddleTokens = String(middleName || '').toUpperCase().match(/[A-Z0-9]+/g) || []
+  const detectedNameTokens = String(comparedName.detectedValue || '').toUpperCase().match(/[A-Z0-9]+/g) || []
+  const nameStatus = comparedName.status === 'match'
+    && expectedMiddleTokens.some(token => !detectedNameTokens.includes(token))
+    ? 'mismatch'
+    : comparedName.status
+  const nameMatch = { ...comparedName, status: nameStatus }
+  const expiryDate = extractPractitionerLicenseExpiryDate(text)
+  const localParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).reduce((parts, part) => ({ ...parts, [part.type]: part.value }), {})
+  const todayKey = today || `${localParts.year}-${localParts.month}-${localParts.day}`
+  const expiryStatus = !expiryDate ? 'unreadable' : expiryDate < todayKey ? 'expired' : 'valid'
+  let reason = 'The license name matches the employee and the expiration date is valid.'
+  if (nameMatch.status === 'mismatch') reason = 'The name on the practitioner license does not match the employee name.'
+  else if (nameMatch.status !== 'match') reason = 'The practitioner license name could not be read confidently. Upload a clearer image with the name visible.'
+  else if (expiryStatus === 'unreadable') reason = 'The license expiration date could not be read. Upload a clear image showing its validity date.'
+  else if (expiryStatus === 'expired') reason = `The practitioner license expired on ${expiryDate}. Upload a current license.`
+  const accepted = nameMatch.status === 'match' && expiryStatus === 'valid'
+  return {
+    accepted,
+    status: accepted ? 'verified' : nameMatch.status === 'mismatch' || expiryStatus === 'expired' ? 'rejected' : 'needs_review',
+    reason,
+    nameMatch: { status: nameMatch.status, detectedValue: nameMatch.detectedValue || '' },
+    expiryDate,
+    expiryStatus,
+  }
+}
+
+export const readPractitionerLicenseOcr = async ({ visionClient, bytes, getVisionResponseError = () => '' }) => {
+  if (!visionClient) throw Object.assign(new Error('Document name checking is temporarily unavailable.'), { status: 503 })
+  const request = { image: { content: bytes } }
+  const [result] = await visionClient.documentTextDetection(request)
+  const primaryError = getVisionResponseError?.(result)
+  if (primaryError) throw new Error(primaryError)
+  let annotation = result?.fullTextAnnotation
+  let extractedText = String(annotation?.text || '').trim()
+  if (!extractedText) {
+    const [fallback] = await visionClient.textDetection(request)
+    const fallbackError = getVisionResponseError?.(fallback)
+    if (fallbackError) throw new Error(fallbackError)
+    extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
+    annotation = fallback?.fullTextAnnotation || annotation
+  }
+  return { annotation, extractedText }
+}
+
 export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence }) => {
   const db = admin.firestore(), now = () => admin.firestore.FieldValue.serverTimestamp()
   const route = (method, path, fn) => app[method](path, requireAuth, async (req, res) => {
@@ -66,34 +155,41 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
       check(['image/jpeg', 'image/png'].includes(contentType), 'Upload a JPEG or PNG image to use OCR.', 400)
       check(encoded.length >= 16 && encoded.length <= 7 * 1024 * 1024, 'The credential image must be 5 MB or smaller.', 400)
       await authorizeClinicAction(req.user.uid, branchId, employeeId ? 'staff:update' : 'staff:create')
+      let employeeName = {
+        firstName: String(req.body?.firstName || '').trim(),
+        middleName: String(req.body?.middleName || '').trim(),
+        lastName: String(req.body?.lastName || '').trim(),
+        suffix: String(req.body?.suffix || '').trim(),
+      }
+      if (employeeId) {
+        const employee = (await db.collection('users').doc(employeeId).get()).data()
+        check(employee && [employee.branchId, ...(employee.branchIds || [])].includes(branchId), 'Employee is not assigned to this branch.', 403)
+        employeeName = {
+          firstName: String(employee.firstName || '').trim(),
+          middleName: String(employee.middleName || '').trim(),
+          lastName: String(employee.lastName || '').trim(),
+          suffix: String(employee.suffix || '').trim(),
+        }
+      }
+      check(employeeName.firstName && employeeName.lastName, 'Enter the employee name before checking the license.', 400)
       const visionClient = createVisionClient?.()
-      if (!visionClient) return res.json({ success: true, data: { status: 'manual_review', reason: 'OCR is unavailable right now. Enter the license number manually and review the uploaded document.', extractedText: '', licenseNumber: '', confidence: null } })
       const image = Buffer.from(encoded, 'base64')
       check(image.length > 0 && image.length <= 5 * 1024 * 1024, 'The credential image must be 5 MB or smaller.', 400)
-      const request = { image: { content: image } }
-      const [result] = await visionClient.documentTextDetection(request)
-      const primaryError = getVisionResponseError?.(result)
-      if (primaryError) throw new Error(primaryError)
-      let annotation = result?.fullTextAnnotation
-      let extractedText = String(annotation?.text || '').trim()
-      if (!extractedText) {
-        const [fallback] = await visionClient.textDetection(request)
-        const fallbackError = getVisionResponseError?.(fallback)
-        if (fallbackError) throw new Error(fallbackError)
-        extractedText = String(fallback?.textAnnotations?.[0]?.description || '').trim()
-        annotation = fallback?.fullTextAnnotation || annotation
-      }
+      const { annotation, extractedText } = await readPractitionerLicenseOcr({ visionClient, bytes: image, getVisionResponseError })
       const licenseNumber = extractPractitionerLicenseNumber(extractedText)
       const confidence = getVisionWordConfidence(annotation)
+      const validation = validatePractitionerCredentialDocument({ ...employeeName, text: extractedText, confidence })
       return res.json({ success: true, data: {
-        status: extractedText ? 'manual_review' : 'unreadable',
-        reason: licenseNumber ? 'OCR found a possible license number. Confirm it against the document before saving.' : extractedText ? 'OCR read the document but could not confidently locate a license number. Enter it manually and review the document.' : 'OCR could not read text from this image. Upload a clearer image or enter the number manually.',
+        ...validation,
+        reason: validation.accepted
+          ? `${validation.reason}${licenseNumber ? ' The license number was also read.' : ''}`
+          : validation.reason,
         extractedText: extractedText.slice(0, 12000), licenseNumber, confidence,
       } })
     } catch (error) {
       if (error.status) return res.status(error.status).json({ success: false, error: error.message })
       console.error('Practitioner license OCR failed:', error?.message || error)
-      return res.json({ success: true, data: { status: 'manual_review', reason: 'OCR could not process this image. Enter the license number manually and review the uploaded document.', extractedText: '', licenseNumber: '', confidence: null } })
+      return res.status(503).json({ success: false, error: 'We could not read this license document. Upload a clearer image and try again.' })
     }
   })
   route('get', '/staff/:id/practitioner-details', async req => {

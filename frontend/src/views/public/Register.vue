@@ -4,7 +4,7 @@ import { Icon } from '@iconify/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { createUserWithEmailAndPassword, signInWithCustomToken, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { collection, doc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, doc, onSnapshot } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import { toast } from 'vue3-toastify'
 import { useThemeStore } from '@/stores/theme'
@@ -17,8 +17,6 @@ import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.v
 import RegisterCustomer from '@/views/public/RegisterCustomer.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../../../shared/clinicPlatformAgreement.js'
-import { findClinicNameMatches } from '../../../../shared/clinicNameMatching.js'
-import { isPublicClinicCustomerDiscoverable } from '../../../../shared/customerCatalog.js'
 import {
   validateCavitePinSelection,
 } from '@/utils/locationValidation'
@@ -295,6 +293,7 @@ const birRegistrationFile = ref(null)
 const sanitaryCertificateFile = ref(null)
 const governmentIdRepresentativeFrontFile = ref(null)
 const governmentIdRepresentativeBackFile = ref(null)
+const governmentIdSelfieWithIdFile = ref(null)
 const dohAccreditationFile = ref(null)
 const fdaApprovalFile = ref(null)
 const authorizationLetterFile = ref(null)
@@ -306,6 +305,7 @@ const existingSubmittedDocuments = ref({
   sanitaryCertificate: null,
   governmentIdRepresentativeFront: null,
   governmentIdRepresentativeBack: null,
+  governmentIdSelfieWithId: null,
   dohAccreditation: null,
   fdaApproval: null,
   authorizationLetter: null,
@@ -318,6 +318,7 @@ const documentPreviewUrls = ref({
   sanitaryCertificate: '',
   governmentIdRepresentativeFront: '',
   governmentIdRepresentativeBack: '',
+  governmentIdSelfieWithId: '',
   dohAccreditation: '',
   fdaApproval: '',
   authorizationLetter: '',
@@ -331,6 +332,7 @@ const documentUploadState = ref({
   sanitaryCertificate: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeFront: { uploading: false, progress: 0, error: '' },
   governmentIdRepresentativeBack: { uploading: false, progress: 0, error: '' },
+  governmentIdSelfieWithId: { uploading: false, progress: 0, error: '' },
   dohAccreditation: { uploading: false, progress: 0, error: '' },
   fdaApproval: { uploading: false, progress: 0, error: '' },
   authorizationLetter: { uploading: false, progress: 0, error: '' },
@@ -343,6 +345,7 @@ const documentFileMap = {
   sanitaryCertificate: sanitaryCertificateFile,
   governmentIdRepresentativeFront: governmentIdRepresentativeFrontFile,
   governmentIdRepresentativeBack: governmentIdRepresentativeBackFile,
+  governmentIdSelfieWithId: governmentIdSelfieWithIdFile,
   dohAccreditation: dohAccreditationFile,
   fdaApproval: fdaApprovalFile,
   authorizationLetter: authorizationLetterFile,
@@ -359,6 +362,7 @@ const documentLabelMap = {
   sanitaryCertificate: 'Sanitary Certificate',
   governmentIdRepresentativeFront: 'Government-Issued ID of Registrant (Front)',
   governmentIdRepresentativeBack: 'Government-Issued ID of Registrant (Back)',
+  governmentIdSelfieWithId: 'Selfie Holding the Same Government-Issued ID',
   dohAccreditation: 'DOH License to Operate',
   fdaApproval: 'FDA Approval',
   authorizationLetter: 'Authorization Letter / Proof of Authority',
@@ -371,6 +375,7 @@ const documentInputKeys = ref({
   sanitaryCertificate: 0,
   governmentIdRepresentativeFront: 0,
   governmentIdRepresentativeBack: 0,
+  governmentIdSelfieWithId: 0,
   dohAccreditation: 0,
   fdaApproval: 0,
   authorizationLetter: 0,
@@ -381,6 +386,7 @@ const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
 const NAME_MATCH_REQUIRED_DOCUMENT_KEYS = new Set([
   'governmentIdRepresentativeFront',
+  'governmentIdSelfieWithId',
   'businessPermit',
   'dohAccreditation',
   'birRegistration',
@@ -571,12 +577,20 @@ const companyDocumentKeys = [
   'sanitaryCertificate',
   'governmentIdRepresentativeFront',
   'governmentIdRepresentativeBack',
+  'governmentIdSelfieWithId',
   'dohAccreditation',
 ]
-const requiredDocumentKeys = computed(() => permitHolderIsRegistrant.value === false
-  ? [...companyDocumentKeys, 'authorizationLetter']
-  : companyDocumentKeys
-)
+const requiredDocumentKeys = computed(() => {
+  const hasExistingSelfie = Boolean(existingSubmittedDocuments.value.governmentIdSelfieWithId)
+  // Older expiry-only resubmissions should replace only the documents that
+  // failed expiry review. A newly submitted application or full resubmission
+  // requires the selfie document.
+  const requiresSelfie = !expiryResubmissionExpiresAt.value || hasExistingSelfie
+  const baseKeys = companyDocumentKeys.filter((key) => key !== 'governmentIdSelfieWithId' || requiresSelfie)
+  return permitHolderIsRegistrant.value === false
+    ? [...baseKeys, 'authorizationLetter']
+    : baseKeys
+})
 const isExpiryPartialResubmission = computed(() => Boolean(
   expiryResubmissionExpiresAt.value
   && expiryHoldDocumentKeys.value.some((key) => requiredDocumentKeys.value.includes(key))
@@ -611,7 +625,11 @@ const acceptedGovernmentIdColumns = computed(() => [
 ])
 const documentKeysExcludingGovId = computed(() =>
   requiredDocumentKeys.value.filter(
-    (key) => key !== 'governmentIdRepresentativeFront' && key !== 'governmentIdRepresentativeBack'
+    (key) => ![
+      'governmentIdRepresentativeFront',
+      'governmentIdRepresentativeBack',
+      'governmentIdSelfieWithId',
+    ].includes(key)
   )
 )
 const allDocumentsUploaded = computed(() =>
@@ -1138,7 +1156,12 @@ const refreshClinicSubmissionStatus = async () => {
 }
 
 const startApprovalCheck = () => {
-  if (!userUid.value) return
+  const listenerUid = String(userUid.value || '').trim()
+  const signedInUser = auth.currentUser
+  if (!listenerUid || !signedInUser || signedInUser.uid !== listenerUid) {
+    stopApprovalCheck()
+    return
+  }
   stopApprovalCheck()
   approvalExpiryWarningMessage.value = ''
   approvalReviewState.value = 'reviewing'
@@ -1146,24 +1169,28 @@ const startApprovalCheck = () => {
   approvalReviewReason.value = ''
 
   unsubscribeApprovalUser = onSnapshot(
-    doc(db, 'users', userUid.value),
+    doc(db, 'users', listenerUid),
     (snapshot) => {
       approvalUserExists.value = snapshot.exists()
       approvalUserStatus.value = snapshot.exists() ? String(snapshot.data()?.status || '') : ''
       updateApprovalReviewState()
     },
     (error) => {
+      if (auth.currentUser?.uid !== listenerUid) {
+        stopApprovalCheck()
+        return
+      }
       console.error('Failed to listen to user registration status:', {
         code: error?.code,
         message: error?.message,
-        expectedUid: userUid.value,
+        expectedUid: listenerUid,
         signedInUid: auth.currentUser?.uid || null,
       })
     }
   )
 
   unsubscribeApprovalClinic = onSnapshot(
-    doc(db, 'clinics', userUid.value),
+    doc(db, 'clinics', listenerUid),
     (snapshot) => {
       approvalClinicExists.value = snapshot.exists()
       const clinicData = snapshot.exists() ? snapshot.data() || {} : {}
@@ -1185,10 +1212,14 @@ const startApprovalCheck = () => {
       updateApprovalReviewState()
     },
     (error) => {
+      if (auth.currentUser?.uid !== listenerUid) {
+        stopApprovalCheck()
+        return
+      }
       console.error('Failed to listen to clinic registration status:', {
         code: error?.code,
         message: error?.message,
-        expectedUid: userUid.value,
+        expectedUid: listenerUid,
         signedInUid: auth.currentUser?.uid || null,
       })
     }
@@ -1217,6 +1248,11 @@ const handleDocumentFileChange = async (key, event) => {
   const selectedFile = selectedFiles[0] || null
   if (!selectedFile) return
   const resetInput = () => { documentInputKeys.value[key] = (documentInputKeys.value[key] || 0) + 1 }
+  if (key === 'governmentIdSelfieWithId' && !['image/png', 'image/jpeg'].includes(selectedFile.type)) {
+    toast.error('Please upload a clear PNG or JPEG selfie holding your government-issued ID.')
+    resetInput()
+    return
+  }
   if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
     toast.error('Unsupported file type. Please upload PDF, PNG or JPEG files only.')
     resetInput()
@@ -1346,26 +1382,21 @@ const checkClinicNameAvailability = async () => {
   clinicNameAvailabilityMessage.value = 'Checking clinic name…'
 
   try {
-    const snapshot = await getDocs(query(
-      collection(db, 'publicClinics'),
-      where('isPublished', '==', true),
-    ))
+    const response = await axios.post(`${OTP_API_BASE}/public/clinics/check-name`, {
+      clinicName: candidate.clinicName,
+    }, { timeout: 20000 })
     if (lookupSequence !== clinicNameLookupSequence) return { sameName: false, sameLocation: false, stale: true }
 
-    const publicClinics = snapshot.docs
-      .map((clinicDoc) => clinicDoc.data())
-      .filter((clinic) => isPublicClinicCustomerDiscoverable(clinic))
-    const matches = findClinicNameMatches(publicClinics, candidate)
+    const sameName = response?.data?.data?.sameName
+    if (typeof sameName !== 'boolean') throw new Error('Clinic name service returned an invalid response.')
+    const matches = { sameName, sameLocation: false }
 
-    if (matches.sameLocation) {
+    if (matches.sameName) {
       clinicNameAvailability.value = 'duplicate'
-      clinicNameAvailabilityMessage.value = 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.'
-    } else if (matches.sameName) {
-      clinicNameAvailability.value = 'review'
-      clinicNameAvailabilityMessage.value = 'A clinic with this name is already listed elsewhere. You may continue if this is a separate location; we will review it.'
+      clinicNameAvailabilityMessage.value = 'A clinic with this name is already registered. Choose a different clinic name.'
     } else {
       clinicNameAvailability.value = 'available'
-      clinicNameAvailabilityMessage.value = 'No matching listed clinic found.'
+      clinicNameAvailabilityMessage.value = 'No clinic record with this name was found.'
     }
 
     return matches
@@ -1373,7 +1404,7 @@ const checkClinicNameAvailability = async () => {
     if (lookupSequence !== clinicNameLookupSequence) return { sameName: false, sameLocation: false, stale: true }
     console.warn('Clinic name availability check failed:', error?.message || error)
     clinicNameAvailability.value = 'error'
-    clinicNameAvailabilityMessage.value = 'Could not check this name right now. It will be checked again when you continue.'
+    clinicNameAvailabilityMessage.value = 'Could not verify this name right now. Try again before continuing.'
     return { sameName: false, sameLocation: false, error }
   } finally {
     if (lookupSequence === clinicNameLookupSequence) isCheckingClinicName.value = false
@@ -1468,6 +1499,7 @@ const applyProfileData = (profile) => {
     sanitaryCertificate: storedDocuments?.sanitaryCertificate || null,
     governmentIdRepresentativeFront: storedDocuments?.governmentIdRepresentativeFront || storedDocuments?.governmentIdRepresentative || null,
     governmentIdRepresentativeBack: storedDocuments?.governmentIdRepresentativeBack || null,
+    governmentIdSelfieWithId: storedDocuments?.governmentIdSelfieWithId || null,
     dohAccreditation: storedDocuments?.dohAccreditation || null,
     fdaApproval: storedDocuments?.fdaApproval || null,
     authorizationLetter: storedDocuments?.authorizationLetter || null,
@@ -1587,7 +1619,7 @@ otpRecipientEmail.value = getStoredOtpRecipientEmail()
 
 watch([currentStep, userUid], ([step, uid]) => {
   syncStepRoute(step)
-  if (step === 4 && uid) {
+  if (step === 4 && uid && auth.currentUser?.uid === uid) {
     startApprovalCheck()
   } else {
     stopApprovalCheck()
@@ -1701,6 +1733,7 @@ const handleEmailDraftInput = () => {
     sanitaryCertificateFile.value = null
     governmentIdRepresentativeFrontFile.value = null
     governmentIdRepresentativeBackFile.value = null
+    governmentIdSelfieWithIdFile.value = null
     dohAccreditationFile.value = null
     fdaApprovalFile.value = null
     authorizationLetterFile.value = null
@@ -1715,6 +1748,7 @@ const handleEmailDraftInput = () => {
       sanitaryCertificate: null,
       governmentIdRepresentativeFront: null,
       governmentIdRepresentativeBack: null,
+      governmentIdSelfieWithId: null,
       dohAccreditation: null,
       fdaApproval: null,
       authorizationLetter: null,
@@ -1805,6 +1839,7 @@ const resetClinicRegistrationFlow = () => {
   sanitaryCertificateFile.value = null
   governmentIdRepresentativeFrontFile.value = null
   governmentIdRepresentativeBackFile.value = null
+  governmentIdSelfieWithIdFile.value = null
   dohAccreditationFile.value = null
   fdaApprovalFile.value = null
   authorizationLetterFile.value = null
@@ -1818,6 +1853,7 @@ const resetClinicRegistrationFlow = () => {
     sanitaryCertificate: null,
     governmentIdRepresentativeFront: null,
     governmentIdRepresentativeBack: null,
+    governmentIdSelfieWithId: null,
     dohAccreditation: null,
     fdaApproval: null,
     authorizationLetter: null,
@@ -2392,8 +2428,16 @@ const registerClinic = async () => {
     clinicNameCheckingTimer.value = null
   }
   const clinicNameMatch = await checkClinicNameAvailability()
-  if (clinicNameMatch.sameLocation) {
-    toast.error('A listed clinic already uses this name at this location. If it is yours, sign in to manage it.')
+  if (clinicNameMatch.stale) {
+    toast.error('The clinic name changed while it was being checked. Please continue again.')
+    return
+  }
+  if (clinicNameMatch.error) {
+    toast.error('We could not verify this clinic name. Please try again before continuing.')
+    return
+  }
+  if (clinicNameMatch.sameName) {
+    toast.error('A clinic with this name is already registered. Choose a different clinic name.')
     return
   }
 
@@ -3449,6 +3493,7 @@ const handleRegistrationSubmit = () => {
                 <ul class="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-charcoal-600">
                   <li>Your government-issued ID must show the registrant name entered in Step 1.</li>
                   <li>The front of your government-issued ID must clearly show the same name and birth date entered in Step 1.</li>
+                  <li>Upload a clear JPEG or PNG selfie holding the same ID, with your face and the ID text visible. OCR checks readable name and birth-date text; an administrator compares the photos manually.</li>
                   <li>Business Permit, BIR Registration, Sanitary Certificate, and DOH License must show the clinic/business name entered in Step 1.</li>
                   <li v-if="permitHolderIsRegistrant === false">The business permit should show the declared permit holder, and the authorization document should clearly identify both the permit holder and registrant.</li>
                   <li>Upload clear, complete, and unexpired documents. Each file must be 10 MB or smaller.</li>
@@ -3523,6 +3568,30 @@ const handleRegistrationSubmit = () => {
                     </div>
                   </div>
                   <div v-else class="upload-card flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdRepresentativeBack }} will be kept from your previous submission.</div>
+                  <div v-if="documentsToUpload.includes('governmentIdSelfieWithId')" class="upload-card upload-card-full">
+                    <label for="registration-document-government-id-selfie" class="upload-label">{{ documentLabelMap.governmentIdSelfieWithId }}</label>
+                    <p class="mb-2 text-xs leading-relaxed text-charcoal-600">Keep your face and the front of the same ID clearly visible. Only PNG and JPEG photos are accepted.</p>
+                    <input id="registration-document-government-id-selfie" name="government-id-selfie-with-id" :key="documentInputKeys.governmentIdSelfieWithId" type="file" accept="image/png,image/jpeg" @change="handleDocumentFileChange('governmentIdSelfieWithId', $event)" class="upload-input" />
+                    <img
+                      v-if="documentPreviewUrls.governmentIdSelfieWithId"
+                      :src="documentPreviewUrls.governmentIdSelfieWithId"
+                      :alt="`${documentLabelMap.governmentIdSelfieWithId} Preview`"
+                      class="upload-preview-image"
+                    />
+                    <p class="upload-file-name">
+                      {{ documentFileMap.governmentIdSelfieWithId?.value?.name || existingSubmittedDocuments.governmentIdSelfieWithId?.name || 'No file selected' }}
+                    </p>
+                    <div v-if="documentUploadState.governmentIdSelfieWithId.uploading" class="mt-3 space-y-1">
+                      <div class="flex items-center justify-between text-[11px] text-charcoal-500">
+                        <span>Uploading and checking readable ID details...</span>
+                        <span>{{ documentUploadState.governmentIdSelfieWithId.progress || 0 }}%</span>
+                      </div>
+                      <div class="h-2 overflow-hidden rounded-full bg-gold-100">
+                        <div class="h-full rounded-full bg-gold-600 transition-all duration-200" :style="{ width: `${documentUploadState.governmentIdSelfieWithId.progress || 0}%` }"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="upload-card upload-card-full flex items-center text-xs text-charcoal-600">{{ documentLabelMap.governmentIdSelfieWithId }} will be kept from your previous submission.</div>
                 </div>
                 <div
                   v-for="docKey in documentKeysExcludingGovId"
@@ -4553,6 +4622,10 @@ const handleRegistrationSubmit = () => {
   border-radius: 0.9rem;
   background: rgba(255, 255, 255, 0.62);
   padding: 0.75rem;
+}
+
+.upload-card-full {
+  grid-column: 1 / -1;
 }
 
 .upload-id-type {

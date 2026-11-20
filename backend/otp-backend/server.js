@@ -1,5 +1,6 @@
 import { isClinicCustomerDiscoverable, isPublicClinicCustomerDiscoverable, isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
 import { findClinicNameMatches } from '../../shared/clinicNameMatching.js'
+import publicClinicProjection from '../functions/publicClinicProjection.cjs'
 import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
 import { createAppointmentPaymentHoldReaper } from './appointmentPaymentHolds.js'
 import { registerConsultationEvents } from './consultationEvents.js'
@@ -13,8 +14,8 @@ import { cancellationRefundEstimate, isCancellationPolicyEnabled, isReschedulePo
 import { registerOrderWorkflow, prepareOrderSnapshot, finalizeCancelledOrder } from './orderWorkflow.js'
 import { registerPayrollWorkflow } from './payrollWorkflow.js'
 import { registerHrWorkflow } from './hrWorkflow.js'
-import { registerPractitionerTeams } from './practitionerTeams.js'
-import { appointmentStaffIds, employeeSpecialtyTypes, practitionerTypes } from '../../shared/practitionerTeam.js'
+import { registerPractitionerTeams, extractPractitionerLicenseNumber, readPractitionerLicenseOcr, validatePractitionerCredentialDocument } from './practitionerTeams.js'
+import { appointmentStaffIds, employeeSpecialtyTypes, hasPractitionerPermissions, practitionerTypes } from '../../shared/practitionerTeam.js'
 import { registerSupplyWorkflow } from './supplyWorkflow.js'
 import { registerPharmacyWorkflow } from './pharmacyWorkflow.js'
 import { registerFinanceWorkflow } from './financeWorkflow.js'
@@ -198,15 +199,20 @@ const REGISTRATION_DOCUMENT_REQUIREMENTS = {
   clinic: ['governmentIdRepresentativeFront', 'governmentIdRepresentativeBack', 'businessPermit', 'dohAccreditation', 'birRegistration', 'sanitaryCertificate'],
 }
 const AUTHORIZATION_DOCUMENT_KEY = 'authorizationLetter'
+const GOVERNMENT_ID_SELFIE_DOCUMENT_KEY = 'governmentIdSelfieWithId'
 const SUPPORTED_CLINIC_REGISTRATION_DOCUMENTS = new Set([
   ...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic,
+  GOVERNMENT_ID_SELFIE_DOCUMENT_KEY,
   AUTHORIZATION_DOCUMENT_KEY,
 ])
 const getRegistrationDocumentRequirements = (applicantType, application = {}) => {
   const baseRequirements = REGISTRATION_DOCUMENT_REQUIREMENTS[applicantType] || []
-  return application.permitHolderIsRegistrant === false
-    ? [...baseRequirements, AUTHORIZATION_DOCUMENT_KEY]
-    : [...baseRequirements]
+  const requirements = [...baseRequirements]
+  if (applicantType === 'clinic' && application.governmentIdSelfieRequired === true) {
+    requirements.splice(2, 0, GOVERNMENT_ID_SELFIE_DOCUMENT_KEY)
+  }
+  if (application.permitHolderIsRegistrant === false) requirements.push(AUTHORIZATION_DOCUMENT_KEY)
+  return requirements
 }
 const DOCUMENT_NUMBER_REQUIREMENTS = new Set([
   'businessPermit',
@@ -227,12 +233,13 @@ const BUSINESS_NAME_REQUIREMENTS = new Set([
 ])
 const REGISTRATION_NAME_MATCH_DOCUMENTS = new Set([
   'governmentIdRepresentativeFront',
+  GOVERNMENT_ID_SELFIE_DOCUMENT_KEY,
   ...BUSINESS_NAME_REQUIREMENTS,
 ])
 const REGISTRATION_NAME_MATCH_POLICY_VERSION = 1
 const REGISTRATION_DOCUMENT_REVIEW_POLICY_VERSION = 2
 const getRegistrationDocumentMinimumTextLength = (docKey) =>
-  String(docKey || '').trim() === 'governmentIdRepresentativeBack' ? 10 : 30
+  ['governmentIdRepresentativeBack', GOVERNMENT_ID_SELFIE_DOCUMENT_KEY].includes(String(docKey || '').trim()) ? 10 : 30
 const registrationDocumentHash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex')
 const getRegistrationNameInputsHash = (application = {}, user = {}) => {
   const snapshot = application.registrationOcrSnapshot || {}
@@ -382,6 +389,7 @@ const hasActiveRegistrationExpiryHold = (verificationResults = {}) => Object.val
   return getOcrExpiryValidation(`Expiry date: ${expiry}`, true).accountHold
 })
 const registrationDocumentLabel = (key) => ({
+  governmentIdSelfieWithId: 'Selfie holding the same government-issued ID',
   businessPermit: 'Business Permit / Registration',
   dohAccreditation: 'DOH License to Operate',
   sanitaryCertificate: 'Sanitary Certificate',
@@ -398,6 +406,11 @@ const extractOcrDocumentNumber = (text) => {
     if (/^\d{2}-\d{2}-\d{4}$/.test(value) || /^\d{4}-\d{2}-\d{2}$/.test(value)) return false
     return /\d/.test(value)
   }) || ''
+}
+const normalizeOcrIdNumber = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+const maskOcrIdNumber = (value) => {
+  const normalized = normalizeOcrIdNumber(value)
+  return normalized.length > 4 ? `••••${normalized.slice(-4)}` : normalized ? '••••' : ''
 }
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -2444,8 +2457,10 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
     }, { merge: true })
   })
   const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+  const storageBucket = bucketName ? admin.storage().bucket(bucketName) : null
   const visionClient = createVisionClient()
   const results = {}
+  let governmentIdNumberFromFront = ''
   const persistDocumentProgress = async () => {
     const processedDocuments = Object.keys(results).length
     await firestore.runTransaction(async (transaction) => {
@@ -2504,7 +2519,11 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       await persistDocumentProgress()
       continue
     }
-    if (!document.type || !['application/pdf', 'image/jpeg', 'image/png'].includes(String(document.type).toLowerCase())) {
+    const documentContentType = String(document.type || '').toLowerCase()
+    const supportedDocumentTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
+      ? ['image/jpeg', 'image/png']
+      : ['application/pdf', 'image/jpeg', 'image/png']
+    if (!documentContentType || !supportedDocumentTypes.includes(documentContentType)) {
       result.reason = 'Unsupported document type.'
       results[docKey] = result
       await persistDocumentProgress()
@@ -2531,8 +2550,10 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       let annotation = null
       let extractedText = hasReusablePreflight ? String(preflight.extractedText || '').trim() : ''
       if (!hasReusablePreflight) {
-        if (!visionClient) {
-          result.reason = 'Automatic document processor is not configured.'
+        if (!visionClient || !storageBucket || !bucketName) {
+          result.reason = !storageBucket || !bucketName
+            ? 'Secure document storage is not configured. Inspect this document manually.'
+            : 'Automatic document processor is not configured. Inspect this document manually.'
           results[docKey] = result
           await persistDocumentProgress()
           continue
@@ -2566,6 +2587,24 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       const requiresDocumentNumber = DOCUMENT_NUMBER_REQUIREMENTS.has(docKey)
       const detectedDocumentNumber = extractOcrDocumentNumber(extractedText)
       const documentNumberDetected = requiresDocumentNumber ? Boolean(detectedDocumentNumber) : null
+      let identityDocumentNumberMatch = null
+      if (docKey === 'governmentIdRepresentativeFront') {
+        governmentIdNumberFromFront = detectedDocumentNumber
+      }
+      if (docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY) {
+        const frontNumber = normalizeOcrIdNumber(governmentIdNumberFromFront)
+        const selfieNumber = normalizeOcrIdNumber(detectedDocumentNumber)
+        identityDocumentNumberMatch = frontNumber && selfieNumber
+          ? frontNumber === selfieNumber ? true : false
+          : null
+        comparisons.push({
+          field: 'governmentIdNumber',
+          label: 'ID number in front photo and selfie',
+          enteredValue: maskOcrIdNumber(governmentIdNumberFromFront),
+          detectedValue: maskOcrIdNumber(detectedDocumentNumber),
+          status: identityDocumentNumberMatch === null ? 'needs_review' : identityDocumentNumberMatch ? 'match' : 'mismatch',
+        })
+      }
       // Registration does not ask applicants to type document numbers. OCR
       // therefore verifies that a number is readable; it does not falsely
       // report a mismatch against a non-existent applicant-entered value.
@@ -2583,7 +2622,9 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         + expiryScore * 0.05
       ))
       result.numberMatch = numberMatch
-      result.detectedDocumentNumber = detectedDocumentNumber
+      result.detectedDocumentNumber = ['governmentIdRepresentativeFront', GOVERNMENT_ID_SELFIE_DOCUMENT_KEY].includes(docKey)
+        ? ''
+        : detectedDocumentNumber
       result.ocrConfidence = ocrConfidence
       result.comparisons = comparisons
       result.checks = {
@@ -2598,6 +2639,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         nameCheckType: isAuthorizationDocument ? 'authorization_parties' : requiresBusinessName ? 'clinic_business_name' : 'registrant_name',
         numberMatch,
         documentNumberDetected,
+        identityDocumentNumberMatch,
         expiryValid: expiryApplicable ? expiryValid : null,
         expiryDate: expiryValidation.validTo,
         expiryValidationType: expiryValidation.type,
@@ -2621,13 +2663,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       result.confidence = confidence
       const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
         && (!expiryApplicable || expiryValid)
+        && (docKey !== GOVERNMENT_ID_SELFIE_DOCUMENT_KEY || identityDocumentNumberMatch === true)
       const expiredDocument = expiryApplicable && expiryValidation.expired
       const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
       const expiryAccountHold = expiryApplicable && expiryValidation.accountHold
       result.status = expiredDocument || invalidValidityRange
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
-        : isAuthorizationDocument ? 'manual_review'
+        : isAuthorizationDocument || docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY ? 'manual_review'
         : hasReadableText && confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
@@ -2643,6 +2686,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
       } else if (comparisons.some((item) => item.status === 'needs_review')) {
         result.reason = 'OCR could not confidently compare every entered value. Inspect the original document before making a decision.'
+      } else if (docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY) {
+        result.reason = 'OCR compared readable ID details. An administrator must manually review the selfie and verify that the same person is holding the submitted ID.'
       } else if (expiryApplicable && expiryValid !== true) {
         result.reason = 'A labelled validity period or expiry date could not be confirmed. This document requires manual review.'
       } else if (requiresDocumentNumber && !documentNumberDetected) {
@@ -3032,6 +3077,51 @@ const recoverClinicVerificationJobs = async ({ uid = '' } = {}) => {
         })
       }
     }
+
+    if (!uid) {
+      const recoveryVersion = 'registration-ocr-storagebucket-reference-v1'
+      const keys = [...REGISTRATION_DOCUMENT_REQUIREMENTS.clinic, GOVERNMENT_ID_SELFIE_DOCUMENT_KEY, AUTHORIZATION_DOCUMENT_KEY]
+      const failedSnapshots = await Promise.all(keys.flatMap((docKey) => [
+        firestore.collection('clinics')
+          .where(`verificationResults.${docKey}.processingError`, '==', 'storageBucket is not defined')
+          .limit(50)
+          .get(),
+        firestore.collection('clinics')
+          .where(`verificationResults.${docKey}.reason`, '==', 'storageBucket is not defined')
+          .limit(50)
+          .get(),
+      ]))
+      const candidates = new Map()
+      failedSnapshots.forEach((snapshot) => snapshot.docs.forEach((documentSnapshot) => {
+        candidates.set(documentSnapshot.id, documentSnapshot)
+      }))
+
+      for (const documentSnapshot of candidates.values()) {
+        const application = documentSnapshot.data() || {}
+        const approvalStatus = String(application.approvalStatus || '').trim().toLowerCase()
+        const hasKnownStorageBucketError = Object.values(application.verificationResults || {}).some((result) =>
+          ['processingError', 'reason'].some((key) => String(result?.[key] || '').includes('storageBucket is not defined')))
+        if (!hasKnownStorageBucketError) continue
+        if (application.automaticOcrRecoveryVersion === recoveryVersion
+          || approvalStatus.includes('approved')
+          || approvalStatus.includes('rejected')
+          || ['queued', 'processing'].includes(String(application.verificationJob?.status || '').toLowerCase())) continue
+
+        try {
+          const job = await queueClinicVerificationRetry({ uid: documentSnapshot.id, processedBy: 'automatic_processor' })
+          await documentSnapshot.ref.set({
+            automaticOcrRecoveryVersion: recoveryVersion,
+            automaticOcrRecoveryAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true })
+          scheduleClinicVerificationJob({ uid: documentSnapshot.id, runId: job.runId, processedBy: 'automatic_processor' })
+          recoveredCount += 1
+        } catch (recoveryError) {
+          if (Number(recoveryError?.statusCode) !== 409) {
+            console.warn('Could not automatically recover the clinic OCR result:', documentSnapshot.id, recoveryError?.message || recoveryError)
+          }
+        }
+      }
+    }
     return { ok: true, scheduled, recovered: recoveredCount }
   } catch (error) {
     console.error('Could not recover queued clinic OCR jobs:', error?.message || error)
@@ -3080,9 +3170,12 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       return res.status(409).json({ success: false, error: 'The permit-holder details cannot be changed during document resubmission. Refresh your registration and try again.' })
     }
 
+    const requireGovernmentIdSelfie = clinic.governmentIdSelfieRequired === true
+      || Object.keys(clinic.submittedDocuments || {}).length === 0
     const requiredKeys = getRegistrationDocumentRequirements('clinic', {
       ...clinic,
       permitHolderIsRegistrant,
+      governmentIdSelfieRequired: requireGovernmentIdSelfie,
     })
     const verificationRunId = crypto.randomUUID()
     const expiryDeadline = getTimestampDate(clinic.expiryResubmissionExpiresAt)
@@ -3122,8 +3215,11 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
       const fileSize = Number(entry.size || 0)
       const fileType = String(entry.type || '').toLowerCase()
+      const allowedTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
+        ? ['image/jpeg', 'image/png']
+        : ['application/pdf', 'image/jpeg', 'image/png']
       if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > 10 * 1024 * 1024
-        || !['application/pdf', 'image/jpeg', 'image/png'].includes(fileType)) {
+        || !allowedTypes.includes(fileType)) {
         return res.status(400).json({ success: false, error: `The ${registrationDocumentLabel(docKey)} file type or size is invalid.` })
       }
       submittedDocuments[docKey] = {
@@ -3158,10 +3254,13 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
       }
       const storedSize = Number(metadata?.size || 0)
       const storedType = String(metadata?.contentType || '').toLowerCase()
+      const allowedStoredTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
+        ? ['image/jpeg', 'image/png']
+        : ['application/pdf', 'image/jpeg', 'image/png']
       if (!Number.isFinite(storedSize) || storedSize <= 0 || storedSize > 10 * 1024 * 1024
         || storedSize !== Number(document.size)
         || storedType !== document.type
-        || !['application/pdf', 'image/jpeg', 'image/png'].includes(storedType)) {
+        || !allowedStoredTypes.includes(storedType)) {
         const error = new Error(`The saved ${registrationDocumentLabel(docKey)} file type or size is invalid. Please upload it again.`)
         error.statusCode = 422
         throw error
@@ -3432,6 +3531,7 @@ app.post('/registration/submit-clinic-documents', requireAuth, async (req, res) 
         },
         documentsSubmittedAt: timestamp,
         submittedDocuments,
+        governmentIdSelfieRequired: requireGovernmentIdSelfie,
         registrationOcrSnapshot: ocrSnapshot,
         permitHolderIsRegistrant,
         permitHolderName: submittedHolderName,
@@ -3643,8 +3743,9 @@ app.post('/registration/auto-verify-documents', requireAuth, async (req, res) =>
   }
 })
 
-// OCR runs as soon as a registrant uploads a document. The result is retained
-// for final submission, so the system administrator never needs to run OCR.
+// Legacy draft-document OCR endpoint. The current registration flow checks
+// identity and business-name documents during upload, then queues full OCR
+// automatically after the registrant submits the document set.
 app.post('/registration/ocr-document', requireAuth, async (req, res) => {
   const uid = String(req.body?.uid || '').trim()
   const docKey = String(req.body?.docKey || '').trim()
@@ -3712,7 +3813,10 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
     }
     const contentType = String(metadata?.contentType || '').toLowerCase()
     const size = Number(metadata?.size || 0)
-    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)
+    const allowedPreflightTypes = docKey === GOVERNMENT_ID_SELFIE_DOCUMENT_KEY
+      ? ['image/jpeg', 'image/png']
+      : ['application/pdf', 'image/jpeg', 'image/png']
+    if (!allowedPreflightTypes.includes(contentType)
       || !Number.isFinite(size) || size <= 0 || size > 10 * 1024 * 1024
       || Number(file.size) !== size || String(file.type || '').toLowerCase() !== contentType) {
       return res.status(422).json({ success: false, error: 'The uploaded document details are invalid. Please choose the file again.' })
@@ -3752,12 +3856,14 @@ app.post('/registration/ocr-preflight', requireAuth, async (req, res) => {
       })
     }
 
-    const mismatch = comparisons.find((comparison) => ['registrantName', 'businessName'].includes(comparison.field)
+    const mismatch = comparisons.find((comparison) => ['registrantName', 'birthDate', 'businessName'].includes(comparison.field)
       && comparison.status === 'mismatch')
     if (mismatch) {
       const error = mismatch.field === 'businessName'
         ? 'Clinic name mismatch: the clinic name on this document does not match the name entered in Step 1. Please upload the correct document.'
-        : 'Registrant name mismatch: the name on this government ID does not match the owner details entered in Step 1. Please upload the correct document.'
+        : mismatch.field === 'birthDate'
+          ? 'Birth date mismatch: the birth date on this government ID does not match the date entered in Step 1. Please upload the correct document.'
+          : 'Registrant name mismatch: the name on this government ID does not match the owner details entered in Step 1. Please upload the correct document.'
       return res.status(422).json({ success: false, error, code: 'REGISTRATION_DOCUMENT_NAME_MISMATCH' })
     }
 
@@ -3805,31 +3911,11 @@ registerOrderWorkflow(app, { admin, requireAuth, loadUserContext, buildPayMongoH
 registerPayrollWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerHrWorkflow(app, { admin, requireAuth, loadUserContext, assertPlanFeature: (...args) => assertClinicPlanFeature(...args), loadAttendanceSchedule })
 
-app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (req, res) => {
-  const uid = String(req.body?.uid || '').trim()
-  if (!uid) {
-    return res.status(400).json({ success: false, error: 'A clinic uid is required' })
-  }
-
-  try {
-    const job = await queueClinicVerificationRetry({ uid, processedBy: req.user.uid })
-    scheduleClinicVerificationJob({ uid, runId: job.runId, processedBy: req.user.uid })
-    try {
-      await writeSystemAdminActivity(req, {
-        action: 'Queued clinic document OCR',
-        module: 'Clinic Verification',
-        details: `Queued a clinic document OCR run for clinic ${uid}.`,
-        targetId: uid,
-        targetName: uid,
-      })
-    } catch (activityError) {
-      console.warn('Could not record clinic OCR retry activity:', activityError?.message || activityError)
-    }
-    return res.status(202).json({ success: true, data: { verificationJob: job } })
-  } catch (error) {
-    console.error('Clinic document verification rerun failed:', error)
-    return res.status(Number(error?.statusCode || 500)).json({ success: false, error: error?.message || 'Automatic verification failed' })
-  }
+app.post('/admin/trigger-clinic-registration-verification', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Clinic registration OCR runs automatically after submission. Administrators review the original documents and saved OCR results.',
+  })
 })
 
 const BOOKING_RESERVATIONS_COLLECTION = 'bookingReservations'
@@ -5662,7 +5748,7 @@ The AesthetiCare Team`
 app.post('/admin/trigger-ocr', requireAuth, requireRole(['superadmin','admin','reviewer']), requirePermission('system:clinics:verify'), async (_req, res) => {
   return res.status(410).json({
     success: false,
-    error: 'The legacy per-file OCR path is disabled. Run clinic registration OCR from the review page.',
+    error: 'The legacy per-file OCR path is disabled. Clinic registration OCR runs automatically after the applicant submits documents.',
   })
 })
 // Admin clinic review endpoints (lightweight)
@@ -5676,18 +5762,8 @@ app.get('/admin/clinic-review/:uid', requireAuth, requireRole(['superadmin','adm
       firestore.collection('users').doc(uid).get(),
     ])
     if (!clinicSnap.exists && !userSnap.exists) return res.status(404).json({ success: false, error: 'Clinic or user not found' })
-    let clinicData = clinicSnap.exists ? clinicSnap.data() : {}
+    const clinicData = clinicSnap.exists ? clinicSnap.data() : {}
     const userData = userSnap.exists ? userSnap.data() : {}
-
-    const verificationJob = clinicData.verificationJob || {}
-    const verificationLease = getTimestampDate(verificationJob.leaseExpiresAt)
-    const jobNeedsRecovery = verificationJob.status === 'queued'
-      || (verificationJob.status === 'processing' && (!verificationLease || verificationLease.getTime() <= Date.now()))
-    if (clinicSnap.exists && jobNeedsRecovery) {
-      await recoverClinicVerificationJobs({ uid })
-      const refreshedClinicSnap = await firestore.collection('clinics').doc(uid).get()
-      if (refreshedClinicSnap.exists) clinicData = refreshedClinicSnap.data() || {}
-    }
 
     const submittedDocuments = clinicData.submittedDocuments || {}
     const reviewsSnap = await firestore.collection('clinics').doc(uid).collection('documentReviews').get()
@@ -6170,14 +6246,89 @@ const trustedRegistrationProfileResponse = async (uid) => {
   }
 }
 
-const hasPublicClinicAtSameNameAndLocation = async (transaction, firestore, clinicInput) => {
-  const publicClinicQuery = firestore.collection('publicClinics').where('isPublished', '==', true)
-  const snapshot = await transaction.get(publicClinicQuery)
-  const clinics = snapshot.docs
-    .map((clinicDoc) => clinicDoc.data())
-    .filter((clinic) => isPublicClinicCustomerDiscoverable(clinic))
-  return findClinicNameMatches(clinics, clinicInput).sameLocation
+const clinicNameMatchesInSnapshot = (snapshot, clinicInput) => {
+  const clinics = snapshot.docs.map((clinicDoc) => {
+    const clinic = clinicDoc.data() || {}
+    return {
+      ...clinic,
+      clinicName: clinic.clinicName || clinic.businessName || clinic.companyName || clinic.organizationName,
+    }
+  })
+  return findClinicNameMatches(clinics, clinicInput).sameName
 }
+
+const hasRegisteredClinicName = async (transaction, firestore, clinicInput) => {
+  // Check source clinic records instead of publicClinics. Public projections
+  // can lag or be missing, and a registration must not bypass uniqueness when
+  // that happens. The transaction makes the check authoritative at creation.
+  const snapshot = await transaction.get(firestore.collection('clinics'))
+  return clinicNameMatchesInSnapshot(snapshot, clinicInput)
+}
+
+const publicClinicProfile = (clinicId, clinicData) => {
+  const ownerId = String(clinicData?.ownerId || clinicData?.organizationOwnerId || clinicId || '').trim()
+  const organizationOwnerId = String(clinicData?.organizationOwnerId || ownerId).trim()
+  const normalizedClinic = {
+    ...clinicData,
+    ownerId,
+    organizationOwnerId,
+    clinicName: clinicData?.clinicName || clinicData?.businessName || clinicData?.companyName || clinicData?.clinicBranch || '',
+  }
+  // Preserve the existing public eligibility rule: clinics must finish the
+  // owner onboarding profile before customers can discover them.
+  if (!normalizedClinic.clinicSetupCompletedAt) return null
+  if (!isClinicCustomerDiscoverable(normalizedClinic)) return null
+  const profile = publicClinicProjection.projectPublicClinic(normalizedClinic)
+  if (!isPublicClinicCustomerDiscoverable(profile)) return null
+  return { id: clinicId, ...profile }
+}
+
+// Public discovery reads the clinic source of truth and returns only the
+// allowlisted public profile. This also keeps discovery working while the
+// asynchronous publicClinics projection is being repaired or caught up.
+app.get('/public/clinics', async (_req, res) => {
+  try {
+    const snapshot = await admin.firestore().collection('clinics').where('isPublished', '==', true).get()
+    const clinics = snapshot.docs
+      .map((clinicDoc) => publicClinicProfile(clinicDoc.id, clinicDoc.data() || {}))
+      .filter(Boolean)
+    return res.json({ success: true, data: { clinics } })
+  } catch (error) {
+    console.error('Public clinic discovery failed:', error?.code || error?.message || error)
+    return res.status(500).json({ success: false, error: 'Unable to load clinics right now.' })
+  }
+})
+
+app.post('/public/clinics/check-name', async (req, res) => {
+  const clinicName = registrationText(req.body?.clinicName, 160)
+  if (clinicName.length < 3) {
+    return res.status(400).json({ success: false, error: 'Enter at least 3 characters to check this name.' })
+  }
+  try {
+    const snapshot = await admin.firestore().collection('clinics').get()
+    const sameName = clinicNameMatchesInSnapshot(snapshot, { clinicName })
+    return res.json({ success: true, data: { sameName, available: !sameName } })
+  } catch (error) {
+    console.error('Clinic name availability check failed:', error?.code || error?.message || error)
+    return res.status(500).json({ success: false, error: 'Unable to check clinic name right now.' })
+  }
+})
+
+app.get('/public/clinics/:branchId/profile', async (req, res) => {
+  const branchId = String(req.params?.branchId || '').trim()
+  if (!/^[A-Za-z0-9_-]{1,150}$/.test(branchId)) {
+    return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
+  }
+  try {
+    const clinicSnap = await admin.firestore().collection('clinics').doc(branchId).get()
+    const clinic = clinicSnap.exists ? publicClinicProfile(branchId, clinicSnap.data() || {}) : null
+    if (!clinic) return res.status(404).json({ success: false, error: 'Center unavailable.' })
+    return res.json({ success: true, data: { clinic } })
+  } catch (error) {
+    console.error('Public clinic profile load failed:', { branchId, code: error?.code || null, message: error?.message || String(error) })
+    return res.status(500).json({ success: false, error: 'Unable to load this clinic right now.' })
+  }
+})
 
 app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
   try {
@@ -6234,8 +6385,8 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
             || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
             return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
           }
-          if (await hasPublicClinicAtSameNameAndLocation(transaction, firestore, clinicInput)) {
-            return { error: 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.' }
+          if (await hasRegisteredClinicName(transaction, firestore, clinicInput)) {
+            return { error: 'A clinic with this name is already registered. Choose a different clinic name.' }
           }
           const emailVerified = userData.emailVerified === true
           const pendingStatus = emailVerified ? 'Pending Document Submission' : 'Pending OTP Verification'
@@ -6328,8 +6479,8 @@ app.post('/auth/create-registration-profile', requireAuth, async (req, res) => {
         || !isCaviteRegistrationLocation(clinicInput, latitude, longitude)) {
         return { error: 'Enter the clinic name and a valid pinned location within Cavite.' }
       }
-      if (await hasPublicClinicAtSameNameAndLocation(transaction, firestore, clinicInput)) {
-        return { error: 'A listed clinic already uses this name at this location. If it is yours, sign in to manage it.' }
+      if (await hasRegisteredClinicName(transaction, firestore, clinicInput)) {
+        return { error: 'A clinic with this name is already registered. Choose a different clinic name.' }
       }
       const companyName = registrationText(clinicInput.companyName || clinicInput.clinicName, 160)
       transaction.create(userRef, {
@@ -9057,7 +9208,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     const requestedRole = normalizeRoleKey(text(input.role, 80))
     const engagementType = text(input.engagementType || 'employee', 40).toLowerCase()
     const employmentType = text(input.employmentType, 80)
-    const credentialNumber = text(input.credentialNumber, 100)
+    let credentialNumber = text(input.credentialNumber, 100)
     const weeklyHoursTarget = Number(input.weeklyHoursTarget)
     const forbiddenRoles = new Set(['Owner', 'Superadmin'])
     const branchIds = [...new Set((Array.isArray(input.branchIds) ? input.branchIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
@@ -9105,13 +9256,88 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     if (customRoleSnaps.some((snap) => !snap.exists || String(snap.data()?.ownerId || '') !== ownerId)) {
       return res.status(400).json({ success: false, error: 'One or more selected custom roles are not available to this clinic organization.' })
     }
-    const isPractitioner = customRoleSnaps.some((snap) => /\bpractitioner\b/i.test(String(snap.data()?.name || '')))
+    const isPractitioner = customRoleSnaps.some((snap) =>
+      /\bpractitioner\b/i.test(String(snap.data()?.name || ''))
+      || hasPractitionerPermissions(snap.data()?.permissions)
+    )
     const professionalSpecialty = text(input.practitionerType, 100)
     if (isPractitioner && !employeeSpecialtyTypes.includes(professionalSpecialty)) {
       return res.status(400).json({ success: false, error: 'Choose a professional specialty for the Practitioner role.' })
     }
     if (!isPractitioner && professionalSpecialty) {
       return res.status(400).json({ success: false, error: 'Professional specialty is only available for the Practitioner role.' })
+    }
+    const practitionerLicenseUrl = text(input.practitionerLicenseUrl, 2000)
+    const practitionerLicenseName = text(input.practitionerLicenseName, 255)
+    const practitionerLicenseStoragePath = text(input.practitionerLicenseStoragePath, 1024)
+    let practitionerCredentialExpiryDate = ''
+    if (isPractitioner) {
+      if (!practitionerLicenseUrl || !practitionerLicenseName || !practitionerLicenseStoragePath) {
+        return res.status(400).json({ success: false, error: 'Upload a current practitioner license before creating this account.' })
+      }
+      const bucketName = firebaseStorageBucket || admin.app().options.storageBucket
+      const expectedPrefix = `practitioner-licenses/${req.user.uid}/${targetId}/`
+      const licenseObjectName = practitionerLicenseStoragePath.startsWith(expectedPrefix)
+        ? practitionerLicenseStoragePath.slice(expectedPrefix.length)
+        : ''
+      if (!bucketName || !/^\d+-[A-Za-z0-9_.-]+$/.test(licenseObjectName)) {
+        return res.status(400).json({ success: false, error: 'The practitioner license upload is invalid. Upload the document again.' })
+      }
+      let parsedLicenseUrl
+      try { parsedLicenseUrl = new URL(practitionerLicenseUrl) } catch {}
+      const urlObject = parsedLicenseUrl?.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/)
+      let urlBucket = '', urlStoragePath = ''
+      try {
+        urlBucket = urlObject ? decodeURIComponent(urlObject[1]) : ''
+        urlStoragePath = urlObject ? decodeURIComponent(urlObject[2]) : ''
+      } catch {}
+      if (parsedLicenseUrl?.origin !== 'https://firebasestorage.googleapis.com'
+        || urlBucket !== bucketName || urlStoragePath !== practitionerLicenseStoragePath) {
+        return res.status(400).json({ success: false, error: 'The practitioner license upload is invalid. Upload the document again.' })
+      }
+      const licenseFile = admin.storage().bucket(bucketName).file(practitionerLicenseStoragePath)
+      let licenseMetadata
+      try {
+        [licenseMetadata] = await licenseFile.getMetadata()
+      } catch (error) {
+        if (Number(error?.code) === 404) return res.status(400).json({ success: false, error: 'The uploaded practitioner license could not be found. Upload the document again.' })
+        throw error
+      }
+      const licenseContentType = String(licenseMetadata.contentType || '').toLowerCase()
+      const licenseSize = Number(licenseMetadata.size || 0)
+      if (!['image/jpeg', 'image/png'].includes(licenseContentType) || licenseSize <= 0 || licenseSize > 5 * 1024 * 1024) {
+        return res.status(400).json({ success: false, error: 'Upload one JPEG or PNG license image up to 5 MB.' })
+      }
+      let licenseBytes
+      try {
+        [licenseBytes] = await licenseFile.download()
+      } catch (error) {
+        if (Number(error?.code) === 404) return res.status(400).json({ success: false, error: 'The uploaded practitioner license could not be found. Upload the document again.' })
+        throw error
+      }
+      let licenseOcr
+      try {
+        licenseOcr = await readPractitionerLicenseOcr({
+          visionClient: createVisionClient(), bytes: licenseBytes, getVisionResponseError,
+        })
+      } catch (error) {
+        if (error?.status === 503) return res.status(503).json({ success: false, error: error.message })
+        console.error('Practitioner license validation OCR failed:', error?.message || error)
+        return res.status(503).json({ success: false, error: 'We could not read this license document. Upload a clearer image and try again.' })
+      }
+      const licenseValidation = validatePractitionerCredentialDocument({
+        firstName,
+        middleName: text(input.middleName, 100),
+        lastName,
+        suffix: text(input.suffix, 50),
+        text: licenseOcr.extractedText,
+        confidence: getVisionWordConfidence(licenseOcr.annotation),
+      })
+      if (!licenseValidation.accepted) {
+        return res.status(422).json({ success: false, error: licenseValidation.reason })
+      }
+      practitionerCredentialExpiryDate = licenseValidation.expiryDate
+      if (!credentialNumber) credentialNumber = extractPractitionerLicenseNumber(licenseOcr.extractedText)
     }
     const effectivePermissions = [...new Set([
       ...defaultClinicRolePermissions,
@@ -9127,15 +9353,17 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       engagementType, employmentType, weeklyHoursTarget, userType: 'Staff',
       branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
       practitionerType: isPractitioner ? professionalSpecialty : null,
-      status: 'Pending Activation', practitionerLicenseUrl: text(input.practitionerLicenseUrl, 2000) || null,
-      practitionerLicenseName: text(input.practitionerLicenseName, 255) || null,
-      practitionerLicenseUploadedBy: input.practitionerLicenseUrl ? req.user.uid : null,
+      status: 'Pending Activation', practitionerLicenseUrl: practitionerLicenseUrl || null,
+      practitionerLicenseName: practitionerLicenseName || null,
+      practitionerLicenseStoragePath: practitionerLicenseStoragePath || null,
+      practitionerLicenseUploadedBy: practitionerLicenseUrl ? req.user.uid : null,
       mustChangePassword: true, createdAt: admin.firestore.FieldValue.serverTimestamp(), createdBy: req.user.uid,
     })
     if (isPractitioner) {
       profileBatch.set(firestore.collection('practitionerProfiles').doc(targetId), {
         type: professionalSpecialty,
         credentialNumber,
+        credentialExpiryDate: practitionerCredentialExpiryDate,
         credentialsVerified: false,
         approvedServiceIds: [],
         rates: [],

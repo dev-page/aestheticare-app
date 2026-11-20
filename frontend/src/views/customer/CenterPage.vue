@@ -652,6 +652,7 @@ import { appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPri
 import CustomerSidebar from '@/components/sidebar/CustomerSidebar.vue'
 import ServiceDetailsModal from '@/components/common/ServiceDetailsModal.vue'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
+import { fetchPublicClinicProfile } from '@/utils/customerCenters'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
@@ -1492,12 +1493,7 @@ const loadPractitioners = trackPageLoad(async (branchId = activeBranchId.value) 
 })
 
 const loadBranchData = trackPageLoad(async (branchId) => {
-  const clinicSnap = await getDoc(doc(db, 'publicClinics', branchId))
-  if (!clinicSnap.exists()) {
-    throw new Error('Branch not found.')
-  }
-
-  const data = clinicSnap.data() || {}
+  const data = await fetchPublicClinicProfile(branchId)
 
   const centerBlocked = !isPublicClinicCustomerDiscoverable(data)
 
@@ -3182,20 +3178,6 @@ const submitBooking = async () => {
 onMounted(trackPageLoad(async () => {
   loading.value = true
   try {
-    const rootSnap = await getDoc(doc(db, 'publicClinics', centerId))
-    if (!rootSnap.exists()) {
-      toast.error('Center not found.')
-      router.replace({ name: 'centers' })
-      return
-    }
-
-    const rootData = rootSnap.data() || {}
-    if (!isPublicClinicCustomerDiscoverable(rootData)) {
-      toast.error('This branch is currently unavailable.')
-      router.replace({ name: 'centers' })
-      return
-    }
-
     await loadBranchData(centerId)
     await handleBookingPayMongoReturn()
     if (selectedServices.value.length) {

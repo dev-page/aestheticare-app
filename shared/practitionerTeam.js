@@ -1,5 +1,10 @@
 export const practitionerTypes = ['Doctor', 'Registered Nurse', 'Aesthetician', 'Therapist', 'Other']
 export const employeeSpecialtyTypes = Object.freeze(practitionerTypes.filter(type => type !== 'Other'))
+// Consultation access identifies a clinical role. Appointment updates are also
+// granted to some non-clinical roles, so that permission alone is insufficient.
+export const practitionerPermissionKeys = Object.freeze(['consultations:view', 'consultations:create'])
+export const hasPractitionerPermissions = permissions => Array.isArray(permissions)
+  && permissions.some(permission => practitionerPermissionKeys.includes(String(permission || '').trim()))
 export const isPractitionerEmployee = user => {
   if (!user || user.archived || (user.userType && String(user.userType).toLowerCase() !== 'staff')) return false
   if (user.status && String(user.status).toLowerCase() !== 'active') return false

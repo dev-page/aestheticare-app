@@ -88,6 +88,13 @@ const projectPublicClinic = (clinic, now = new Date()) => {
   if (!clinic || clinic.isPublished !== true) return null
   const result = { isPublished: true, ...customerAvailability(clinic, now) }
   for (const field of TEXT_FIELDS) if (typeof clinic[field] === 'string') result[field] = clinic[field]
+  // Some older approved clinic records stored the registered name only as
+  // companyName. Expose it through the public clinicName field without
+  // publishing the internal companyName field itself.
+  if (!result.clinicName) {
+    const fallbackName = clinic.businessName || clinic.companyName || clinic.clinicBranch
+    if (typeof fallbackName === 'string' && fallbackName.trim()) result.clinicName = fallbackName.trim()
+  }
   // Registration historically stored a personal contact number. Setup asks
   // for customer-facing contact details, so publish them only after setup.
   if (clinic.clinicSetupCompletedAt) {
