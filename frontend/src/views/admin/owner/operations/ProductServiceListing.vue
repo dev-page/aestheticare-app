@@ -6,7 +6,7 @@
       <div class="listing-page-heading mb-6">
         <div><p class="listing-eyebrow">Clinic services</p>
         <h1 class="text-2xl md:text-3xl font-bold mb-1">Service Listings</h1>
-        <p class="text-slate-400">Save drafts, submit financial terms to Finance, then publish approved listings.</p>
+        <p class="text-slate-400">{{ canDirectPublishListings ? 'Publish your own listings directly. Employee-created listings still need Finance review.' : 'Save drafts and submit financial terms to Finance for review before publishing.' }}</p>
         </div><button v-if="activeListingTab === 'listings' && canCreateListing" type="button" class="listing-primary-button" @click="activeListingTab = 'create'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg><span>Create listing</span></button>
       </div>
 
@@ -41,11 +41,20 @@
 
         <div class="flex gap-2">
           <button
-            @click="createPost"
+            @click="createPost(false)"
             :disabled="loading"
             class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {{ loading ? 'Posting...' : 'Save Draft' }}
+          </button>
+          <button
+            v-if="canDirectPublishListings"
+            type="button"
+            @click="createPost(true)"
+            :disabled="loading"
+            class="bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {{ loading ? 'Publishing...' : 'Save & Publish' }}
           </button>
           <button
             @click="resetForm"
@@ -72,10 +81,11 @@
                 <span class="text-xs text-slate-400">{{ formatDate(post.createdAt) }}</span>
               </div>
               <h3 class="font-semibold mb-1">{{ post.title }}</h3>
-              <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? 'Finance approved - awaiting publication' : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
+              <p class="listing-publication-status mb-2 text-sm font-semibold" :class="{ 'is-published': post.isPublished }">{{ post.isPublished && post.financeStatus === 'approved' ? 'Published' : post.financeStatus === 'approved' ? (post.approvalMethod === 'owner_direct' ? 'Owner/Admin approved - awaiting publication' : 'Finance approved - awaiting publication') : post.financeStatus === 'pending' ? 'Awaiting Finance review' : post.financeStatus === 'rejected' ? 'Changes requested' : 'Draft' }}</p>
               <p v-if="post.financeReview?.note" class="mb-2 text-sm">Finance: {{ post.financeReview.note }}</p>
               <div class="mb-3 flex flex-wrap gap-2">
-                <button v-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting...' : 'Submit to Finance' }}</button>
+                <button v-if="canDirectPublishPost(post)" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing...' : 'Publish' }}</button>
+                <button v-else-if="canManageListingWorkflow && (!post.financeStatus || ['draft', 'rejected'].includes(post.financeStatus))" :disabled="!!actionLoadingId" @click="listingAction(post, 'submit')" class="rounded bg-blue-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Submitting...' : 'Submit to Finance' }}</button>
                 <button v-if="canManageListingWorkflow && post.financeStatus === 'approved' && !post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'publish')" class="rounded bg-emerald-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Publishing...' : 'Publish' }}</button>
                 <button v-if="canManageListingWorkflow && post.isPublished" :disabled="!!actionLoadingId" @click="listingAction(post, 'unpublish')" class="rounded bg-slate-700 px-3 py-2 text-sm">{{ actionLoadingId === post.id ? 'Unpublishing...' : 'Unpublish' }}</button>
               </div>
@@ -214,12 +224,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp())
     const storage = getStorage(getApp())
     const auth = getAuth(getApp())
-    const { hasPermission, isClinicAdminOwner } = usePermissions()
+    const { hasPermission, isClinicAdminOwner, userRole } = usePermissions()
     const canViewListings = computed(() => hasPermission('services:view'))
     const canCreateListing = computed(() => hasPermission('services:create'))
     const canUpdateListing = computed(() => hasPermission('services:update'))
     const canDisableListing = computed(() => hasPermission('services:disable'))
     const canManageListingWorkflow = computed(() => isClinicAdminOwner.value || canUpdateListing.value)
+    const canDirectPublishListings = computed(() => canManageListingWorkflow.value && (isClinicAdminOwner.value || userRole.value === 'Clinic Admin'))
+    const canDirectPublishPost = (post) => canDirectPublishListings.value
+      && post?.createdBy === currentUserId.value
+      && post?.requiresFinanceReview !== true
+      && ['draft', ''].includes(String(post?.financeStatus || 'draft'))
 
     const loading = ref(false)
     const currentUserId = ref('')
@@ -651,9 +666,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     )
 
-    const createPost = async () => {
+    const createPost = async (publishAfterSave = false) => {
       if (!canCreateListing.value) {
         toast.error('You do not have permission to create service listings.')
+        return
+      }
+      if (publishAfterSave && !canDirectPublishListings.value) {
+        toast.error('Only a clinic owner or Clinic Admin can publish their own listing directly.')
         return
       }
       const postType = form.value.postType
@@ -778,14 +797,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           createdAt: serverTimestamp(),
         }
 
-        await addDoc(collection(db, 'productServicePosts'), postPayload)
+        const createdPost = await addDoc(collection(db, 'productServicePosts'), postPayload)
+        let publishError = ''
+        if (publishAfterSave) {
+          try {
+            await updateListingApproval(createdPost.id, 'publish')
+          } catch (error) {
+            publishError = error?.message || 'The listing could not be published yet.'
+          }
+        }
         await logActivity(db, {
           module: 'Manager',
           action: 'Created product/service post',
           details: `Created ${postType.toLowerCase()} post: ${selectedName.trim()}.`
         })
 
-        toast.success('Draft saved. Submit it for Finance review when ready.')
+        if (publishError) toast.error(`Draft saved, but it could not be published: ${publishError}`)
+        else toast.success(publishAfterSave
+          ? 'Listing published.'
+          : canDirectPublishListings.value
+            ? 'Draft saved. Publish it directly or submit it for Finance review when ready.'
+            : 'Draft saved. Submit it for Finance review when ready.')
         resetForm()
         await loadPosts()
         listingSearch.value = ''
@@ -982,7 +1014,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (nextImageUrl) payload.imageUrl = nextImageUrl
 
         const existing = posts.value.find((post) => post.id === editTargetId.value) || {}
-        if (financialTermsChanged(existing, { ...existing, ...payload })) Object.assign(payload, newListingState())
+        if (financialTermsChanged(existing, { ...existing, ...payload })) Object.assign(payload, newListingState(), { requiresFinanceReview: true })
         await updateDoc(doc(db, 'productServicePosts', editTargetId.value), payload)
         await logActivity(db, {
           module: 'Manager',
@@ -1148,6 +1180,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       pageLoading,
       listingAction,
       canManageListingWorkflow,
+      canDirectPublishListings,
+      canDirectPublishPost,
       canViewListings,
       canCreateListing,
       canUpdateListing,

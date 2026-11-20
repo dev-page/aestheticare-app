@@ -38,7 +38,7 @@ export const sameDayServiceConfigurationError = (service, consultation) => {
   if (!hasOnSiteMode) return 'Same-day treatment requests need a linked consultation that supports on-site appointments.'
   return ''
 }
-export const draftListing = () => ({ financeStatus: 'draft', isPublished: false, financeReview: null, publishedBy: null, publishedAt: null })
+export const draftListing = () => ({ financeStatus: 'draft', isPublished: false, financeReview: null, approvalMethod: null, requiresFinanceReview: false, publishedBy: null, publishedAt: null })
 export const financialTermsChanged = (before, after) => financialFields.some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
 export const approvedOrderLines = (items, listings, amount) => {
   const fail = (message) => { throw Object.assign(new Error(message), { status: 409 }) }
@@ -75,12 +75,28 @@ export const listingTransition = (post, action, role, uid, note = '', permission
     if (!canReviewListingTerms) fail('You do not have permission to review listing financial terms.', 403)
     if (post.financeStatus !== 'pending') fail('This listing is no longer awaiting Finance review.')
     if (action === 'reject' && !note.trim()) fail('Explain which financial terms need changing.', 400)
-    return { financeStatus: action === 'approve' ? 'approved' : 'rejected', isPublished: false, financeReview: { reviewedBy: uid, note: note.trim(), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])) } }
+    return { financeStatus: action === 'approve' ? 'approved' : 'rejected', isPublished: false, approvalMethod: action === 'approve' ? 'finance_review' : null, financeReview: { reviewedBy: uid, note: note.trim(), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])) } }
   }
   if (['publish', 'unpublish'].includes(action)) {
     if (!canManageListings) fail('You do not have permission to publish listings.', 403)
-    if (action === 'publish' && post.financeStatus !== 'approved') fail('Finance must approve the financial terms first.')
-    return { isPublished: action === 'publish', publishedBy: action === 'publish' ? uid : null }
+    const canDirectPublishOwnDraft = action === 'publish'
+      && ['Owner', 'Clinic Admin'].includes(role)
+      && String(post.createdBy || '') === String(uid || '')
+      && post.requiresFinanceReview !== true
+      && ['draft', ''].includes(String(post.financeStatus || 'draft'))
+    if (canDirectPublishOwnDraft && (!Number.isFinite(Number(post.price)) || Number(post.price) <= 0)) {
+      fail('Set a valid positive price before publishing.', 400)
+    }
+    if (canDirectPublishOwnDraft && post.allowInstallments
+      && (!Number.isFinite(Number(post.depositPercent)) || Number(post.depositPercent) < 1 || Number(post.depositPercent) >= 100)) {
+      fail('Set an initial payment between 1% and 99%.', 400)
+    }
+    if (action === 'publish' && post.financeStatus !== 'approved' && !canDirectPublishOwnDraft) fail('Finance must approve the financial terms first.')
+    return {
+      ...(canDirectPublishOwnDraft ? { financeStatus: 'approved', approvalMethod: 'owner_direct', requiresFinanceReview: false, financeReview: null } : {}),
+      isPublished: action === 'publish',
+      publishedBy: action === 'publish' ? uid : null,
+    }
   }
   fail('Unknown listing action.', 400)
 }
@@ -147,7 +163,14 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
         if (update.financeReview) update.financeReview.reviewedAt = timestamp
         if (action === 'publish') update.publishedAt = timestamp
         tx.update(ref, { ...update, updatedAt: timestamp })
-        tx.set(ref.collection('approvalHistory').doc(), { action, actorId: req.user.uid, note: String(req.body?.note || '').slice(0, 2000), terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])), createdAt: timestamp })
+        tx.set(ref.collection('approvalHistory').doc(), {
+          action,
+          actorId: req.user.uid,
+          ...(update.approvalMethod === 'owner_direct' ? { approvalMethod: 'owner_direct', note: 'Published directly by the clinic owner or Clinic Admin.' } : {}),
+          ...(String(req.body?.note || '').trim() && update.approvalMethod !== 'owner_direct' ? { note: String(req.body.note).slice(0, 2000) } : {}),
+          terms: Object.fromEntries(financialFields.map((key) => [key, post[key] ?? null])),
+          createdAt: timestamp,
+        })
         for (const uid of new Set(recipients)) {
           if (uid === req.user.uid) continue
           tx.set(db.collection('notifications').doc(), { recipientUserId: uid, title: 'Listing review updated', message: `${post.title || 'Product/service'}: ${action === 'submit' ? 'Awaiting Finance review' : action}.`, link: action === 'submit' ? '/finance/listing-approvals' : '/catalog/products-services', read: false, deleted: false, createdAt: timestamp })

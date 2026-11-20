@@ -609,7 +609,10 @@ import {
   roleControlPermissionKeys,
 } from '@/config/clinicPermissionRegistry'
 import { builtInRoleTemplates, getTemplatePermissions, permissionSuggestionRules } from '../../../../../shared/clinicRoleTemplates.js'
-import { inferClinicRolePagePermissions } from '../../../../../shared/clinicRolePermissionControls.js'
+import {
+  clinicAdministratorAccessKey,
+  inferClinicRolePagePermissions,
+} from '../../../../../shared/clinicRolePermissionControls.js'
 
 const ROLE_COLOR = '#d2a679'
 // These pages are always available to clinic staff as self-service. Request
@@ -701,6 +704,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const isPermissionEnabled = (permissionKey) =>
       defaultPermissionKeys.has(permissionKey)
+      || selectedRoleDraft.value.permissions.includes(clinicAdministratorAccessKey)
       || selectedRoleDraft.value.permissions.includes(permissionKey)
 
     const normalizePermissionSet = (permissionList = []) => {
@@ -1294,7 +1298,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (isDefaultPermission(permissionKey)) return
       if (isPermissionLocked(permissionKey)) return
       const permissions = new Set((selectedRoleDraft.value.permissions || []).filter((key) => roleControlPermissionKeys.includes(key)))
-      if (permissions.has(permissionKey)) {
+      if (permissionKey !== clinicAdministratorAccessKey && permissions.has(clinicAdministratorAccessKey)) {
+        // Turning off one permission while full clinic access is enabled first
+        // converts the role to explicit access for every other control.
+        permissions.delete(clinicAdministratorAccessKey)
+        roleControlPermissionKeys
+          .filter((key) => key !== clinicAdministratorAccessKey)
+          .forEach((key) => permissions.add(key))
+        permissions.delete(permissionKey)
+      } else if (permissions.has(permissionKey)) {
         permissions.delete(permissionKey)
       } else {
         permissions.add(permissionKey)

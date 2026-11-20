@@ -960,8 +960,13 @@ service cloud.firestore {
       }
       function financialChange() {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount'
+          'price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount',
+          'vatApplicable', 'vatPriceMode'
         ]);
+      }
+      function preservesFinanceReviewRequirement() {
+        return !resource.data.get('requiresFinanceReview', false)
+          || request.resource.data.get('requiresFinanceReview', false) == true;
       }
       allow read: if (isCustomerDiscoverablePublicClinic(resource.data.branchId)
           && resource.data.get('financeStatus', '') == 'approved' && resource.data.get('isPublished', false) == true)
@@ -970,9 +975,9 @@ service cloud.firestore {
         && hasPermission('services:create') && draft();
       allow update: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:update')
         && request.resource.data.branchId == resource.data.branchId
-        && ((financialChange() && draft()) || (!financialChange()
+        && ((financialChange() && draft() && request.resource.data.get('requiresFinanceReview', false) == true) || (!financialChange() && preservesFinanceReviewRequirement()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'financeStatus', 'financeReview', 'isPublished', 'publishedBy', 'publishedAt', 'submittedBy'
+            'financeStatus', 'financeReview', 'isPublished', 'publishedBy', 'publishedAt', 'submittedBy', 'approvalMethod'
           ])));
       allow delete: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('services:disable');
       match /approvalHistory/{entryId} {

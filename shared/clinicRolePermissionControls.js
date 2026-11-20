@@ -7,7 +7,7 @@ const permission = (key, label, description, icon, grants, legacyAny = grants) =
   legacyAny,
 })
 
-export const clinicRolePermissionGroups = [
+const baseClinicRolePermissionGroups = [
   {
     key: 'clinic-setup', label: 'Clinic Setup', description: 'Control access to clinic details, branches, and policies.', sections: [
       { key: 'branches', label: 'Branches', description: 'View branches separately from changing branch settings.', permissions: [
@@ -96,6 +96,44 @@ export const clinicRolePermissionGroups = [
         permission('backups:manage', 'Manage Clinic Backup', 'View backup history and create clinic database exports.', 'mdi:database-export-outline', ['backups:view', 'backups:create'], ['backups:view']),
       ] },
     ],
+  },
+]
+
+export const clinicAdministratorAccessKey = 'page:clinic-administrator:access'
+
+const baseClinicRolePermissionControls = baseClinicRolePermissionGroups.flatMap(group =>
+  group.sections.flatMap(section => section.permissions)
+)
+
+const clinicAdministratorPermissionGrants = [...new Set([
+  ...baseClinicRolePermissionControls.flatMap(control => control.grants),
+  // Legacy clinic actions still used by some workflows and role documents.
+  'procurement:view', 'procurement:create', 'procurement:review',
+  'orders:view', 'orders:update',
+  'finance:purchases:view', 'finance:payables:settle',
+  'finance:refunds:view', 'finance:refunds:manage', 'finance:reports:view',
+  'reports:view',
+])]
+
+export const clinicRolePermissionGroups = [
+  ...baseClinicRolePermissionGroups,
+  {
+    key: 'clinic-administrator',
+    label: 'Clinic Administrator',
+    description: 'Grant every employee-assignable clinic permission in one step.',
+    sections: [{
+      key: 'clinic-administrator-access',
+      label: 'Clinic Administrator Access',
+      description: 'Applies across the clinic and the branches assigned to this employee.',
+      permissions: [permission(
+        'clinic-administrator:access',
+        'Allow all access',
+        'Give this role access to every clinic page and action available to employees, including role management, finance, HR, and account settings.',
+        'mdi:shield-crown-outline',
+        clinicAdministratorPermissionGrants,
+        [],
+      )],
+    }],
   },
 ]
 
