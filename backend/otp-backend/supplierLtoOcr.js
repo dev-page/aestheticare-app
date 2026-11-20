@@ -47,7 +47,7 @@ const getPhilippineDate = (date = new Date()) => {
 
 const extractEstablishmentName = value => {
   const lines = String(value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-  const labelPattern = /^(?:name\s+of\s+(?:the\s+)?(?:establishment|business)|(?:establishment|business)\s+name|registered\s+(?:business|establishment)\s+name|trade\s+name)\s*[:\-]?\s*(.*)$/i
+  const labelPattern = /^(?:name\s+of\s+(?:the\s+)?(?:establishment|business)|(?:establishment|business)\s+name|registered\s+(?:business|establishment)\s+name|trade\s+name|is\s+hereby\s+granted\s+to)\s*[:\-]?\s*(.*)$/i
   const nextFieldPattern = /^(?:l\.?\s*t\.?\s*o\.?\b|license\s+to\s+operate\b|(?:lto\s+)?(?:number|no\.?|#)\b|address\b|(?:date\s+of\s+)?(?:issue|expiry|expiration)\b|valid\s+(?:from|until|through)\b|contact(?:\s+person)?\b|owner\b|proprietor\b|trade\s+name\b)/i
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -79,11 +79,11 @@ export const analyzeFdaLtoText = (value, today = getPhilippineDate()) => {
     }
   }
 
-  const numberMatch = extractedText.match(/(?:\bL\.?\s*T\.?\s*O\.?\s*(?:NO\.?|NUMBER|#)|\bLICENSE\s+TO\s+OPERATE\s*(?:NO\.?|NUMBER|#))\s*[:\-]?\s*([A-Z0-9][A-Z0-9./-]{3,39})/i)
+  const numberMatch = extractedText.match(/(?:\bL\.?\s*T\.?\s*O\.?\s*(?:NO\.?|NUMBER|#)|\bLICENSE\s+(?:TO\s+OPERATE\s+)?(?:NO\.?|NUMBER|#))\s*[:\-]?\s*([A-Z0-9][A-Z0-9./-]{3,39})/i)
   const ltoNumber = String(numberMatch?.[1] || '').replace(/[.,;:]+$/, '').trim()
   const businessName = extractEstablishmentName(extractedText)
   const flatText = extractedText.replace(/\s+/g, ' ')
-  const expiryLabel = /(?:expiry(?:\s+date)?|expiration(?:\s+date)?|date\s+of\s+(?:expiry|expiration)|valid\s+(?:until|through|up\s+to)|validity\s+(?:date|until|period)|expires?\s+(?:on|at)|valid\s+from)/gi
+  const expiryLabel = /(?:expiry(?:\s+date)?|expiration(?:\s+date)?|date\s+of\s+(?:expiry|expiration)|valid\s+(?:until|through|up\s+to)|validity\s+(?:(?:date|until|period)|of\s+license)|expires?\s+(?:on|at)|valid\s+from)/gi
   const candidateDates = []
   for (const labelMatch of flatText.matchAll(expiryLabel)) {
     const start = (labelMatch.index || 0) + labelMatch[0].length

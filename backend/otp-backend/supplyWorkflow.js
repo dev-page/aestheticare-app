@@ -297,7 +297,8 @@ export const registerSupplyWorkflow = (app, { admin, requireAuth, loadUserContex
       visionClient, bucketName, storagePath, contentType, bytes, uid: ctx.uid,
       docKey: `supplier-lto-${supplierId}`,
     })
-    res.json({ success: true, data: analyzeFdaLtoText(ocr?.extractedText || '') })
+    const { ltoNumber, businessName, expiryDate, status, reason } = analyzeFdaLtoText(ocr?.extractedText || '')
+    res.json({ success: true, data: { ltoNumber, businessName, expiryDate, status, reason } })
   }))
 
   app.get('/supply/suppliers/:supplierId/lto-document-url', requireAuth, wrap(async (req, res, ctx) => {

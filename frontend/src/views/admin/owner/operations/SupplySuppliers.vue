@@ -178,10 +178,6 @@
             </p>
             <p v-if="form.ltoOcrReason" class="lto-message" :class="`lto-message-${form.ltoStatus}`" role="status">{{ form.ltoOcrReason }}</p>
             <p v-if="ltoUploadBusy" class="lto-progress" role="status"><span class="button-spinner" aria-hidden="true"></span> Uploading and reading the document…</p>
-            <details v-if="form.ltoExtractedText" class="ocr-text">
-              <summary>View extracted text</summary>
-              <pre>{{ form.ltoExtractedText }}</pre>
-            </details>
           </section>
 
           <footer>
@@ -235,7 +231,7 @@ const scope = ref({ branchId: '', ownerId: '' })
 const blank = () => ({
   businessName: '', category: '', contactPerson: '', email: '', contactNumber: '', address: '',
   associationStatus: 'Active', ltoNumber: '', ltoDocument: null, ltoExpiryDate: '',
-  ltoBusinessName: '', ltoStatus: 'not_uploaded', ltoOcrReason: '', ltoExtractedText: '', ltoOcrProcessedAt: '',
+  ltoBusinessName: '', ltoStatus: 'not_uploaded', ltoOcrReason: '', ltoOcrProcessedAt: '',
 })
 const form = ref(blank())
 
@@ -524,7 +520,6 @@ async function onLtoFileChange(event) {
     form.value.ltoNumber = ''
     form.value.ltoExpiryDate = ''
     form.value.ltoBusinessName = ''
-    form.value.ltoExtractedText = ''
     form.value.ltoOcrProcessedAt = ''
     form.value.ltoStatus = 'needs_review'
     form.value.ltoOcrReason = 'Document uploaded. Reading the LTO number and expiry date…'
@@ -544,7 +539,6 @@ async function onLtoFileChange(event) {
     form.value.ltoBusinessName = String(result?.businessName || '')
     form.value.ltoStatus = result?.status || 'needs_review'
     form.value.ltoOcrReason = String(result?.reason || 'OCR completed. Review the original document before relying on these details.')
-    form.value.ltoExtractedText = String(result?.extractedText || '')
     form.value.ltoOcrProcessedAt = new Date().toISOString()
     if (previousDocumentPath && previousDocumentPath !== storagePath) {
       const previousPendingUpload = pendingLtoUploads.value.find(upload => upload.storagePath === previousDocumentPath)
