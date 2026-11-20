@@ -117,5 +117,50 @@ onUnmounted(() => { generation++; stopAuth?.(); stops.forEach(stop => stop()) })
 </script>
 
 <style scoped>
-.prescriptions-shell{display:flex;min-height:100vh;background:#0f172a;color:#f8fafc}.prescriptions-main{min-width:0;flex:1;padding:2rem}.prescriptions-content{width:min(100%,1100px);margin:0 auto}.page-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1.5rem}.eyebrow{margin:0;color:#c08457;font-size:.7rem;font-weight:700;letter-spacing:.17em;text-transform:uppercase}.page-heading h1{margin:.35rem 0;color:#fff;font-size:2rem;font-weight:700}.subtitle{max-width:680px;margin:.4rem 0 0;color:#94a3b8;line-height:1.55}.branch-filter{min-width:220px;color:#cbd5e1;font-size:.85rem}.branch-filter select{display:block;width:100%;margin-top:.35rem;border:1px solid #475569;border-radius:.65rem;background:#1e293b;padding:.65rem;color:#fff}.prescription-list{display:grid;gap:1rem}.prescription-card,.empty-state{border:1px solid #334155;border-radius:1rem;background:#1e293b}.prescription-card{padding:1.25rem}.card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.clinic-name{margin:0;color:#c08457;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.card-heading h2{margin:.3rem 0;color:#f8fafc;font-size:1.2rem;font-weight:700}.visit-meta{margin:0;color:#94a3b8;font-size:.84rem}.record-badge{flex:0 0 auto;border-radius:999px;padding:.35rem .7rem;background:#334155;color:#e2e8f0;font-size:.75rem;font-weight:700}.detail-section{margin-top:1rem;padding-top:.85rem;border-top:1px solid #334155}.detail-section h3{margin:0 0 .45rem;color:#fbbf77;font-size:.88rem;font-weight:700}.prescription-copy{margin:.6rem 0 0;color:#cbd5e1;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}.medicine-row{padding:.7rem 0;border-top:1px solid #334155}.medicine-row:first-of-type{border-top:0}.medicine-row strong{color:#f8fafc}.medicine-row p{margin:.25rem 0 0;color:#cbd5e1;font-size:.9rem;white-space:pre-wrap}.card-footer{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-top:1rem;padding-top:.85rem;border-top:1px solid #334155}.card-footer p{margin:0;color:#94a3b8;font-size:.84rem}.card-footer button{border:0;border-radius:.65rem;padding:.65rem .9rem;background:#b45309;color:white;font-size:.82rem;font-weight:700;white-space:nowrap}.card-footer button.secondary-button{border:1px solid #64748b;background:transparent;color:#e2e8f0}.card-footer button:disabled{opacity:.55}.empty-state{display:grid;justify-items:center;padding:3rem 1.25rem;text-align:center}.empty-icon{display:grid;width:2.7rem;height:2.7rem;place-items:center;border-radius:50%;background:#334155;color:#fbbf77;font-weight:700}.empty-state h2{margin:1rem 0 .35rem;color:#f8fafc;font-size:1.25rem;font-weight:700}.empty-state p,.state-message{margin:0;color:#94a3b8}.state-message{border-radius:.75rem;padding:1rem}.error-message{border:1px solid #7f1d1d;background:#450a0a;color:#fecaca}@media(max-width:700px){.prescriptions-main{padding:1rem}.page-heading,.card-footer{align-items:flex-start;flex-direction:column}.page-heading h1{font-size:1.65rem}.prescription-card{padding:1rem}.card-heading{flex-direction:column}.record-badge{order:-1}.branch-filter{width:100%}}
+.prescriptions-shell.owner-theme { display: flex; min-height: 100vh; background: var(--owner-bg); color: var(--owner-text); }
+.prescriptions-main { min-width: 0; flex: 1; padding: 2rem; }
+.prescriptions-content { width: min(100%, 1100px); margin: 0 auto; }
+.page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.5rem; }
+.eyebrow { margin: 0; color: var(--owner-accent); font-size: .7rem; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
+.page-heading h1 { margin: .35rem 0; color: var(--owner-text); font-size: 2rem; font-weight: 700; }
+.subtitle { max-width: 680px; margin: .4rem 0 0; color: var(--owner-muted); line-height: 1.55; }
+.branch-filter { min-width: 220px; color: var(--owner-text-secondary, var(--owner-text)); font-size: .85rem; }
+.branch-filter select { display: block; width: 100%; margin-top: .35rem; border: 1px solid var(--owner-border-strong, var(--owner-border)); border-radius: .65rem; background: var(--owner-surface); padding: .65rem; color: var(--owner-text); }
+.branch-filter select:focus-visible, .pos-link:focus-visible { outline: 3px solid var(--owner-accent); outline-offset: 2px; }
+.prescription-list { display: grid; gap: 1rem; }
+.prescription-card, .empty-state { border: 1px solid var(--owner-border); border-radius: 1rem; background: var(--owner-surface); box-shadow: var(--ac-shadow-sm); }
+.prescription-card { padding: 1.25rem; }
+.card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.clinic-name { margin: 0; color: var(--owner-accent); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.card-heading h2 { margin: .3rem 0; color: var(--owner-text); font-size: 1.2rem; font-weight: 700; }
+.visit-meta { margin: 0; color: var(--owner-muted); font-size: .84rem; }
+.record-badge { flex: 0 0 auto; border-radius: 999px; padding: .35rem .7rem; background: var(--owner-surface-soft); color: var(--owner-text-secondary, var(--owner-text)); font-size: .75rem; font-weight: 700; }
+.detail-section { margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--owner-border); }
+.detail-section h3 { margin: 0 0 .45rem; color: var(--owner-accent); font-size: .88rem; font-weight: 700; }
+.prescription-copy { margin: .6rem 0 0; color: var(--owner-text-secondary, var(--owner-text)); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.medicine-row { padding: .7rem 0; border-top: 1px solid var(--owner-border); }
+.medicine-row:first-of-type { border-top: 0; }
+.medicine-row strong { color: var(--owner-text); }
+.medicine-row p { margin: .25rem 0 0; color: var(--owner-text-secondary, var(--owner-text)); font-size: .9rem; white-space: pre-wrap; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--owner-border); }
+.card-footer p { margin: 0; color: var(--owner-muted); font-size: .84rem; }
+.pos-link { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; border: 0; border-radius: .65rem; background: var(--ac-primary); padding: .65rem .9rem; color: var(--ac-on-primary); font-size: .82rem; font-weight: 700; text-align: center; text-decoration: none; white-space: nowrap; }
+.pos-link:hover { background: var(--ac-primary-hover); }
+.empty-state { display: grid; justify-items: center; padding: 3rem 1.25rem; text-align: center; }
+.empty-icon { display: grid; width: 2.7rem; height: 2.7rem; place-items: center; border-radius: 50%; background: var(--owner-surface-soft); color: var(--owner-accent); font-weight: 700; }
+.empty-state h2 { margin: 1rem 0 .35rem; color: var(--owner-text); font-size: 1.25rem; font-weight: 700; }
+.empty-state p, .state-message { margin: 0; color: var(--owner-muted); }
+.state-message { border: 1px solid var(--owner-border); border-radius: .75rem; background: var(--owner-surface); padding: 1rem; }
+.error-message { border-color: var(--ac-danger); background: var(--ac-danger-bg); color: var(--ac-danger); }
+
+@media (max-width: 700px) {
+  .prescriptions-main { padding: 1rem; }
+  .page-heading, .card-footer { align-items: flex-start; flex-direction: column; }
+  .page-heading h1 { font-size: 1.65rem; }
+  .prescription-card { padding: 1rem; }
+  .card-heading { flex-direction: column; }
+  .record-badge { order: -1; }
+  .branch-filter { width: 100%; }
+  .pos-link { width: 100%; white-space: normal; }
+}
 </style>
