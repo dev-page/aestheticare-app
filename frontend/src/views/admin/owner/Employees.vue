@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import StaffProfile from './StaffProfile.vue'
 import AddStaff from './AddStaff.vue'
@@ -8,6 +8,7 @@ import ArchivedEmployees from './ArchivedEmployees.vue'
 import { usePermissions } from '@/composables/usePermissions'
 
 const route = useRoute()
+const router = useRouter()
 const { hasPermission } = usePermissions()
 const canView = computed(() => hasPermission('staff:view'))
 const canCreate = computed(() => hasPermission('staff:create'))
@@ -22,6 +23,7 @@ const tabs = computed(() => [
   { key: 'create', label: 'Create Account', to: '/hr/employees/new', allowed: canCreate.value },
   { key: 'archived', label: 'Archived Accounts', to: '/hr/employees/archived', allowed: canManageAccess.value },
 ])
+const closeCreateAccount = () => router.replace('/hr/employees')
 </script>
 
 <template>
@@ -36,10 +38,10 @@ const tabs = computed(() => [
           <span v-else class="employee-tab is-disabled" aria-disabled="true" title="You do not have permission to access this tab.">{{ tab.label }}</span>
         </template>
       </nav>
-      <StaffProfile v-if="activeTab === 'profiles' && canView" embedded />
-      <AddStaff v-else-if="activeTab === 'create' && canCreate" embedded />
+      <StaffProfile v-if="(activeTab === 'profiles' || activeTab === 'create') && canView" embedded />
       <ArchivedEmployees v-else-if="activeTab === 'archived' && canManageAccess" embedded />
-      <p v-else class="text-sm text-slate-400">You do not have access to this tab.</p>
+      <AddStaff v-if="activeTab === 'create' && canCreate" embedded @close="closeCreateAccount" />
+      <p v-if="(activeTab === 'profiles' && !canView) || (activeTab === 'create' && !canCreate) || (activeTab === 'archived' && !canManageAccess)" class="text-sm text-slate-400">You do not have access to this tab.</p>
     </main>
   </div>
 </template>

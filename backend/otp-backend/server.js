@@ -9274,8 +9274,27 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     if (!['employee', 'student_intern'].includes(engagementType)
       || (engagementType === 'employee' && !['Full-time', 'Part-time'].includes(employmentType))
       || (engagementType === 'student_intern' && employmentType !== 'Intern')
-      || !Number.isFinite(weeklyHoursTarget) || weeklyHoursTarget < 1 || weeklyHoursTarget > 48) {
-      return res.status(400).json({ success: false, error: 'Choose an employee or student intern arrangement and enter agreed weekly hours from 1 to 48.' })
+      || !Number.isFinite(weeklyHoursTarget) || weeklyHoursTarget < 1 || weeklyHoursTarget > 48
+      || (employmentType === 'Full-time' && weeklyHoursTarget < 40)
+      || (employmentType === 'Part-time' && weeklyHoursTarget >= 40)
+      || Math.round(weeklyHoursTarget * 2) !== weeklyHoursTarget * 2) {
+      return res.status(400).json({ success: false, error: 'Enter 40 to 48 agreed hours for full-time, fewer than 40 for part-time, or 1 to 48 for an intern.' })
+    }
+    const employmentStartDate = text(input.employmentStartDate, 10)
+    const hasPayRate = input.basePay !== undefined && input.basePay !== null && String(input.basePay).trim() !== ''
+    const basePayValue = hasPayRate ? Number(input.basePay) : null
+    const basePayModel = text(input.basePayModel || 'hourly', 40)
+    const monthlyBaseHours = Number(input.monthlyBaseHours || 176)
+    const payFieldsRequested = input.basePayModel !== undefined
+      || input.basePay !== undefined
+      || input.monthlyBaseHours !== undefined
+      || input.employmentStartDate !== undefined
+    if (payFieldsRequested && (!['hourly', 'daily', 'monthly-retainer'].includes(basePayModel)
+      || !Number.isFinite(monthlyBaseHours) || monthlyBaseHours < 1 || monthlyBaseHours > 744
+      || (!hasPayRate && !employmentStartDate)
+      || (hasPayRate && (!Number.isFinite(basePayValue) || basePayValue <= 0 || basePayValue > 1000000 || !/^\d+(\.\d{1,2})?$/.test(String(input.basePay).trim())))
+      || (employmentStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(employmentStartDate)))) {
+      return res.status(400).json({ success: false, error: 'Enter valid base pay terms or an employment start date.' })
     }
     if (credentialNumber && !/^\d{7}$/.test(credentialNumber)) {
       return res.status(400).json({ success: false, error: 'Credential number must be exactly 7 digits.' })
@@ -9297,6 +9316,10 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     await assertClinicPlanFeature(firestore, branches[0].id, 'staff_management')
     const actor = await loadUserContext(req.user.uid)
     const actorIsOwner = String(actor.roleKey || '') === 'Owner' && req.user.uid === ownerId
+    if (payFieldsRequested && !actor.permissions.has('payroll:update') && !actor.permissions.has('administrator:full_access')) {
+      return res.status(403).json({ success: false, error: 'You are not authorized to set employee base pay.' })
+    }
+    if (payFieldsRequested) await assertClinicPlanFeature(firestore, branches[0].id, 'payroll')
     if (!actorIsOwner && !(await Promise.all(branchIds.map((id) => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) {
       return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
     }
@@ -9401,6 +9424,10 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
       engagementType, employmentType, weeklyHoursTarget, userType: 'Staff',
       branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
+      ...(payFieldsRequested ? {
+        employmentStartDate,
+        ...(hasPayRate ? { basePay: Number(basePayValue.toFixed(2)), basePayModel, monthlyBaseHours } : {}),
+      } : {}),
       practitionerType: isPractitioner ? professionalSpecialty : null,
       status: 'Pending Activation', practitionerLicenseUrl: practitionerLicenseUrl || null,
       practitionerLicenseName: practitionerLicenseName || null,
