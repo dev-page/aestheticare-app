@@ -2,7 +2,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getFirestore, collection, getDocs, onSnapshot, doc, query, where } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, onSnapshot, doc, query, where, updateDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -18,20 +18,57 @@ import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchSc
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { storage } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { useSubscription } from '@/composables/useSubscription'
+import CreateAccountScheduleStep from './hr/CreateAccountScheduleStep.vue'
+import CreateAccountCommissionAgreements from '@/components/common/CreateAccountCommissionAgreements.vue'
+import { hasPractitionerPermissions } from '../../../../../shared/practitionerTeam.js'
 
 export default {
   name: 'OwnerStaff',
-  components: { OwnerSidebar, Modal, ContractAppearanceSelect },
+  components: { OwnerSidebar, Modal, ContractAppearanceSelect, CreateAccountScheduleStep, CreateAccountCommissionAgreements },
   props: { embedded: { type: Boolean, default: false } },
   setup() {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
-    const { hasPermission } = usePermissions()
+    const { hasPermission, isClinicAdminOwner } = usePermissions()
+    const { hasFeature } = useSubscription()
     const canUpdateStaff = computed(() => hasPermission('staff:update'))
     const canDisableStaff = computed(() => hasPermission('staff:disable'))
     const canManageRoles = computed(() => hasPermission('roles:manage'))
+    const canViewShifts = computed(() => hasFeature('hr') && hasPermission('hr:view'))
+    const canCreateShifts = computed(() => hasFeature('hr') && hasPermission('hr:create'))
+    const canAssignShifts = computed(() => hasFeature('hr') && hasPermission('hr:update'))
+    const canManagePay = computed(() => hasFeature('payroll') && hasPermission('payroll:update'))
+    const canManageCommissions = computed(() => hasFeature('payroll') && isClinicAdminOwner.value === true)
+    const editTabs = [
+      { id: 'personal', label: 'Personal & Contact Info' },
+      { id: 'role', label: 'Role & Branch' },
+      { id: 'schedule', label: 'Shift Assignment' },
+      { id: 'compensation', label: 'Base Pay & Commissions' },
+    ]
+    const activeEditTab = ref('personal')
+    const scheduleStepRef = ref(null)
+    const commissionEditorRef = ref(null)
+    const scheduleLoadError = ref('')
+    const commissionLoadError = ref('')
+    const scheduleDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    const blankAssignments = () => Object.fromEntries(scheduleDays.map(day => [day, '']))
+    const nextScheduleMonday = () => {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+      const [year, month, day] = today.split('-').map(Number)
+      const date = new Date(Date.UTC(year, month - 1, day))
+      date.setUTCDate(date.getUTCDate() + ((8 - date.getUTCDay()) % 7))
+      return date.toISOString().slice(0, 10)
+    }
+    const todayInManila = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: blankAssignments(), assignmentLabels: {} })
+    const originalScheduleDraft = ref(null)
+    const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
+    const originalCommissionDraft = ref(null)
+    const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' })
+    const originalBasePay = ref(null)
     const staffList = ref([])
     const branches = ref([])
     const customRoles = ref([])
@@ -44,19 +81,44 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const specialtyError = ref('')
     const savingEmployee = ref(false)
     const originalSpecialty = ref({ type: '', credentialNumber: '' })
+    const practitionerCredentialsVerified = ref(false)
     const licenseFile = ref(null)
     const licenseOcrResult = ref(null)
     const licenseOcrBusy = ref(false)
     let licenseOcrSequence = 0
     const licenseOcrNameMatched = computed(() => licenseOcrResult.value?.nameMatch?.status === 'match')
-    const showLicenseField = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim() || String(currentStaff.value.credentialNumber || '').trim()))
+    const selectedRoleRecords = computed(() => {
+      const ids = Array.isArray(currentStaff.value.customRoleIds) ? currentStaff.value.customRoleIds : []
+      return customRoles.value.filter(role => ids.includes(role.id))
+    })
+    const showPractitionerFields = computed(() => {
+      const hasSelectedRoles = Array.isArray(currentStaff.value.customRoleIds) && currentStaff.value.customRoleIds.length > 0
+      if (hasSelectedRoles) return selectedRoleRecords.value.some(role =>
+        /\bpractitioner\b/i.test(String(role.name || '')) || hasPractitionerPermissions(role.permissions)
+      )
+      return /\bpractitioner\b/i.test(String(currentStaff.value.role || currentStaff.value.customRoleName || ''))
+        || hasPractitionerPermissions(currentStaff.value.effectivePermissions)
+    })
+    const showLicenseField = computed(() => showPractitionerFields.value && Boolean(String(currentStaff.value.practitionerType || '').trim() || String(currentStaff.value.credentialNumber || '').trim()))
     const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
+    const selectedClinicLocations = computed(() => {
+      const ids = new Set(Array.isArray(currentStaff.value.branchIds) ? currentStaff.value.branchIds : [])
+      const unique = new Map()
+      branches.value.filter(branch => ids.has(branch.id)).forEach(branch => {
+        const location = String(branch.clinicLocation || '').trim()
+        const key = location.toLocaleLowerCase()
+        if (location && !unique.has(key)) unique.set(key, location)
+      })
+      return [...unique.values()]
+    })
     let staffUnsubscribers = []
 
     const currentStaff = ref({
       id: null,
       firstName: '',
+      middleName: '',
       lastName: '',
+      suffix: '',
       email: '',
       phoneNumber: '',
       role: '',
@@ -65,13 +127,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       customRoleName: '',
       branchId: '',
       branchIds: [],
+      clinicLocations: [],
       engagementType: 'employee',
       employmentType: 'Full-time',
       weeklyHoursTarget: 40,
       userType: 'Staff',
       status: 'Active'
     })
-    const originalStaffStatus = ref('')
 
     const chunkArray = (items, size = 10) => {
       const chunks = []
@@ -208,6 +270,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       licenseOcrSequence += 1
       currentStaff.value = {
         ...staff,
+        middleName: String(staff.middleName || ''),
+        suffix: String(staff.suffix || ''),
+        phoneNumber: String(staff.phoneNumber || '').replace(/^\+63/, '').replace(/\D/g, '').slice(0, 10),
         engagementType: String(staff.engagementType || (String(staff.employmentType || '').toLowerCase().includes('intern') ? '' : 'employee')),
         employmentType: String(staff.employmentType || ''),
         weeklyHoursTarget: Number(staff.weeklyHoursTarget || (String(staff.employmentType || '').toLowerCase().includes('full') ? 40 : 0)),
@@ -220,17 +285,73 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         customRoleName: String(staff.customRoleName || '').trim(),
         branchIds: Array.isArray(staff.branchIds) && staff.branchIds.length ? staff.branchIds : [staff.branchId].filter(Boolean),
       }
-      originalStaffStatus.value = String(staff.status || 'Active')
+      updateCurrentStaffLocation()
+      activeEditTab.value = 'personal'
+      scheduleLoadError.value = ''
+      commissionLoadError.value = ''
+      basePay.value = {
+        basePayModel: staff.basePayModel || 'hourly',
+        basePay: staff.basePay == null ? '' : Number(staff.basePay),
+        monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
+        employmentStartDate: String(staff.employmentStartDate || ''),
+      }
+      originalBasePay.value = JSON.stringify(basePay.value)
+      commissionDraft.value = { approvedServiceIds: [], rates: [] }
+      originalCommissionDraft.value = null
+      scheduleDraft.value = {
+        branchId: staff.branchId || staff.branchIds?.[0] || '',
+        effectiveFrom: nextScheduleMonday(),
+        weeklyHoursCap: Number(staff.weeklyHoursTarget || 0),
+        assignments: blankAssignments(),
+        assignmentLabels: {},
+      }
+      originalScheduleDraft.value = null
       showEditModal.value = true
       loadingSpecialty.value = true
       specialtyError.value = ''
       try {
-        const details = await compensationApi(`/staff/${staff.id}/practitioner-details`)
+        const requests = [compensationApi(`/staff/${encodeURIComponent(staff.id)}/practitioner-details`)]
+        const scheduleBranchId = String(staff.branchId || staff.branchIds?.[0] || '').trim()
+        if (canViewShifts.value && scheduleBranchId) {
+          const params = new URLSearchParams({ branchId: scheduleBranchId, effectiveFrom: nextScheduleMonday() })
+          requests.push(compensationApi(`/staff/${encodeURIComponent(staff.id)}/recurring-schedule?${params}`))
+        } else requests.push(Promise.resolve(null))
+        if (canManageCommissions.value && showPractitionerFields.value) requests.push(compensationApi(`/practitioner-profiles/${encodeURIComponent(staff.id)}`))
+        else requests.push(Promise.resolve(null))
+        const [detailsResult, scheduleResult, practitionerProfileResult] = await Promise.allSettled(requests)
         if (currentStaff.value.id !== staff.id) return
+        if (detailsResult.status !== 'fulfilled') throw detailsResult.reason
+        const details = detailsResult.value
+        const scheduleResultValue = scheduleResult.status === 'fulfilled' ? scheduleResult.value : null
+        const practitionerProfile = practitionerProfileResult.status === 'fulfilled' ? practitionerProfileResult.value : null
+        if (scheduleResult.status === 'rejected') scheduleLoadError.value = scheduleResult.reason?.message || 'Unable to load the employee schedule.'
+        if (practitionerProfileResult.status === 'rejected') commissionLoadError.value = practitionerProfileResult.reason?.message || 'Unable to load practitioner service commissions.'
         currentStaff.value.practitionerType = details.type
         currentStaff.value.credentialNumber = details.credentialNumber
         originalSpecialty.value = { ...details }
-      } catch (error) { specialtyError.value = 'Unable to load specialty and license details. Close and reopen the employee after restarting the updated backend.' }
+        practitionerCredentialsVerified.value = practitionerProfile?.credentialsVerified === true
+        const nextEffectiveFrom = nextScheduleMonday()
+        const resolvedSchedule = scheduleResultValue?.schedule
+        const latestSchedule = scheduleResultValue?.latestSchedule
+        const hasFutureSchedule = latestSchedule?.effectiveFrom > nextEffectiveFrom
+        const savedSchedule = hasFutureSchedule ? latestSchedule : resolvedSchedule
+        if (savedSchedule) {
+          scheduleDraft.value = {
+            ...savedSchedule,
+            branchId: scheduleBranchId,
+            effectiveFrom: hasFutureSchedule ? latestSchedule.effectiveFrom : nextEffectiveFrom,
+            weeklyHoursCap: Number(savedSchedule.weeklyHoursCap || staff.weeklyHoursTarget || 0),
+            assignments: { ...blankAssignments(), ...(savedSchedule.assignments || {}) },
+            assignmentLabels: { ...(savedSchedule.assignmentLabels || {}) },
+          }
+        }
+        originalScheduleDraft.value = JSON.stringify(scheduleDraft.value)
+        commissionDraft.value = {
+          approvedServiceIds: Array.isArray(practitionerProfile?.approvedServiceIds) ? [...practitionerProfile.approvedServiceIds] : [],
+          rates: Array.isArray(practitionerProfile?.rates) ? practitionerProfile.rates.map(rate => ({ ...rate })) : [],
+        }
+        originalCommissionDraft.value = JSON.stringify(commissionDraft.value)
+      } catch (error) { specialtyError.value = error?.message || 'Unable to load professional details. Close and reopen the employee to retry.' }
       finally { loadingSpecialty.value = false }
     }
 
@@ -265,6 +386,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const normalizeCredentialNumber = () => {
       currentStaff.value.credentialNumber = String(currentStaff.value.credentialNumber || '').replace(/\D/g, '').slice(0, 7)
       clearEditError('credentialNumber')
+    }
+
+    const handleEditPhoneInput = (event) => {
+      const phone = String(event?.target?.value || '').replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '').slice(0, 10)
+      currentStaff.value.phoneNumber = phone
+      if (event?.target) event.target.value = phone
+      clearEditError('phoneNumber')
     }
 
     const handleLicenseFile = async event => {
@@ -329,12 +457,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       if (!String(staff.firstName || '').trim()) errors.firstName = 'First name is required.'
       else if (!nameRegex.test(String(staff.firstName).trim())) errors.firstName = 'Only letters and spaces are allowed.'
+      if (String(staff.middleName || '').trim() && !nameRegex.test(String(staff.middleName).trim())) errors.middleName = 'Only letters and spaces are allowed.'
       if (!String(staff.lastName || '').trim()) errors.lastName = 'Last name is required.'
       else if (!nameRegex.test(String(staff.lastName).trim())) errors.lastName = 'Only letters and spaces are allowed.'
+      if (String(staff.suffix || '').trim() && !/^[A-Za-z\s.]+$/.test(String(staff.suffix).trim())) errors.suffix = 'Use letters, spaces, and periods only.'
       if (!String(staff.email || '').trim()) errors.email = 'Email is required.'
       else if (!emailRegex.test(String(staff.email).trim())) errors.email = 'Enter a valid email address.'
       if (!String(staff.phoneNumber || '').trim()) errors.phoneNumber = 'Phone number is required.'
-      else if (!normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter a valid Philippine mobile number.'
+      else if (!/^9\d{9}$/.test(String(staff.phoneNumber || '').trim()) || !normalizePhoneNumber(staff.phoneNumber)) errors.phoneNumber = 'Enter exactly 10 digits starting with 9.'
       if (!Array.isArray(staff.branchIds) || !staff.branchIds.length) errors.branchId = 'Select at least one branch.'
       if (!String(staff.clinicLocation || '').trim()) errors.clinicLocation = 'Clinic location is required.'
       if (!['employee', 'student_intern'].includes(staff.engagementType)) errors.engagementType = 'Choose employee or student intern / OJT.'
@@ -342,9 +472,22 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       else if (staff.engagementType === 'employee' && !['Full-time', 'Part-time'].includes(staff.employmentType)) errors.employmentType = 'Choose full-time or part-time.'
       const weeklyHours = Number(staff.weeklyHoursTarget)
       if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 48) errors.weeklyHoursTarget = 'Enter agreed weekly hours from 1 to 48.'
-      if (staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
+      else if (staff.engagementType === 'employee' && staff.employmentType === 'Full-time' && weeklyHours < 40) errors.weeklyHoursTarget = 'Full-time employees must have at least 40 agreed weekly hours.'
+      else if (staff.engagementType === 'employee' && staff.employmentType === 'Part-time' && weeklyHours >= 40) errors.weeklyHoursTarget = 'Part-time employees must have fewer than 40 agreed weekly hours.'
+      if (showPractitionerFields.value && staff.practitionerType && !employeeSpecialtyTypes.includes(staff.practitionerType)) errors.practitionerType = 'Choose one of the suggested professional specialties.'
       const credentialNumber = String(staff.credentialNumber || '').trim()
-      if (credentialNumber && !/^\d{7}$/.test(credentialNumber)) errors.credentialNumber = 'Enter exactly 7 digits.'
+      if (showPractitionerFields.value && credentialNumber && !/^\d{7}$/.test(credentialNumber)) errors.credentialNumber = 'Enter exactly 7 digits.'
+      if (canManagePay.value && !isStudentIntern.value && (String(basePay.value.basePay || '').trim() || basePay.value.employmentStartDate)) {
+        let previousStartDate = ''
+        try { previousStartDate = JSON.parse(originalBasePay.value || '{}').employmentStartDate || '' } catch {}
+        const rawRate = String(basePay.value.basePay || '').trim()
+        const rate = Number(rawRate)
+        if (!['hourly', 'daily', 'monthly-retainer'].includes(basePay.value.basePayModel)) errors.basePay = 'Choose a valid pay model.'
+        else if (!Number.isFinite(Number(basePay.value.monthlyBaseHours)) || Number(basePay.value.monthlyBaseHours) < 1 || Number(basePay.value.monthlyBaseHours) > 744) errors.basePay = 'Agreed monthly hours must be between 1 and 744.'
+        else if (!rawRate && !basePay.value.employmentStartDate) errors.basePay = 'Enter a base pay rate or employment start date.'
+        else if (rawRate && (!Number.isFinite(rate) || rate <= 0 || rate > 1000000 || !/^\d+(\.\d{1,2})?$/.test(rawRate))) errors.basePay = 'Enter a valid base pay rate up to PHP 1,000,000 with two decimal places.'
+        else if (basePay.value.employmentStartDate && (!/^\d{4}-\d{2}-\d{2}$/.test(basePay.value.employmentStartDate) || (basePay.value.employmentStartDate < todayInManila() && basePay.value.employmentStartDate !== previousStartDate))) errors.basePay = 'Choose today or a future employment start date.'
+      }
 
       editErrors.value = errors
       return Object.keys(errors).length === 0
@@ -354,7 +497,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentStaff.value.branchId = currentStaff.value.branchIds?.[0] || ''
       const branch = branches.value.find((entry) => entry.id === currentStaff.value.branchId)
       currentStaff.value.clinicBranch = branch?.clinicBranch || ''
-      currentStaff.value.clinicLocation = branch?.clinicLocation || ''
+      currentStaff.value.clinicLocations = selectedClinicLocations.value
+      currentStaff.value.clinicLocation = selectedClinicLocations.value.join(', ')
     }
 
     const deactivateStaff = async (staff) => {
@@ -400,12 +544,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('You do not have permission to update employee profiles.')
         return
       }
-      if (String(currentStaff.value.status || '') !== originalStaffStatus.value && !canDisableStaff.value) {
-        toast.error('You do not have permission to change employee access status.')
-        return
-      }
       const { firstName, lastName, email, phoneNumber } = currentStaff.value
-      const fullName = `${firstName} ${lastName}`
+      const fullName = [firstName, currentStaff.value.middleName, lastName, currentStaff.value.suffix].map(value => String(value || '').trim()).filter(Boolean).join(' ')
       const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
         ? currentStaff.value.customRoleIds
         : [currentStaff.value.customRoleId].filter(Boolean)
@@ -420,8 +560,22 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
 
+      const scheduleChanged = originalScheduleDraft.value !== null && JSON.stringify(scheduleDraft.value) !== originalScheduleDraft.value
+      if (scheduleChanged && canAssignShifts.value) {
+        if (scheduleLoadError.value) { toast.error('The saved schedule did not load, so it cannot be safely updated. Close and reopen this employee after the schedule service is available.'); return }
+        if (scheduleStepRef.value?.validationError) { toast.error(scheduleStepRef.value.validationError); activeEditTab.value = 'schedule'; return }
+      }
+      const commissionChanged = originalCommissionDraft.value !== null && JSON.stringify(commissionDraft.value) !== originalCommissionDraft.value
+      if (commissionChanged && canManageCommissions.value && showPractitionerFields.value && commissionEditorRef.value?.validationError) {
+        toast.error(commissionEditorRef.value.validationError)
+        activeEditTab.value = 'compensation'
+        return
+      }
+      if (commissionChanged && commissionLoadError.value) { toast.error('Practitioner agreements did not load, so they cannot be safely updated. Close and reopen this employee to retry.'); return }
+
       const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber)
 
+      let profileSaved = false
       try {
         if (currentStaff.value.id) {
           const result = await Swal.fire({
@@ -440,6 +594,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
           savingEmployee.value = true
           let licenseDocument = null
+          const practitionerDetailsChanged = currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || Boolean(licenseFile.value)
           if (licenseFile.value) {
             const ownerId = auth.currentUser?.uid
             const safeName = licenseFile.value.name.replace(/[^\w.\-]+/g, '_')
@@ -448,13 +603,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             await uploadBytes(fileRef, licenseFile.value, { contentType: licenseFile.value.type })
             licenseDocument = { url: await getDownloadURL(fileRef), name: licenseFile.value.name }
           }
-          if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || licenseDocument) {
+          if (showPractitionerFields.value && (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || licenseDocument)) {
             await compensationApi(`/staff/${currentStaff.value.id}/practitioner-details`, 'POST', { type: currentStaff.value.practitionerType, credentialNumber: currentStaff.value.credentialNumber, licenseDocument })
           }
           const staffUpdates = {
             firstName: currentStaff.value.firstName.trim(),
+            middleName: currentStaff.value.middleName.trim(),
             lastName: currentStaff.value.lastName.trim(),
-            fullName: `${currentStaff.value.firstName.trim()} ${currentStaff.value.lastName.trim()}`.trim(),
+            suffix: currentStaff.value.suffix.trim(),
+            fullName,
             email: currentStaff.value.email.trim(),
             phoneNumber: normalizedPhoneNumber,
             engagementType: currentStaff.value.engagementType,
@@ -462,15 +619,43 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
             branchIds: currentStaff.value.branchIds,
           }
-          if (canDisableStaff.value) staffUpdates.status = currentStaff.value.status
           if (canManageRoles.value) staffUpdates.customRoleIds = selectedRoleIds
           await compensationApi(`/staff/${encodeURIComponent(currentStaff.value.id)}/profile`, 'PATCH', staffUpdates)
+          profileSaved = true
+          if (canManagePay.value && !isStudentIntern.value && (String(basePay.value.basePay || '').trim() || basePay.value.employmentStartDate)) {
+            const payUpdates = { employmentStartDate: String(basePay.value.employmentStartDate || '') }
+            if (String(basePay.value.basePay || '').trim()) Object.assign(payUpdates, {
+              basePay: Number(Number(basePay.value.basePay).toFixed(2)),
+              basePayModel: basePay.value.basePayModel,
+              monthlyBaseHours: Number(basePay.value.monthlyBaseHours || 176),
+            })
+            await updateDoc(doc(db, 'users', currentStaff.value.id), payUpdates)
+          }
+          if (scheduleChanged && canAssignShifts.value) {
+            await compensationApi(`/staff/${encodeURIComponent(currentStaff.value.id)}/recurring-schedule`, 'PUT', {
+              branchId: scheduleDraft.value.branchId,
+              effectiveFrom: scheduleDraft.value.effectiveFrom,
+              weeklyHoursCap: Number(scheduleDraft.value.weeklyHoursCap || currentStaff.value.weeklyHoursTarget),
+              assignments: { ...scheduleDraft.value.assignments },
+            })
+          }
+          if (commissionChanged && canManageCommissions.value && showPractitionerFields.value) {
+            await compensationApi(`/practitioner-profiles/${encodeURIComponent(currentStaff.value.id)}`, 'POST', {
+              type: currentStaff.value.practitionerType || originalSpecialty.value.type,
+              credentialNumber: currentStaff.value.credentialNumber || originalSpecialty.value.credentialNumber,
+              credentialsVerified: practitionerDetailsChanged ? false : practitionerCredentialsVerified.value,
+              approvedServiceIds: commissionDraft.value.approvedServiceIds,
+              rates: commissionDraft.value.rates,
+            })
+            practitionerCredentialsVerified.value = practitionerDetailsChanged ? false : practitionerCredentialsVerified.value
+          }
           toast.success(`${fullName}'s information updated successfully!`)
           showEditModal.value = false
+          loadBranches()
         }
       } catch (err) {
         console.error(err)
-        toast.error(err.message || 'Unable to save employee changes.')
+        toast.error(profileSaved ? `Employee profile was saved, but another tab could not be saved: ${err.message || 'Please retry that tab.'}` : err.message || 'Unable to save employee changes.')
       } finally {
         savingEmployee.value = false
       }
@@ -497,6 +682,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentStaff,
       editErrors,
       clearEditError,
+      editTabs,
+      activeEditTab,
+      scheduleStepRef,
+      scheduleDraft,
+      scheduleLoadError,
+      commissionDraft,
+      commissionEditorRef,
+      commissionLoadError,
+      basePay,
+      todayInManila,
+      canViewShifts,
+      canCreateShifts,
+      canAssignShifts,
+      canManagePay,
+      canManageCommissions,
+      showPractitionerFields,
+      selectedClinicLocations,
       isStudentIntern,
       changeStaffArrangement,
       changeEmploymentType,
@@ -511,7 +713,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       filteredStaffList,
       customRoles,
       employeeSpecialtyTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
-      licenseFile, licenseOcrResult, licenseOcrBusy, licenseOcrNameMatched, handleLicenseFile, normalizeCredentialNumber
+      licenseFile, licenseOcrResult, licenseOcrBusy, licenseOcrNameMatched, handleLicenseFile, normalizeCredentialNumber, handleEditPhoneInput
     }
   }
 }
@@ -645,119 +847,98 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       </div>
 
       <!-- Edit Modal -->
-      <Modal :isOpen="showEditModal" panelClass="employee-edit-modal" :panel-style="{ maxWidth: '720px', background: '#fffdf9', color: '#3d281d' }" :close-on-backdrop="!savingEmployee" @close="!savingEmployee && (showEditModal = false)">
+      <Modal :isOpen="showEditModal" panelClass="employee-edit-modal" :panel-style="{ maxWidth: '1100px', maxHeight: '92vh', background: '#fffdf9', color: '#3d281d' }" :close-on-backdrop="!savingEmployee" @close="!savingEmployee && (showEditModal = false)">
         <template #header>
-          <div><p class="employee-edit-eyebrow">STAFF PROFILE</p><h2 class="employee-edit-title">Edit Staff Member</h2><p class="employee-edit-caption">Update personal details, work arrangement, weekly hours, assignments, and professional information.</p></div>
+          <div><p class="employee-edit-eyebrow">STAFF PROFILE</p><h2 class="employee-edit-title">Edit {{ currentStaff.fullName || `${currentStaff.firstName} ${currentStaff.lastName}` }}</h2><p class="employee-edit-caption">Update the same personal, employment, schedule, and compensation details used when creating this account.</p></div>
         </template>
 
         <template #body>
-          <form id="employee-edit-form" class="employee-edit-form space-y-4" @submit.prevent="saveStaff" :aria-busy="savingEmployee">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-slate-400 mb-1">First Name</label>
-                <input type="text" v-model="currentStaff.firstName" @input="clearEditError('firstName')" placeholder="First Name"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-                <p v-if="editErrors.firstName" class="mt-1 text-xs text-red-300">{{ editErrors.firstName }}</p>
+          <div class="employee-edit-form" :aria-busy="savingEmployee">
+            <nav class="employee-edit-tabs" role="tablist" aria-label="Employee account details">
+              <button v-for="tab in editTabs" :key="tab.id" type="button" role="tab" :aria-selected="activeEditTab === tab.id" :aria-controls="`employee-edit-panel-${tab.id}`" :class="{ 'is-active': activeEditTab === tab.id }" @click="activeEditTab = tab.id">{{ tab.label }}</button>
+            </nav>
+
+            <section v-show="activeEditTab === 'personal'" id="employee-edit-panel-personal" class="employee-edit-tab-panel" role="tabpanel" aria-label="Personal and contact information">
+              <h3>Personal Information</h3>
+              <div class="employee-edit-grid">
+                <label>First Name<input v-model="currentStaff.firstName" type="text" autocomplete="given-name" @input="clearEditError('firstName')" /><span v-if="editErrors.firstName" class="employee-edit-error">{{ editErrors.firstName }}</span></label>
+                <label>Middle Name<input v-model="currentStaff.middleName" type="text" autocomplete="additional-name" @input="clearEditError('middleName')" /><span v-if="editErrors.middleName" class="employee-edit-error">{{ editErrors.middleName }}</span></label>
+                <label>Last Name<input v-model="currentStaff.lastName" type="text" autocomplete="family-name" @input="clearEditError('lastName')" /><span v-if="editErrors.lastName" class="employee-edit-error">{{ editErrors.lastName }}</span></label>
+                <label>Suffix<input v-model="currentStaff.suffix" type="text" autocomplete="honorific-suffix" placeholder="Optional" @input="clearEditError('suffix')" /><span v-if="editErrors.suffix" class="employee-edit-error">{{ editErrors.suffix }}</span></label>
               </div>
-
-              <div>
-                <label class="block text-slate-400 mb-1">Last Name</label>
-                <input type="text" v-model="currentStaff.lastName" @input="clearEditError('lastName')" placeholder="Last Name"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-                <p v-if="editErrors.lastName" class="mt-1 text-xs text-red-300">{{ editErrors.lastName }}</p>
+              <h3>Contact Information</h3>
+              <div class="employee-edit-grid">
+                <label>Email<input v-model.trim="currentStaff.email" type="email" autocomplete="email" @input="clearEditError('email')" /><span v-if="editErrors.email" class="employee-edit-error">{{ editErrors.email }}</span></label>
+                <label>Phone Number
+                  <div class="employee-phone-input"><span>+63</span><input :value="currentStaff.phoneNumber" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" placeholder="9XXXXXXXXX" @input="handleEditPhoneInput" /></div>
+                  <span class="employee-edit-caption">Enter 10 digits starting with 9.</span><span v-if="editErrors.phoneNumber" class="employee-edit-error">{{ editErrors.phoneNumber }}</span>
+                </label>
               </div>
-            </div>
+            </section>
 
-            <div>
-              <label class="block text-slate-400 mb-1">Email</label>
-              <input type="email" v-model="currentStaff.email" @input="clearEditError('email')" placeholder="Enter email"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-              <p v-if="editErrors.email" class="mt-1 text-xs text-red-300">{{ editErrors.email }}</p>
-            </div>
-
-            <div>
-              <label class="block text-slate-400 mb-1">Phone Number</label>
-              <input type="tel" v-model="currentStaff.phoneNumber" @input="clearEditError('phoneNumber')" placeholder="09XXXXXXXXX or +639XXXXXXXXX"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-              <p class="mt-1 text-xs text-slate-400">Use a valid Philippine mobile number.</p>
-              <p v-if="editErrors.phoneNumber" class="mt-1 text-xs text-red-300">{{ editErrors.phoneNumber }}</p>
-            </div>
-
-            <div>
-              <ContractAppearanceSelect id="employee-edit-arrangement" :model-value="currentStaff.engagementType" @update:model-value="changeStaffArrangement" label="Staff arrangement" :options="[{ value: '', label: 'Choose arrangement' }, { value: 'employee', label: 'Employee' }, { value: 'student_intern', label: 'Student intern / OJT' }]" />
-              <p class="mt-1 text-xs text-slate-400">Legacy intern records need an explicit choice. Use Employee for an intern paid through payroll; use Student intern / OJT for a training placement. Both use the same schedule and attendance flow.</p>
-              <p v-if="editErrors.engagementType" class="mt-1 text-xs text-red-300">{{ editErrors.engagementType }}</p>
-            </div>
-
-            <div v-if="!isStudentIntern">
-              <ContractAppearanceSelect id="employee-edit-employment-type" :model-value="currentStaff.employmentType" @update:model-value="changeEmploymentType" label="Employment type" :options="[{ value: '', label: 'Choose employment type' }, { value: 'Full-time', label: 'Full-time' }, { value: 'Part-time', label: 'Part-time' }, ...(currentStaff.employmentType === 'Intern' ? [{ value: 'Intern', label: 'Legacy intern — classify above' }] : [])]" />
-              <p v-if="editErrors.employmentType" class="mt-1 text-xs text-red-300">{{ editErrors.employmentType }}</p>
-            </div>
-
-            <div>
-              <label for="employee-edit-weekly-hours" class="block text-slate-400 mb-1">Agreed Weekly Hours</label>
-              <input id="employee-edit-weekly-hours" v-model.number="currentStaff.weeklyHoursTarget" type="number" min="1" max="48" step="0.5" class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500" @input="clearEditError('weeklyHoursTarget')" />
-              <p class="mt-1 text-xs text-slate-400">Full-time defaults to 40 hours. Enter the agreed amount for part-time employees or student interns (maximum 48).</p>
-              <p v-if="editErrors.weeklyHoursTarget" class="mt-1 text-xs text-red-300">{{ editErrors.weeklyHoursTarget }}</p>
-            </div>
-
-            <div>
-              <label class="block text-slate-400 mb-1">Custom Role</label>
-              <div class="employee-edit-choices"><label v-for="role in customRoles" :key="role.id"><input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" :disabled="!canManageRoles" /><span>{{ role.name }}</span></label><p v-if="!customRoles.length">No custom roles available.</p></div>
-              <p class="mt-1 text-xs text-slate-400">Select all roles this employee needs.</p>
-            </div>
-
-            <div>
-              <label class="block text-slate-400 mb-1">Assigned Branches</label>
-              <div class="employee-edit-choices"><label v-for="branch in branches" :key="branch.id"><input v-model="currentStaff.branchIds" type="checkbox" :value="branch.id" @change="updateCurrentStaffLocation(); clearEditError('branchId')" /><span>{{ branch.clinicBranch }} — {{ branch.clinicLocation }}</span></label></div>
-              <p class="mt-1 text-xs text-slate-400">Select one or more branches. The first branch is the primary branch.</p>
-              <p v-if="editErrors.branchId" class="mt-1 text-xs text-red-300">{{ editErrors.branchId }}</p>
+            <section v-show="activeEditTab === 'role'" id="employee-edit-panel-role" class="employee-edit-tab-panel" role="tabpanel" aria-label="Role and branch assignment">
+              <div class="employee-edit-status-row"><div><span class="employee-edit-caption">Account status</span><strong>{{ currentStaff.status || 'Unknown' }}</strong></div><span class="employee-edit-caption">Change status from the employee list actions.</span></div>
+              <h3>Role & Employment</h3>
+              <div class="employee-edit-grid">
+                <div class="employee-edit-field"><label>Roles</label><div class="employee-edit-choices"><label v-for="role in customRoles" :key="role.id"><input v-model="currentStaff.customRoleIds" type="checkbox" :value="role.id" :disabled="!canManageRoles" /><span>{{ role.name }}</span></label><p v-if="!customRoles.length">No roles available.</p></div><p class="employee-edit-caption">Select the roles this employee needs. Role changes require Manage Roles permission.</p></div>
+                <div class="employee-edit-field"><ContractAppearanceSelect id="employee-edit-arrangement" :model-value="currentStaff.engagementType" @update:model-value="changeStaffArrangement" label="Employment arrangement" :options="[{ value: '', label: 'Choose arrangement' }, { value: 'employee', label: 'Employee' }, { value: 'student_intern', label: 'Student intern / OJT' }]" /><span v-if="editErrors.engagementType" class="employee-edit-error">{{ editErrors.engagementType }}</span></div>
+                <div v-if="!isStudentIntern" class="employee-edit-field"><ContractAppearanceSelect id="employee-edit-employment-type" :model-value="currentStaff.employmentType" @update:model-value="changeEmploymentType" label="Employment type" :options="[{ value: '', label: 'Choose employment type' }, { value: 'Full-time', label: 'Full-time' }, { value: 'Part-time', label: 'Part-time' }, ...(currentStaff.employmentType === 'Intern' ? [{ value: 'Intern', label: 'Legacy intern — classify above' }] : [])]" /><span v-if="editErrors.employmentType" class="employee-edit-error">{{ editErrors.employmentType }}</span></div>
+                <label>Agreed Weekly Hours<input v-model.number="currentStaff.weeklyHoursTarget" type="number" :min="currentStaff.employmentType === 'Full-time' ? 40 : 1" max="48" step="0.5" @input="clearEditError('weeklyHoursTarget')" /><span class="employee-edit-caption">Full-time is 40–48 hours. Maximum is 48.</span><span v-if="editErrors.weeklyHoursTarget" class="employee-edit-error">{{ editErrors.weeklyHoursTarget }}</span></label>
               </div>
-
-            <div>
-              <label class="block text-slate-400 mb-1">Clinic Location</label>
-              <input type="text" readonly v-model="currentStaff.clinicLocation" placeholder="Enter clinic location"
-                class="w-full px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-              <p v-if="editErrors.clinicLocation" class="mt-1 text-xs text-red-300">{{ editErrors.clinicLocation }}</p>
-            </div>
-
-            <div>
-              <ContractAppearanceSelect id="employee-edit-status" v-model="currentStaff.status" label="Status" :disabled="!canDisableStaff" :options="currentStaff.status === 'Pending Activation' ? [{ value: 'Pending Activation', label: 'Pending Activation' }, { value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] : [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]" />
-            </div>
-            <fieldset class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
-              <legend>Professional information</legend>
-              <p v-if="loadingSpecialty" role="status" class="employee-edit-caption">Loading professional details...</p>
-              <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty (optional)" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not specified / non-clinical' }, ...employeeSpecialtyTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
-              <p class="employee-edit-caption">This employee reference does not grant system access. Pharmacy access comes from the assigned role; appointment practitioner types and service approvals are managed separately.</p>
-              <p v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</p>
-              <template v-if="showLicenseField">
-                <div class="employee-license-fields">
-                  <div class="employee-license-field">
-                    <label for="employee-edit-license">Credential / license number</label>
-                    <input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" type="text" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="Enter 7 digits" @input="normalizeCredentialNumber" />
-                    <p v-if="editErrors.credentialNumber" class="employee-edit-error" role="alert">{{ editErrors.credentialNumber }}</p>
+              <h3>Branch Assignment</h3>
+              <div class="employee-edit-grid">
+                <div class="employee-edit-field"><label>Assigned Branches</label><div class="employee-edit-choices"><label v-for="branch in branches" :key="branch.id"><input v-model="currentStaff.branchIds" type="checkbox" :value="branch.id" @change="updateCurrentStaffLocation(); clearEditError('branchId')" /><span>{{ branch.clinicBranch }} — {{ branch.clinicLocation }}</span></label></div><p class="employee-edit-caption">The first selected branch is primary.</p><span v-if="editErrors.branchId" class="employee-edit-error">{{ editErrors.branchId }}</span></div>
+                <label>Clinic Locations<input :value="selectedClinicLocations.join(', ')" type="text" readonly placeholder="Select one or more branches" /><span class="employee-edit-caption">Each selected location is shown once.</span></label>
+              </div>
+              <fieldset v-if="showPractitionerFields" class="employee-professional-fields" :disabled="loadingSpecialty || savingEmployee || !!specialtyError">
+                <legend>Professional Information</legend>
+                <p v-if="loadingSpecialty" role="status" class="employee-edit-caption">Loading professional details...</p>
+                <ContractAppearanceSelect id="employee-edit-specialty" label="Professional specialty" v-model="currentStaff.practitionerType" :options="[{ value: '', label: 'Not specified' }, ...employeeSpecialtyTypes.map(type => ({ value: type, label: type }))]" @update:model-value="clearEditError('practitionerType')" />
+                <span v-if="editErrors.practitionerType" class="employee-edit-error" role="alert">{{ editErrors.practitionerType }}</span>
+                <template v-if="showLicenseField">
+                  <div class="employee-license-fields">
+                    <label for="employee-edit-license">Credential / license number<input id="employee-edit-license" v-model.trim="currentStaff.credentialNumber" type="text" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="Enter 7 digits" @input="normalizeCredentialNumber" /><span v-if="editErrors.credentialNumber" class="employee-edit-error">{{ editErrors.credentialNumber }}</span></label>
+                    <label for="employee-edit-license-file">Replacement credential image (optional)<input id="employee-edit-license-file" type="file" accept="image/jpeg,image/png" @change="handleLicenseFile" /><span v-if="currentStaff.practitionerLicenseName && !licenseFile" class="employee-edit-caption">Current document: {{ currentStaff.practitionerLicenseName }}</span><a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a></label>
                   </div>
-                  <div class="employee-license-field">
-                    <label for="employee-edit-license-file">Replacement credential image (optional)</label>
-                    <input id="employee-edit-license-file" type="file" accept="image/jpeg,image/png" @change="handleLicenseFile" />
-                    <p v-if="currentStaff.practitionerLicenseName && !licenseFile" class="employee-edit-caption">Current document: {{ currentStaff.practitionerLicenseName }}</p>
-                    <a v-if="currentStaff.practitionerLicenseUrl && !licenseFile" class="employee-license-link" :href="currentStaff.practitionerLicenseUrl" target="_blank" rel="noopener">View current license document</a>
-                  </div>
+                  <p class="employee-edit-caption">Changing professional details or uploading a replacement requires a new credential review.</p>
+                  <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
+                  <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><template v-if="licenseOcrNameMatched"><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></template></div>
+                </template>
+              </fieldset>
+              <p v-if="specialtyError" class="employee-edit-error" role="alert">{{ specialtyError }}</p>
+            </section>
+
+            <section v-show="activeEditTab === 'schedule'" id="employee-edit-panel-schedule" class="employee-edit-tab-panel" role="tabpanel" aria-label="Shift assignment">
+              <p v-if="scheduleLoadError" class="employee-edit-error" role="alert">{{ scheduleLoadError }}</p>
+              <CreateAccountScheduleStep v-else-if="canViewShifts" ref="scheduleStepRef" v-model="scheduleDraft" :employee-id="currentStaff.id" :branch-id="currentStaff.branchIds?.[0] || ''" :branch-name="branches.find(branch => branch.id === (currentStaff.branchIds?.[0] || ''))?.clinicBranch || 'Selected branch'" :employment-type="currentStaff.employmentType" :weekly-hours-target="Number(currentStaff.weeklyHoursTarget || 0)" :can-view-shifts="canViewShifts" :can-create-shifts="canCreateShifts" :can-assign-shifts="canAssignShifts" allow-empty-schedule />
+              <p v-else class="employee-edit-caption">Shift schedules are available to accounts with HR schedule access.</p>
+            </section>
+
+            <section v-show="activeEditTab === 'compensation'" id="employee-edit-panel-compensation" class="employee-edit-tab-panel" role="tabpanel" aria-label="Base pay and commissions">
+              <h3>Base Pay</h3>
+              <p v-if="isStudentIntern" class="employee-edit-caption">Student interns / OJT are not included in employee payroll. Record approved allowances in Finance → Other Expenses.</p>
+              <template v-else>
+                <p v-if="!canManagePay" class="employee-edit-caption">You can view the saved pay details, but Payroll Update permission is required to change them.</p>
+                <div class="employee-edit-grid">
+                  <div class="employee-edit-field"><ContractAppearanceSelect id="employee-edit-pay-model" v-model="basePay.basePayModel" label="Pay model" :disabled="!canManagePay" :options="[{ value: 'hourly', label: 'Hourly / Professional Fee' }, { value: 'daily', label: 'Daily' }, { value: 'monthly-retainer', label: 'Monthly Retainer' }]" /></div>
+                  <label>Rate (PHP)<input v-model="basePay.basePay" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" :disabled="!canManagePay" /><span v-if="editErrors.basePay" class="employee-edit-error">{{ editErrors.basePay }}</span></label>
+                  <label v-if="basePay.basePayModel === 'monthly-retainer'">Agreed Monthly Hours<input v-model.number="basePay.monthlyBaseHours" type="number" min="1" max="744" step="1" :disabled="!canManagePay" /></label>
+                  <label>Employment Start Date<input v-model="basePay.employmentStartDate" type="date" :min="todayInManila()" :disabled="!canManagePay" /></label>
                 </div>
-                <p class="employee-edit-caption">If entered, the credential number must be exactly 7 digits. The image is optional when editing; upload one JPEG or PNG image (up to 5MB) to run OCR, then verify the number manually.</p>
-                <p class="employee-edit-caption">Changing professional details or the uploaded document requires a new credential review by the clinic owner.</p>
-                <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
-                <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><template v-if="licenseOcrNameMatched"><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></template></div>
               </template>
-            </fieldset>
-            <p v-if="specialtyError" class="employee-edit-error" role="alert">{{ specialtyError }}</p>
-          </form>
+              <h3>Service Commissions</h3>
+              <p v-if="commissionLoadError" class="employee-edit-error" role="alert">{{ commissionLoadError }}</p>
+              <CreateAccountCommissionAgreements v-else-if="showPractitionerFields && canManageCommissions" ref="commissionEditorRef" v-model="commissionDraft" :branch-ids="currentStaff.branchIds" />
+              <p v-else-if="showPractitionerFields" class="employee-edit-caption">The clinic owner can update this practitioner's service approvals and commission agreements.</p>
+              <p v-else class="employee-edit-caption">Service commissions are available for Practitioner roles and roles with consultation permissions.</p>
+            </section>
+          </div>
         </template>
 
         <template #footer>
           <div class="flex flex-col sm:flex-row justify-end sm:space-x-2 space-y-2 sm:space-y-0">
             <button type="button" :disabled="savingEmployee" @click="showEditModal = false" class="employee-edit-cancel">Cancel</button>
-            <button v-if="canUpdateStaff" type="submit" form="employee-edit-form" :aria-busy="savingEmployee" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save app-form-action">{{ savingEmployee ? 'Saving...' : 'Update Employee' }}</button>
+            <button v-if="canUpdateStaff" type="button" :aria-busy="savingEmployee" :disabled="savingEmployee || loadingSpecialty || licenseOcrBusy || !!specialtyError" class="employee-edit-save app-form-action" @click="saveStaff">{{ savingEmployee ? 'Saving...' : 'Save Changes' }}</button>
           </div>
         </template>
       </Modal>
@@ -779,6 +960,23 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-edit-form input:focus { outline: 2px solid #d7aa7d; outline-offset: 2px; }
 .employee-edit-form :is(.text-slate-400, .text-white) { color: #765d4c !important; }
 .employee-edit-form :deep(.appearance-select) { margin: 0; }
+.employee-edit-tabs { display: flex; gap: 6px; margin: 0 0 18px; overflow-x: auto; border-bottom: 1px solid #ecd6be; }
+.employee-edit-tabs button { flex: 0 0 auto; padding: 11px 14px; border-bottom: 3px solid transparent; color: #765d4c; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.employee-edit-tabs button:hover, .employee-edit-tabs button:focus-visible { color: #805337; }
+.employee-edit-tabs button.is-active { color: #70482e; border-bottom-color: #a46d45; }
+.employee-edit-tab-panel { min-height: 300px; padding: 2px 4px 12px; }
+.employee-edit-tab-panel h3 { margin: 4px 0 14px; padding-bottom: 8px; border-bottom: 1px solid #ecd6be; color: #3d281d; font-size: 17px; font-weight: 700; }
+.employee-edit-tab-panel h3:not(:first-child) { margin-top: 22px; }
+.employee-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.employee-edit-grid > label, .employee-edit-grid > .employee-edit-field { min-width: 0; }
+.employee-edit-caption { display: block; color: #765d4c !important; font-size: 12px; line-height: 1.5; margin-top: 6px; }
+.employee-edit-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; padding: 12px 14px; border: 1px solid #ecd6be; border-radius: 10px; background: #fffaf3; }
+.employee-edit-status-row strong { display: block; margin-top: 3px; color: #3d281d; font-size: 14px; }
+.employee-phone-input { display: flex; align-items: center; gap: 0; margin-top: 6px; }
+.employee-edit-form .employee-phone-input span { flex: 0 0 auto; padding: 11px 12px; border: 1px solid #dec19e; border-right: 0; border-radius: 9px 0 0 9px; background: #f7f0e6; color: #765d4c; }
+.employee-edit-form .employee-phone-input input { min-width: 0; width: 1px; margin: 0; border-radius: 0 9px 9px 0; }
+.employee-edit-field > .employee-edit-error, .employee-edit-grid label > .employee-edit-error { display: block; }
+.employee-edit-tab-panel .employee-professional-fields { margin-top: 22px; }
 .employee-edit-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid #ecd6be; border-radius: 10px; max-height: 180px; overflow-y: auto; }
 .employee-edit-choices label { display: flex; align-items: flex-start; gap: 9px; padding: 8px; background: #fffaf3; border-radius: 7px; font-weight: 400; }
 .employee-edit-choices input { margin-top: 3px; accent-color: #8d5a3b; flex-shrink: 0; width: 15px; height: 15px; }
@@ -806,7 +1004,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-edit-save { border: 1px solid #8d5a3b; background: #8d5a3b; color: #fffdf9; }
 .employee-edit-save:hover { background: #74462d; }
 .employee-edit-cancel:disabled, .employee-edit-save:disabled { opacity: .55; cursor: not-allowed; }
-@media(max-width: 540px) { .employee-edit-choices, .employee-license-fields { grid-template-columns: 1fr; } .employee-edit-form { padding: 0; } }
+@media(max-width: 640px) { .employee-edit-choices, .employee-license-fields, .employee-edit-grid { grid-template-columns: 1fr; } .employee-edit-form { padding: 0; } .employee-edit-status-row { align-items: flex-start; flex-direction: column; } }
 .staff-management-main {
   background: radial-gradient(circle at 90% 0%, rgba(126, 78, 46, 0.14), transparent 32rem);
 }

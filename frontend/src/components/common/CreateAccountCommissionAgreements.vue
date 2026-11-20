@@ -26,6 +26,15 @@ watch(form, () => {
   })
 }, { deep: true })
 
+watch(() => props.modelValue, value => {
+  const nextApprovedServiceIds = [...(value?.approvedServiceIds || [])]
+  const nextRates = (value?.rates || []).map(rate => ({ ...rate }))
+  if (JSON.stringify(form.approvedServiceIds) === JSON.stringify(nextApprovedServiceIds)
+    && JSON.stringify(form.rates) === JSON.stringify(nextRates)) return
+  form.approvedServiceIds = nextApprovedServiceIds
+  form.rates = nextRates
+}, { deep: true })
+
 watch(() => [...props.branchIds].filter(Boolean).sort().join('|'), async (branchKey) => {
   const sequence = ++requestSequence
   services.value = []
@@ -59,6 +68,9 @@ const serviceOptions = computed(() => services.value.map(service => ({
   value: service.id,
   label: service.title || service.serviceName || service.consultationName || 'Untitled service',
 })))
+const todayDate = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date())
 
 const validationError = computed(() => {
   for (let index = 0; index < form.rates.length; index += 1) {
@@ -125,10 +137,10 @@ const addRate = () => form.rates.push({
         <input v-model.number="rate.amount" type="number" min="0" :max="rate.model === 'percent' ? 100 : undefined" step="0.01" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
       <label class="block text-sm font-medium text-[#5d4536]">Effective from
-        <input v-model="rate.effectiveFrom" type="date" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
+        <input v-model="rate.effectiveFrom" type="date" :min="todayDate()" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
       <label class="block text-sm font-medium text-[#5d4536]">Effective until (optional)
-        <input v-model="rate.effectiveUntil" type="date" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
+        <input v-model="rate.effectiveUntil" type="date" :min="todayDate()" class="mt-2 w-full rounded-lg border border-[#dec19e] bg-[#fffdf9] px-3 py-2 text-[#342419]" />
       </label>
       <button type="button" class="justify-self-start rounded-lg border border-[#e8bdb5] bg-[#fff8f6] px-3 py-2 text-sm text-[#a13732] hover:bg-[#fbe9e5] sm:col-span-2" @click="form.rates.splice(index, 1)">Remove rate</button>
     </div>

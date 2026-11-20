@@ -34,10 +34,15 @@ const PASSWORD_PARTS = {
 const PASSWORD_POOL = Object.values(PASSWORD_PARTS).join('')
 
 const currentMondayDate = () => {
-  const date = new Date()
-  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const [year, month, day] = currentDateInManila().split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCDate(date.getUTCDate() + ((8 - date.getUTCDay()) % 7))
+  return date.toISOString().slice(0, 10)
 }
+
+const currentDateInManila = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date())
 
 const generateSecurePassword = (length = PASSWORD_LENGTH) => {
   const cryptoSource = globalThis.crypto
@@ -96,6 +101,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const { initSubscription, activePlan, hasFeature } = useSubscription()
     const { hasPermission, isClinicAdminOwner } = usePermissions()
     const activeStep = ref(1)
+    const todayDate = currentDateInManila()
     const scheduleStepRef = ref(null)
     const commissionEditorRef = ref(null)
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: {} })
@@ -140,7 +146,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentStaff.value.employmentType = value
       currentStaff.value.engagementType = value === 'Intern' ? 'student_intern' : 'employee'
       currentStaff.value.weeklyHoursTarget = value === 'Full-time' ? 40 : ''
-      scheduleDraft.value = { branchId: currentStaff.value.branchIds?.[0] || '', effectiveFrom: '', weeklyHoursCap: Number(currentStaff.value.weeklyHoursTarget || 0), assignments: {} }
+      scheduleDraft.value = { branchId: currentStaff.value.branchIds?.[0] || '', effectiveFrom: currentMondayDate(), weeklyHoursCap: Number(currentStaff.value.weeklyHoursTarget || 0), assignments: {} }
     }
 
     const normalizedPlan = computed(() => String(activePlan.value || '').trim().toLowerCase())
@@ -304,12 +310,20 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const updateLocation = () => {
       const previousBranchId = currentStaff.value.clinicBranch
       currentStaff.value.clinicBranch = currentStaff.value.branchIds?.[0] || ''
-      const selected = branches.value.find(b => b.id === currentStaff.value.clinicBranch)
-      currentStaff.value.clinicLocation = selected ? selected.location : ""
+      const selectedBranchIds = new Set(currentStaff.value.branchIds || [])
+      const uniqueLocations = new Map()
+      branches.value
+        .filter(branch => selectedBranchIds.has(branch.id))
+        .forEach(branch => {
+          const location = String(branch.location || '').trim()
+          const key = location.toLocaleLowerCase()
+          if (location && !uniqueLocations.has(key)) uniqueLocations.set(key, location)
+        })
+      currentStaff.value.clinicLocation = [...uniqueLocations.values()].join(', ')
       if (previousBranchId !== currentStaff.value.clinicBranch) {
         scheduleDraft.value = {
           branchId: currentStaff.value.clinicBranch,
-          effectiveFrom: '',
+          effectiveFrom: currentMondayDate(),
           weeklyHoursCap: Number(currentStaff.value.weeklyHoursTarget || 0),
           assignments: {},
         }
@@ -357,7 +371,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const handlePhoneInput = (event) => {
       const value = event?.target?.value ?? ''
-      currentStaff.value.phoneNumber = sanitizePhone(value).slice(0, 10)
+      const phoneNumber = sanitizePhone(value).slice(0, 10)
+      currentStaff.value.phoneNumber = phoneNumber
+      if (event?.target) event.target.value = phoneNumber
     }
 
     const fieldErrors = computed(() => {
@@ -417,8 +433,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       if (!currentStaff.value.phoneNumber.trim()) {
         errors.phoneNumber = 'Phone number is required.'
-      } else if (currentStaff.value.phoneNumber.length !== 10) {
-        errors.phoneNumber = 'Enter a 10-digit mobile number.'
+      } else if (!/^9\d{9}$/.test(currentStaff.value.phoneNumber)) {
+        errors.phoneNumber = 'Enter exactly 10 digits starting with 9.'
       }
 
       if (!selectedCustomRoles.value.length) {
@@ -978,6 +994,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       saveStaff,
       resetForm,
       activeStep,
+      todayDate,
       scheduleStepRef,
       commissionEditorRef,
       scheduleDraft,
@@ -1178,6 +1195,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   <input
                     :value="currentStaff.phoneNumber"
                     type="tel"
+                    inputmode="numeric"
+                    autocomplete="tel-national"
+                    maxlength="10"
                     placeholder="Enter 10-digit number"
                     @input="handlePhoneInput"
                     :class="[
@@ -1276,7 +1296,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   </label>
                   <p v-if="!branches.length" class="assignment-empty">No branches available.</p>
                 </fieldset>
-                <p id="branch-assignment-hint" class="mt-2 text-xs text-slate-400">Select one or more branches. The first selected branch sets the clinic location.</p>
+                <p id="branch-assignment-hint" class="mt-2 text-xs text-slate-400">Select one or more branches. The first selected branch is primary.</p>
                 <p v-if="fieldErrors.clinicBranch" id="branch-assignment-error" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicBranch }}</p>
               </div>
 
@@ -1294,7 +1314,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   placeholder="Auto-populated from branch"
                 />
                 <p v-if="fieldErrors.clinicLocation" class="mt-1 text-xs text-red-400">{{ fieldErrors.clinicLocation }}</p>
-                <p v-else class="mt-1 text-xs text-slate-400">Automatically filled when a branch is selected.</p>
+                <p v-else class="mt-1 text-xs text-slate-400">Shows each selected branch location once.</p>
               </div>
             </div>
           </div>
@@ -1367,7 +1387,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <input v-model.number="basePay.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
               </label>
               <label class="block text-sm font-medium text-slate-200">Employment start date
-                <input v-model="basePay.employmentStartDate" type="date" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+                <input v-model="basePay.employmentStartDate" type="date" :min="todayDate" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
               </label>
               <p class="sm:col-span-2 text-xs text-slate-400">Enter a rate or a start date to continue. Start date supports paid leave eligibility; payroll uses saved pay terms and attendance.</p>
               <p v-if="basePayError" class="sm:col-span-2 text-sm text-rose-300" role="alert">{{ basePayError }}</p>

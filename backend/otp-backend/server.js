@@ -59,7 +59,7 @@ import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
-import { resolveRecurringScheduleVersion, withRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
+import { recurringScheduleVersions, resolveRecurringScheduleVersion, withRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { defaultClinicRolePermissions } from '../../shared/clinicRoleDefaults.js'
 import {
   clinicRolePagePermissionKeys,
@@ -9331,14 +9331,20 @@ app.patch('/staff/:userId/profile', requireAuth, async (req, res) => {
 
     const text = (value, max = 250) => String(value ?? '').trim().slice(0, max)
     const firstName = text(req.body?.firstName, 100)
+    const middleName = text(req.body?.middleName, 100)
     const lastName = text(req.body?.lastName, 100)
+    const suffix = text(req.body?.suffix, 50)
     const email = text(req.body?.email, 320).toLowerCase()
     const phoneNumber = text(req.body?.phoneNumber, 30)
     const engagementType = text(req.body?.engagementType, 40).toLowerCase()
     const employmentType = text(req.body?.employmentType, 40)
     const weeklyHoursTarget = Number(req.body?.weeklyHoursTarget)
     const namePattern = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u
-    if (!namePattern.test(firstName) || !namePattern.test(lastName)) return res.status(400).json({ success: false, error: 'Enter a valid first and last name.' })
+    const suffixPattern = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u
+    if (!namePattern.test(firstName) || !namePattern.test(lastName)
+      || (middleName && !namePattern.test(middleName)) || (suffix && !suffixPattern.test(suffix))) {
+      return res.status(400).json({ success: false, error: 'Enter valid employee name details.' })
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' })
     if (!/^\+639\d{9}$/.test(phoneNumber)) return res.status(400).json({ success: false, error: 'Enter a valid Philippine mobile number.' })
     if (!['employee', 'student_intern'].includes(engagementType)
@@ -9351,12 +9357,17 @@ app.patch('/staff/:userId/profile', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Enter valid employment type and agreed weekly hours (maximum 48).' })
     }
 
+    const uniqueLocations = [...new Map(selectedBranchIds.map(id => {
+      const location = text(allBranches.find(branch => branch.id === id)?.clinicLocation, 250)
+      return [location.toLocaleLowerCase(), location]
+    }).filter(([key, value]) => key && value)).values()]
     const updates = {
-      firstName, lastName, fullName: `${firstName} ${lastName}`.trim(), email, phoneNumber,
+      firstName, middleName: middleName || null, lastName, suffix: suffix || null,
+      fullName: [firstName, middleName, lastName, suffix].filter(Boolean).join(' ').trim(), email, phoneNumber,
       engagementType, employmentType, weeklyHoursTarget,
       branchId: selectedBranchIds[0], branchIds: selectedBranchIds, organizationOwnerId: ownerId,
       clinicBranch: text(allBranches.find(branch => branch.id === selectedBranchIds[0])?.clinicBranch, 150),
-      clinicLocation: text(allBranches.find(branch => branch.id === selectedBranchIds[0])?.clinicLocation, 250),
+      clinicLocation: uniqueLocations.join(', '), clinicLocations: uniqueLocations,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }
 
@@ -9435,6 +9446,13 @@ app.get('/hr/branches/:branchId/shift-templates', requireAuth, async (req, res) 
     let capacitySchedules = []
     if (String(req.query.includeCapacity || '').toLowerCase() === 'true') {
       assertWorkflow(actor.permissions.has('hr:update') || actor.permissions.has('administrator:full_access'), 'You do not have permission to assign employee shifts.', 403)
+      const excludeEmployeeId = String(req.query.excludeEmployeeId || '').trim()
+      if (excludeEmployeeId) {
+        const excludedEmployee = await firestore.collection('users').doc(excludeEmployeeId).get()
+        const excludedData = excludedEmployee.data() || {}
+        const assignedBranches = [excludedData.branchId, ...(Array.isArray(excludedData.branchIds) ? excludedData.branchIds : [])].map(value => String(value || '').trim())
+        assertWorkflow(excludedEmployee.exists && String(excludedData.userType || '').toLowerCase() === 'staff' && assignedBranches.includes(branchId), 'The employee being edited is not assigned to this branch.', 400)
+      }
       const [primaryStaff, additionalStaff] = await Promise.all([
         firestore.collection('users').where('branchId', '==', branchId).where('userType', '==', 'Staff').get(),
         firestore.collection('users').where('branchIds', 'array-contains', branchId).get(),
@@ -9442,7 +9460,7 @@ app.get('/hr/branches/:branchId/shift-templates', requireAuth, async (req, res) 
       const staffById = new Map([...primaryStaff.docs, ...additionalStaff.docs].map(snapshot => [snapshot.id, snapshot]))
       const activeStaff = [...staffById.values()].filter(snapshot => {
         const data = snapshot.data() || {}
-        return ['staff', 'employee'].includes(String(data.userType || '').toLowerCase())
+        return snapshot.id !== excludeEmployeeId && ['staff', 'employee'].includes(String(data.userType || '').toLowerCase())
           && data.archived !== true && String(data.status || '').toLowerCase() !== 'inactive'
       })
       const effectiveFrom = String(req.query.effectiveFrom || '')
@@ -9499,6 +9517,36 @@ app.post('/hr/branches/:branchId/shifts', requireAuth, async (req, res) => {
   }
 })
 
+app.get('/staff/:userId/recurring-schedule', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadUserContext(req.user.uid)
+    assertWorkflow(actor.permissions.has('hr:view') || actor.permissions.has('administrator:full_access'), 'You do not have permission to view employee schedules.', 403)
+    const userId = String(req.params.userId || '').trim()
+    const branchId = String(req.query.branchId || '').trim()
+    const firestore = admin.firestore()
+    const employeeSnapshot = await firestore.collection('users').doc(userId).get()
+    const employee = employeeSnapshot.data() || {}
+    const assignedBranches = [employee.branchId, ...(Array.isArray(employee.branchIds) ? employee.branchIds : [])].map(value => String(value || '').trim())
+    assertWorkflow(employeeSnapshot.exists && String(employee.userType || '').toLowerCase() === 'staff' && assignedBranches.includes(branchId), 'Employee is not assigned to this branch.', 404)
+    assertWorkflow(await resolveBranchAccess(req.user.uid, branchId), 'You are not assigned to this branch.', 403)
+    await assertClinicPlanFeature(firestore, branchId, 'hr')
+    const scheduleSnapshot = await firestore.collection('users').doc(userId).collection('schedules').doc('recurring').get()
+    const effectiveFrom = String(req.query.effectiveFrom || '')
+    const scheduleData = scheduleSnapshot.exists ? scheduleSnapshot.data() || {} : {}
+    const schedule = scheduleSnapshot.exists ? resolveRecurringScheduleVersion(scheduleData, effectiveFrom) : null
+    const latestSchedule = scheduleSnapshot.exists ? recurringScheduleVersions(scheduleData).at(-1) || null : null
+    return res.json({
+      success: true,
+      data: {
+        schedule: schedule ? { ...schedule, branchId } : null,
+        latestSchedule: latestSchedule ? { ...latestSchedule, branchId } : null,
+      },
+    })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to load the employee recurring schedule.' })
+  }
+})
+
 app.put('/staff/:userId/recurring-schedule', requireAuth, async (req, res) => {
   try {
     const actor = await loadUserContext(req.user.uid)
@@ -9527,7 +9575,7 @@ app.put('/staff/:userId/recurring-schedule', requireAuth, async (req, res) => {
     assertWorkflow(Number.isFinite(weeklyHoursCap) && weeklyHoursCap >= 1 && weeklyHoursCap <= Math.min(48, agreedHours), 'The weekly limit cannot exceed the employee’s agreed hours or 48 hours.', 400)
     const requestedAssignments = req.body?.assignments && typeof req.body.assignments === 'object' ? req.body.assignments : {}
     const assignments = Object.fromEntries(staffScheduleDays.map(day => [day, String(requestedAssignments[day] || '').trim()]))
-    assertWorkflow(staffScheduleDays.every(day => !assignments[day] || assignments[day].length <= 150) && staffScheduleDays.some(day => assignments[day]), 'Assign at least one valid shift day.', 400)
+    assertWorkflow(staffScheduleDays.every(day => !assignments[day] || assignments[day].length <= 150), 'Choose valid shift templates for the weekly schedule.', 400)
     const shiftIds = [...new Set(Object.values(assignments).filter(Boolean))]
     const shiftSnaps = await Promise.all(shiftIds.map(id => firestore.collection('shifts').doc(id).get()))
     assertWorkflow(shiftSnaps.every(snapshot => snapshot.exists && String(snapshot.data()?.branchId || '') === branchId && snapshot.data()?.isArchived !== true), 'Select active shift templates from this branch.', 400)
@@ -9774,7 +9822,15 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
       customRoleId: customRoleIds[0] || null, customRoleIds,
       customRoleName: text(input.customRoleName, 150) || null, effectivePermissions,
       engagementType, employmentType, weeklyHoursTarget, userType: 'Staff',
-      branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: text(branches[0].clinicLocation, 250),
+      branchId: branchIds[0], branchIds, organizationOwnerId: ownerId,
+      clinicLocation: [...new Map(branches.map(branch => {
+        const location = text(branch.clinicLocation, 250)
+        return [location.toLocaleLowerCase(), location]
+      }).filter(([key, value]) => key && value)).values()].join(', '),
+      clinicLocations: [...new Map(branches.map(branch => {
+        const location = text(branch.clinicLocation, 250)
+        return [location.toLocaleLowerCase(), location]
+      }).filter(([key, value]) => key && value)).values()],
       ...(payFieldsRequested ? {
         employmentStartDate,
         ...(hasPayRate ? { basePay: Number(basePayValue.toFixed(2)), basePayModel, monthlyBaseHours } : {}),
