@@ -30,7 +30,6 @@
           <template v-else>
           <section v-if="page === 'requests' && department === 'finance'" class="mb-5 grid gap-3 md:grid-cols-3"><router-link to="/finance/procurement/requests" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Purchase order approvals</h2><p class="mt-2 text-sm text-slate-400">Review supplier invoices and approve or reject purchase orders.</p></router-link><router-link to="/finance/listing-approvals" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Listing approvals</h2><p class="mt-2 text-sm text-slate-400">Review listing prices and financial terms.</p></router-link><router-link v-if="canUsePayroll" to="/finance/payroll-approval" class="rounded-xl border border-slate-700 bg-slate-800 p-4"><h2 class="font-semibold">Payroll approvals</h2><p class="mt-2 text-sm text-slate-400">Review HR-prepared payroll summaries.</p></router-link></section>
           <div class="module-actions mb-4">
-            <button v-if="page === 'items' && department === 'inventory' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Record received stock" @click="openStockReceipt"><span aria-hidden="true">＋</span> Receive stock</button>
             <button v-if="page === 'requests' && department === 'inventory' && branchId !== 'all' && can('inventory:create')" class="module-action" title="Create inventory request" @click="openForm('request')"><span aria-hidden="true">＋</span> New request</button>
             <button v-if="page === 'budgets' && branchId !== 'all' && can('finance:payables:approve')" class="module-action" title="Create budget" @click="openForm('budget')"><span aria-hidden="true">＋</span> Create budget</button>
             <select v-if="page === 'reports'" v-model="reportKey" aria-label="Report type"><option v-for="(r,index) in availableReports" :key="r.key" :value="index === 0 ? '' : r.key">{{ r.label }}</option></select>
@@ -126,39 +125,6 @@
       </template>
 
       <div v-if="pharmacySetupItem" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3" @click.self="pharmacySetupItem = null"><form class="w-full max-w-xl space-y-4 rounded-xl border border-slate-600 bg-slate-900 p-6" @submit.prevent="savePharmacySetup" :aria-busy="busy"><header class="flex items-start justify-between gap-4"><div><h2 class="text-xl font-semibold">{{ pharmacySetupItem.pharmacyEnabled ? 'Pharmacy item settings' : 'Add item to Pharmacy' }}</h2><p class="mt-1 text-sm text-slate-400">{{ pharmacySetupItem.name }}</p></div><button type="button" aria-label="Close" @click="pharmacySetupItem = null">×</button></header><p class="text-sm text-slate-300">Choose how this item may be dispensed. Restricted items remain visible in Pharmacy but the POS will block their sale.</p><label class="block text-sm text-slate-300">Dispensing classification<select v-model="pharmacySetup.dispensingClass" class="mt-1 block w-full rounded border border-slate-600 bg-slate-800 p-2 text-white"><option value="unclassified">Unclassified (cannot sell)</option><option value="general_sale">General sale</option><option value="prescription_required">Prescription required</option><option value="restricted">Restricted (POS sale blocked)</option></select></label><p class="text-xs text-slate-400">Prescription required items need a linked completed consultation prescription naming the item. Confirm classification with your clinic’s responsible professional.</p><label class="block text-sm text-slate-300">Retail price (PHP)<input v-model.number="pharmacySetup.retailPrice" type="number" min="0.01" step="0.01" class="mt-1 block w-full rounded border border-slate-600 bg-slate-800 p-2 text-white" /></label><label class="flex items-center gap-2 text-sm text-slate-200"><input v-model="pharmacySetup.enabled" type="checkbox" /> Available in Pharmacy</label><p v-if="pharmacySetupError" class="text-sm text-red-300" role="alert">{{ pharmacySetupError }}</p><div class="flex justify-end gap-3"><button type="button" class="rounded border border-slate-600 px-4 py-2" :disabled="busy" @click="pharmacySetupItem = null">Cancel</button><button class="rounded bg-amber-800 px-4 py-2" type="submit" :disabled="busy">{{ busy ? 'Saving…' : 'Save pharmacy settings' }}</button></div></form></div>
-
-      <div v-if="stockReceiptOpen" class="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-3" @click.self="closeStockReceipt">
-        <form role="dialog" aria-modal="true" aria-labelledby="stock-receipt-title" class="max-h-[92vh] w-full max-w-3xl space-y-4 overflow-auto rounded-xl border border-slate-600 bg-slate-900 p-6" @submit.prevent="saveStockReceipt" :aria-busy="busy">
-          <header class="flex items-start justify-between gap-4"><div><h2 id="stock-receipt-title" class="text-xl font-semibold">Receive stock</h2><p class="mt-1 text-sm text-slate-400">Record stock received outside a purchase order. This adds the quantity to inventory and creates a traceable receipt lot.</p></div><button type="button" aria-label="Close" :disabled="busy" @click="closeStockReceipt">×</button></header>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <label class="block text-sm text-slate-300">What are you receiving?<select v-model="stockReceiptForm.mode" class="mt-1 w-full" :disabled="busy"><option value="existing">An existing supply</option><option value="new">A new supply</option></select></label>
-            <label v-if="stockReceiptForm.mode === 'existing'" class="block text-sm text-slate-300">Supply item <span class="text-red-300">*</span><select v-model="stockReceiptForm.itemId" class="mt-1 w-full" required :disabled="busy"><option value="">Select an inventory item</option><option v-for="item in data.items" :key="item.id" :value="item.id">{{ item.name }} · {{ item.currentStock }} {{ item.unit }}</option></select></label>
-            <label v-else class="block text-sm text-slate-300">Supply name <span class="text-red-300">*</span><input v-model.trim="stockReceiptForm.name" class="mt-1 w-full" maxlength="200" required :disabled="busy" placeholder="e.g. Nitrile gloves, medium" /></label>
-            <CategorySelectField v-if="stockReceiptForm.mode === 'new'" id="receipt-supply-category" label="Category" v-model="stockReceiptForm.category" :options="supplyCategories" required :disabled="busy" />
-            <label v-if="stockReceiptForm.mode === 'new'" class="block text-sm text-slate-300">Unit <span class="text-red-300">*</span><input v-model.trim="stockReceiptForm.unit" class="mt-1 w-full" maxlength="40" required :disabled="busy" placeholder="pieces, boxes, bottles" /></label>
-            <label v-if="stockReceiptForm.mode === 'new'" class="block text-sm text-slate-300">Item type<select v-model="stockReceiptForm.itemType" class="mt-1 w-full" :disabled="busy"><option>Material</option><option>Equipment</option></select></label>
-            <label v-if="stockReceiptForm.mode === 'new'" class="block text-sm text-slate-300">Material classification<select v-model="stockReceiptForm.consumability" class="mt-1 w-full" :disabled="busy"><option>Consumable</option><option>Non-consumable</option></select></label>
-            <label class="block text-sm text-slate-300">Quantity received <span class="text-red-300">*</span><input v-model.number="stockReceiptForm.receivedQuantity" class="mt-1 w-full" type="number" min="1" step="1" required :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300">Source<select v-model="stockReceiptForm.source" class="mt-1 w-full" :disabled="busy"><option>Supplier purchase</option><option>Donation</option><option>Return</option><option>Initial stock</option><option>Other</option></select></label>
-            <label class="block text-sm text-slate-300">Supplier (optional)<select v-model="stockReceiptForm.supplierId" class="mt-1 w-full" :disabled="busy"><option value="">No supplier selected</option><option v-for="supplier in supplierOptions()" :key="supplier.value" :value="supplier.value">{{ supplier.label }}</option></select></label>
-            <label class="block text-sm text-slate-300">Unit cost (PHP, optional)<input v-model.number="stockReceiptForm.unitCost" class="mt-1 w-full" type="number" min="0" step="0.01" :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300">Invoice / reference number<input v-model.trim="stockReceiptForm.reference" class="mt-1 w-full" maxlength="200" :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300">Batch / lot number<input v-model.trim="stockReceiptForm.lot" class="mt-1 w-full" maxlength="200" :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300">Condition<select v-model="stockReceiptForm.condition" class="mt-1 w-full" :disabled="busy"><option>Good</option><option>Damaged</option><option>Defective</option><option>Expired</option><option>Under repair</option></select></label>
-            <label class="block text-sm text-slate-300">Manufacturing date<input v-model="stockReceiptForm.manufacturingDate" class="mt-1 w-full" type="date" :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300">Expiry date<input v-model="stockReceiptForm.expiryDate" class="mt-1 w-full" type="date" :min="stockReceiptForm.manufacturingDate || undefined" :disabled="busy" /></label>
-            <label class="block text-sm text-slate-300 sm:col-span-2">Storage location<input v-model.trim="stockReceiptForm.location" class="mt-1 w-full" maxlength="200" :disabled="busy" placeholder="Optional shelf, cabinet, or room" /></label>
-            <template v-if="stockReceiptForm.mode === 'new'">
-              <label class="block text-sm text-slate-300">Restock threshold<input v-model.number="stockReceiptForm.minStock" class="mt-1 w-full" type="number" min="0" step="1" required :disabled="busy" /></label>
-              <label class="block text-sm text-slate-300">Target stock<input v-model.number="stockReceiptForm.targetStock" class="mt-1 w-full" type="number" min="0" step="1" required :disabled="busy" /></label>
-              <label class="block text-sm text-slate-300">Maximum stock<input v-model.number="stockReceiptForm.maxStock" class="mt-1 w-full" type="number" min="0" step="1" required :disabled="busy" /></label>
-            </template>
-            <label class="block text-sm text-slate-300 sm:col-span-2">Reason / receipt notes <span class="text-red-300">*</span><textarea v-model.trim="stockReceiptForm.reason" class="mt-1 w-full" rows="3" maxlength="1000" required :disabled="busy" placeholder="Explain where the stock came from or why it is being recorded."></textarea></label>
-          </div>
-          <p v-if="stockReceiptError" class="text-sm text-red-300" role="alert">{{ stockReceiptError }}</p>
-          <div class="flex justify-end gap-3"><button type="button" class="rounded border border-slate-600 px-4 py-2" :disabled="busy" @click="closeStockReceipt">Cancel</button><button type="submit" class="rounded bg-amber-800 px-4 py-2 font-semibold" :disabled="busy">{{ busy ? 'Recording…' : 'Record received stock' }}</button></div>
-        </form>
-      </div>
 
       <div v-if="selected" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3" @click.self="selected = null"><section role="dialog" aria-modal="true" :aria-label="selected.kind === 'po' ? 'Purchase order details' : 'Record details'" :class="{ 'po-details-dialog': selected.kind === 'po' }" class="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-xl border border-slate-600 bg-slate-900 p-6"><template v-if="selected.kind === 'budgetRequest'"><header class="flex items-start justify-between gap-4"><div><p class="text-xs text-amber-300">Finance › Approvals › {{ selected.number }}</p><h2 class="mt-1 text-xl font-semibold">Funding Request Details</h2><p class="text-xs text-slate-400">{{ selected.number }}</p></div><div class="flex items-center gap-3"><span class="rounded-full bg-amber-950 px-3 py-1 text-xs text-amber-200">{{ selected.status }}</span><button type="button" aria-label="Close details" class="workspace-dialog-close" @click="selected = null"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M6 18 18 6" stroke-linecap="round" /></svg></button></div></header><section class="funding-total-card mt-4"><p>Total funding requested</p><strong>{{ currency(selected.requestedAmount) }}</strong><small>{{ branchName(selected.branchId) }}<br />Submitted by Procurement</small></section></template><header v-else class="flex justify-between" :class="{ 'po-details-heading': selected.kind === 'po' }"><div><h2 class="text-xl font-semibold">{{ selected.number || selected.name || selected.businessName }}</h2><p class="text-sm text-amber-200">{{ selected.status || selected.signals?.join(', ') }} · {{ nextAction(selected) }}</p></div><button type="button" aria-label="Close details" class="workspace-dialog-close" @click="selected = null"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M6 18 18 6" stroke-linecap="round" /></svg></button></header>
         <div v-if="!['budgetRequest', 'po'].includes(selected.kind)" class="my-4 grid gap-3 rounded-lg border border-slate-700 p-4 sm:grid-cols-3"><div><small class="text-slate-400">Current Status</small><p>{{ selected.status || selected.signals?.join(', ') || 'Active' }}</p></div><div><small class="text-slate-400">Responsible Department</small><p>{{ responsibleDepartment(selected) }}</p></div><div v-if="selected.supplierId"><small class="text-slate-400">Supplier Name</small><p>{{ supplierDisplayName(selected) }}</p></div><div v-else><small class="text-slate-400">Current Owner</small><p>{{ currentOwner(selected) }}</p></div></div>
@@ -312,7 +278,6 @@ const data = ref({ records: [], items: [], suppliers: [], branches: [], movement
 const selected = ref(null), history = ref({ history: [], documents: [] })
 const search = ref(''), status = ref(''), type = ref(''), departmentFilter = ref(''), supplierFilter = ref(''), categoryFilter = ref(''), fromDate = ref(''), toDate = ref(''), sort = ref('newest'), currentPage = ref(1)
 const formKind = ref(''), form = ref({}), formFields = ref([]), formTarget = ref(null), formError = ref(''), requestSubmission = ref('send')
-const stockReceiptOpen = ref(false), stockReceiptError = ref(''), stockReceiptForm = ref({})
 const pharmacySetupItem = ref(null), pharmacySetup = ref({ enabled: false, dispensingClass: 'unclassified', retailPrice: 0 }), pharmacySetupError = ref('')
 const budgetSearch = ref(''), budgetBranchFilter = ref('all'), budgetPeriod = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7))
 const can = permission => data.value.permissions.includes(permission) || data.value.permissions.includes('administrator:full_access')
@@ -566,37 +531,6 @@ const inventoryFormFields=()=>[
 ]
 const refreshInventoryFields=()=>{ if(formKind.value==='item') formFields.value=inventoryFormFields() }
 const openItem = item => { formTarget.value=item||null;formKind.value='item';formError.value='';form.value={name:'',category:'',description:'',currentStock:0,minStock:1,targetStock:10,maxStock:20,itemType:'Material',consumability:'Consumable',unit:'pieces',costPrice:0,...item,supplierId:item?.supplierId||'',adjustmentReason:''};refreshInventoryFields() }
-const openStockReceipt = () => {
-  stockReceiptError.value = ''
-  stockReceiptForm.value = { mode: data.value.items.length ? 'existing' : 'new', itemId: '', name: '', category: '', unit: 'pieces', itemType: 'Material', consumability: 'Consumable', receivedQuantity: 1, source: 'Supplier purchase', supplierId: '', unitCost: '', reference: '', lot: '', condition: 'Good', manufacturingDate: '', expiryDate: '', location: '', minStock: 1, targetStock: 10, maxStock: 20, reason: '' }
-  stockReceiptOpen.value = true
-}
-const closeStockReceipt = () => { if (!busy.value) stockReceiptOpen.value = false }
-const saveStockReceipt = async () => {
-  if (busy.value) return
-  const draft = stockReceiptForm.value
-  stockReceiptError.value = ''
-  if (draft.mode === 'existing' && !draft.itemId) stockReceiptError.value = 'Choose the inventory item being received.'
-  else if (draft.mode === 'new' && (!String(draft.name || '').trim() || !String(draft.category || '').trim() || !String(draft.unit || '').trim())) stockReceiptError.value = 'Enter a supply name, category, and unit.'
-  else if (!Number.isSafeInteger(Number(draft.receivedQuantity)) || Number(draft.receivedQuantity) < 1) stockReceiptError.value = 'Enter a whole-number quantity greater than zero.'
-  else if (draft.mode === 'new' && !(Number(draft.minStock) <= Number(draft.targetStock) && Number(draft.targetStock) <= Number(draft.maxStock))) stockReceiptError.value = 'Maximum stock must be at least target stock, and target must be at least the restocking threshold.'
-  else if (!String(draft.reason || '').trim()) stockReceiptError.value = 'Enter a reason for this receipt.'
-  if (stockReceiptError.value) { toast.error(stockReceiptError.value); return }
-  busy.value = true
-  try {
-    const result = await api('/stock-receipts', { ...draft, branchId: branchId.value })
-    stockReceiptOpen.value = false
-    notice.value = `${draft.receivedQuantity} ${draft.mode === 'existing' ? data.value.items.find(item => item.id === draft.itemId)?.unit || 'units' : draft.unit} added to inventory. Receipt and stock movement recorded.`
-    toast.success(notice.value)
-    await load(true)
-    return result
-  } catch (e) {
-    stockReceiptError.value = e.message
-    toast.error(stockReceiptError.value)
-  } finally {
-    busy.value = false
-  }
-}
 const openPharmacySetup = item => { pharmacySetupItem.value=item; pharmacySetupError.value=''; pharmacySetup.value={ enabled:item.pharmacyEnabled===true, dispensingClass:item.dispensingClass||'unclassified', retailPrice:Number(item.retailPrice||0) } }
 const savePharmacySetup = async () => {
   const item=pharmacySetupItem.value
