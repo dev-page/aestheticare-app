@@ -10316,6 +10316,7 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
     const appointmentSnap = await appointmentRef.get()
     if (!appointmentSnap.exists) return res.status(404).json({ success: false, error: 'Appointment not found.' })
     const appointment = appointmentSnap.data() || {}
+    assertWorkflow(!(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online'), 'Online consultations must go through clinic review; the clinic no-show policy does not apply automatically.', 400)
     const branchId = String(appointment.branchId || '').trim()
     await authorizeClinicAction(req.user.uid, branchId, 'appointments:update')
 
@@ -10325,6 +10326,7 @@ app.post('/appointments/:id/mark-no-show', requireAuth, async (req, res) => {
     const noShowOutcome = rescheduleAllowed ? 'Reschedule eligible' : 'Forfeited'
     await firestore.runTransaction(async tx => {
       const fresh = (await tx.get(appointmentRef)).data()
+      assertWorkflow(!(normalized(fresh?.type) === 'consultation' && normalized(fresh?.consultationMode) === 'online'), 'Online consultations must go through clinic review; the clinic no-show policy does not apply automatically.', 400)
       assertWorkflow(fresh && ['scheduled', 'ready to start', 'paid'].includes(normalized(fresh.status)) && !fresh.checkedInAt && !fresh.workerKeyVerified && !fresh.startedAt && !fresh.isGroupParent && !fresh.isBookingOrderParent, 'Only an unattended individual appointment can be marked as a no-show.')
       const start = new Date(`${fresh.date}T${fresh.time}+08:00`)
       const end = fresh.endTime ? new Date(`${fresh.date}T${fresh.endTime}+08:00`) : new Date(start.getTime() + Number(fresh.totalServiceDurationMinutes || 60) * 60000)

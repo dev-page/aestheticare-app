@@ -271,7 +271,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const canMarkNoShow = (appointment) => {
       const status = String(appointment?.status || '').trim().toLowerCase()
-      return ['scheduled', 'ready to start', 'paid'].includes(status)
+      const onlineConsultation = String(appointment?.type || '').trim().toLowerCase() === 'consultation'
+        && String(appointment?.consultationMode || '').trim().toLowerCase() === 'online'
+      return !onlineConsultation
+        && ['scheduled', 'ready to start', 'paid'].includes(status)
         && String(appointment?.date || '') <= localDateKey()
     }
 
