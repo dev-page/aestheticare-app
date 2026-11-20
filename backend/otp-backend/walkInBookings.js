@@ -53,6 +53,12 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       check(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(signatureImage) && signatureImage.length <= 200000, 'Draw the booking arranger signature (PNG, up to 150 KB).', 400)
       const signatureBytes = Buffer.from(signatureImage.split(',')[1], 'base64')
       check(signatureBytes.length > 32 && signatureBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), 'Invalid booking signature image.', 400)
+      const treatmentAcceptance = req.body.treatmentAcceptance || {}
+      check(treatmentAcceptance.accepted === true, 'The care recipient must accept the treatment agreement before booking.', 400)
+      const treatmentSignatureImage = String(treatmentAcceptance.signatureImage || '')
+      check(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(treatmentSignatureImage) && treatmentSignatureImage.length <= 200000, 'Draw the treatment recipient signature (PNG, up to 150 KB).', 400)
+      const treatmentSignatureBytes = Buffer.from(treatmentSignatureImage.split(',')[1], 'base64')
+      check(treatmentSignatureBytes.length > 32 && treatmentSignatureBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), 'Invalid treatment recipient signature image.', 400)
       const bookingForSomeoneElse = req.body.bookingForSomeoneElse === true
       const booker = bookingForSomeoneElse ? {
         name: String(req.body.booker?.name || '').trim(),
@@ -102,12 +108,13 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           'A walk-in booking must be for one client. Select the same recipient for every appointment.', 400)
         return {
           ...Object.fromEntries(['serviceId', 'practitionerId', 'date', 'time', 'notes'].map(key => [key, String(row[key] || '').trim().slice(0, key === 'notes' ? 2000 : 200)])),
+          ...(typeof row.sourceVisitKey === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(row.sourceVisitKey) ? { sourceVisitKey: row.sourceVisitKey } : {}),
           sameDayConsultationRequested: row.sameDayConsultationRequested === true,
         }
       })
       check(rows.every(row => !row.groupBooking), 'Walk-in bookings support one client per booking. Create a separate booking for each person.', 400)
       const db = admin.firestore()
-      const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ branchId, requestedClientId, cleanClientDetails, cleanRows, bookingForSomeoneElse, booker, signatureImage })).digest('hex')
+      const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ branchId, requestedClientId, cleanClientDetails, cleanRows, bookingForSomeoneElse, booker, signatureImage, treatmentSignatureImage })).digest('hex')
       const requestKey = crypto.createHash('sha256').update(`${req.user.uid}:${branchId}:${submissionId}`).digest('hex')
       const bookingRef = db.collection('bookings').doc(`walk-in-${requestKey}`)
       const parentRef = db.collection('appointments').doc()
@@ -282,8 +289,19 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         }
         const now = admin.firestore.FieldValue.serverTimestamp()
         bookingAgreement.appointments = prepared.map(({ reservation, data }) => ({ serviceId: reservation.serviceId, service: data.service || reservation.serviceId, date: reservation.date, time: reservation.time, amount: data.totalAmount ?? data.amount }))
-        const appointments = prepared.map(({ reservation, visit, worker, data }, index) => ({
-          ...reservation, ...data, bookingId: bookingRef.id,
+        const appointments = prepared.map(({ reservation, visit, worker, data }, index) => {
+          const recipientSignature = {
+            uid: null, clientId: client.clientId, witnessedBy: req.user.uid, signatureImage: treatmentSignatureImage,
+            method: 'drawn-signature', accepted: true, name: client.customerName, email: client.customerEmail,
+            signedAt: new Date().toISOString(),
+          }
+          const canSignTreatmentNow = data.sameDayTreatmentStatus !== 'pending_clinical_clearance'
+          if (canSignTreatmentNow) check(data.contract?.terms || data.contract?.templateUrl, 'The treatment agreement is not available to sign for this appointment.', 409)
+          const contract = canSignTreatmentNow && data.contract
+            ? { ...data.contract, status: 'signed', signatures: { ...(data.contract.signatures || {}), [client.clientId]: recipientSignature } }
+            : data.contract
+          return {
+          ...reservation, ...data, ...(contract ? { contract } : {}), ...(canSignTreatmentNow ? { contractSignedAt: now } : {}), bookingId: bookingRef.id,
           clientName: reservation.customerName, practitionerName: worker.fullName || `${worker.firstName || ''} ${worker.lastName || ''}`.trim() || worker.email || '',
           assignedPractitionerId: reservation.practitionerId,
           bookingForSomeoneElse, bookedByName: arranger.name, bookedByEmail: arranger.email, bookedByPhone: arranger.phone,
@@ -296,7 +314,7 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           paymentManagedByOrganizer: false, approvedBy: req.user.uid, approvedAt: now,
           createdBy: req.user.uid, createdAt: now, updatedAt: now, policyAcknowledgedAt: now,
           ...(childRefs.length > 1 ? { parentAppointmentId: parentRef.id, bookingOrderId: bookingRef.id } : {}),
-        }))
+        }})
         const total = appointments.reduce((sum, row) => sum + cents(row.totalAmount), 0) / 100
         const pricingSnapshot = sumAppointmentPricing(appointments.map(row => row.pricingSnapshot))
         const commissionAmount = appointments.reduce((sum, row) => sum + cents(row.commissionAmount), 0) / 100

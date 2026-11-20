@@ -3,49 +3,25 @@
     <OwnerSidebar />
     <main v-page-loading="{ active: pageLoading, variant: 'form', fields: 4, sections: 2 }" class="flex-1 min-w-0 p-4 md:p-8">
       <div class="walk-in-content">
-        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Choose or add the care recipient, book their on-site appointment, then record consent and payment here. New client details are saved only when the booking succeeds.</p></div><div v-if="isPosRoute && canCreateAppointments" class="flex flex-wrap gap-2"><RouterLink to="/crm/walk-in" class="desk-button secondary">New walk-in booking</RouterLink></div></header>
+        <header class="page-heading"><div><p class="eyebrow">CRM &amp; Clinic</p><h1>Walk-In Desk</h1><p class="muted">Choose the care recipient, schedule the visit, review and sign the agreements, then take payment. New client details are saved only when the booking succeeds.</p></div></header>
         <p v-if="error" class="desk-alert error" role="alert">{{ error }}</p>
         <p v-if="checkoutReturnNotice" class="desk-alert" role="status">{{ checkoutReturnNotice }}</p>
-        <nav v-if="!isPosRoute" class="walk-in-progress" aria-label="Walk-in booking progress">
+        <nav class="walk-in-progress" aria-label="Walk-in booking progress">
           <button
             v-for="step in bookingSteps"
             :key="step.number"
             type="button"
             class="walk-in-progress-step"
             :class="{ 'is-current': progressStep === step.number, 'is-complete': progressStep > step.number }"
-            :disabled="createdAppointments.length > 0 || step.number > bookingStep"
+            :disabled="busy || (!createdAppointments.length && step.number > bookingStep) || (createdAppointments.length > 0 && step.number !== 3)"
             :aria-current="progressStep === step.number ? 'step' : undefined"
             @click="goToBookingStep(step.number)"
           >
             <span class="walk-in-step-number">{{ step.number < progressStep ? '✓' : step.number }}</span>
-            <span class="walk-in-step-copy"><strong>{{ step.label }}</strong><small>{{ step.description }}</small></span>
+            <span class="walk-in-step-copy"><strong>{{ step.label }}</strong><small>{{ step.description }}</small><small v-if="step.number < bookingStep && !createdAppointments.length" class="step-edit-hint">Click to edit this step</small></span>
           </button>
         </nav>
-        <template v-if="isPosRoute && !createdAppointments.length">
-          <section class="desk-card">
-            <div class="section-heading"><div><p class="eyebrow">POS</p><h2>Walk-in payments</h2><p class="muted small">Unpaid walk-in appointments stay here if you leave the booking screen. Confirm the recipient's signed treatment agreement before taking payment. Provisional same-day treatments appear only after practitioner clearance.</p></div><div class="flex gap-2"><button type="button" class="desk-button secondary" :disabled="busy" @click="refreshPaymentQueue">Refresh</button><RouterLink v-if="canCreateAppointments" to="/crm/walk-in" class="desk-button primary">Book a walk-in</RouterLink></div></div>
-            <article v-for="appointment in posAppointments" :key="appointment.id" class="payment-card">
-              <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
-              <p v-else class="muted small">Tax breakdown unavailable for this older booking. Total due: {{ currency(appointment.totalAmount ?? appointment.amount) }}</p>
-              <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail || 'No email provided — share booking details in person.' }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
-              <p class="muted small">Arranged by {{ appointment.bookedByName }} · Booking terms: {{ appointment.bookingAgreementStatus === 'signed' ? 'Signed' : 'Legacy booking' }} · Treatment agreement: {{ appointment.contract?.status === 'signed' ? 'Signed by recipient' : 'Awaiting recipient signature' }}.</p>
-              <div v-if="appointment.bookingWorkflowVersion === 2 && appointment.contract?.status !== 'signed'" class="desk-alert agreement-required"><p>The treatment recipient must sign before payment can be recorded.</p><button type="button" class="desk-button secondary agreement-button" :disabled="busy" @click="contractTarget = appointment">Review &amp; sign treatment agreement</button></div>
-              <div v-else-if="!receipts[appointment.id] && canRecordPayments" class="payment-form">
-                <template v-if="pendingOnlineCheckouts[appointment.id]">
-                  <div class="online-checkout-pending"><p>Waiting for {{ paymentMethodLabel(pendingOnlineCheckouts[appointment.id].method) }} checkout. Payment is recorded only after verification.</p><div class="flex flex-wrap gap-2"><a class="desk-button secondary" :href="pendingOnlineCheckouts[appointment.id].checkoutUrl" target="_blank" rel="noopener noreferrer">Open secure checkout</a><button type="button" class="desk-button primary" :disabled="busy" @click="verifyOnlinePayment(appointment)">Verify payment &amp; issue service code</button></div></div>
-                </template>
-                <template v-else>
-                  <div><label :for="`pos-cash-${appointment.id}`" class="field-label">Cash received</label><input :id="`pos-cash-${appointment.id}`" v-model.number="cashReceived[appointment.id]" type="number" min="0" step="0.01" class="desk-input" :disabled="busy" placeholder="0.00" /></div>
-                  <div class="flex flex-wrap gap-2"><button type="button" class="desk-button primary" :disabled="busy" @click="collectPayment(appointment)">Record full cash payment</button><button type="button" class="desk-button secondary" :disabled="busy" @click="startOnlineCheckout(appointment, 'Card')">Pay by card</button><button type="button" class="desk-button secondary" :disabled="busy" @click="startOnlineCheckout(appointment, 'GCash')">Pay by GCash</button></div>
-                </template>
-              </div>
-              <div v-else-if="receipts[appointment.id]" class="payment-success"><p>Payment recorded<span v-if="receipts[appointment.id].method === 'Cash'"> · Change: {{ currency(receipts[appointment.id].change) }}</span><span v-else> · {{ receipts[appointment.id].method }} verified</span></p><p>Service code: <strong>{{ receipts[appointment.id].serviceKey }}</strong></p><p class="small">{{ receipts[appointment.id].emailSent ? 'Service code emailed to the client.' : 'Email delivery was not confirmed. Give the client their receipt and service code.' }}</p><button type="button" class="desk-button secondary" @click="printReceipt(receipts[appointment.id])">Print receipt</button></div>
-              <p v-else class="muted small">Walk-in payment permission is required to record this payment.</p>
-            </article>
-            <p v-if="!posAppointments.length" class="empty-note">No unpaid walk-in appointments are waiting for consent or payment.</p>
-          </section>
-        </template>
-        <template v-else-if="!createdAppointments.length">
+        <template v-if="!createdAppointments.length">
           <section v-if="bookingStep === 1" class="desk-card walk-in-step-panel">
             <div class="section-heading"><div><p class="eyebrow">Step 1 of 3</p><h2>Who is receiving care?</h2><p class="muted small">Choose someone already in this branch’s client list, or add their details as part of this booking. A new clinic profile is saved only when the booking succeeds.</p></div></div>
             <ContractAppearanceSelect id="walk-in-client" v-model="selectedClientId" label="Care recipient" :disabled="busy" :options="clientOptions" />
@@ -69,9 +45,9 @@
               <div><label for="booker-phone" class="field-label">Booking arranger's contact number</label><input id="booker-phone" v-model.trim="booker.phone" class="desk-input" type="tel" maxlength="25" :disabled="busy" /></div>
               <div><label for="booker-email" class="field-label">Booking arranger's email (optional)</label><input id="booker-email" v-model.trim="booker.email" class="desk-input" type="email" maxlength="254" :disabled="busy" /></div>
             </div>
-            <p v-if="bookingForSomeoneElse" class="muted small">Keep the selected client as the person receiving treatment. The booking arranger signs only the booking and payment terms.</p>
+            <p v-if="bookingForSomeoneElse" class="muted small">Keep the selected client as the person receiving treatment. The arranger and recipient will sign their own agreement in Step 2.</p>
             <div class="walk-in-step-actions">
-              <span class="muted small">The treatment recipient signs their own treatment agreement later.</span>
+              <span class="muted small">You can return to this step and edit the recipient before payment starts.</span>
               <button type="button" class="desk-button primary" :disabled="busy || !clientReady" @click="continueToSchedule">Continue to schedule</button>
             </div>
           </section>
@@ -90,66 +66,97 @@
               </section>
               <button type="button" class="desk-button secondary" :disabled="busy || flatVisits.length >= 20" @click="visits.push(newVisit())">+ Add another appointment</button>
             </article>
+            <section class="agreement-review" aria-labelledby="walk-in-review-title">
+              <div class="section-heading"><div><p class="eyebrow">Before payment</p><h3 id="walk-in-review-title">Review and sign</h3><p class="muted small">Check the appointment details and agreements with the recipient before continuing to payment.</p></div><strong class="total-price">{{ estimatedTotal }}</strong></div>
+              <div class="walk-in-review-list" aria-label="Appointment review">
+                <article v-for="item in appointmentReviewRows" :key="item.key" class="walk-in-review-row">
+                  <div><strong>{{ item.serviceName }}</strong><span class="walk-in-review-type">{{ item.typeLabel }}</span><p>{{ item.date }} · {{ item.time }} · {{ item.practitioner }}</p><p v-if="item.sameDayTreatmentTime" class="walk-in-review-note">On-site consultation first; provisional treatment at {{ item.sameDayTreatmentTime }} after practitioner clearance.</p><p v-if="item.sessionCount > 1" class="walk-in-review-note">Treatment course: {{ item.sessionCount }} visits. This appointment starts the course.</p></div>
+                  <strong class="walk-in-review-price"><small>{{ item.sameDayTreatmentTime ? 'Consultation due first' : 'Appointment total' }}</small>{{ item.price }}</strong>
+                </article>
+              </div>
+              <p class="walk-in-recipient-note">Care recipient: <strong>{{ clientFor(selectedClientId)?.fullName || 'Select a client' }}</strong><span v-if="bookingForSomeoneElse"> · Booking arranged by {{ booker.name || 'name needed' }}</span>.</p>
+              <dl class="price-breakdown booking-price-breakdown" aria-label="Estimated appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(estimatedPricing.subtotal) }}</dd></div><div><dt>{{ estimatedPricing.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ estimatedPricing.vatApplicable ? currency(estimatedPricing.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(estimatedPricing.total) }}</dd></div></dl>
+              <div class="agreement-documents">
+                <section class="agreement-document"><h4>Booking and payment terms</h4><div class="agreement-document-scroll"><ClientContractDocument :document="bookingTermsPreview" /></div></section>
+                <section class="agreement-document"><h4>Appointment agreements</h4><div class="agreement-document-scroll"><div v-for="item in treatmentContractPreviews" :key="item.key" class="appointment-contract-preview"><h5>{{ item.title }}</h5><ClientContractDocument :document="item.document" /></div></div><p v-if="visits.some(visit => visit.sameDayConsultationRequested)" class="muted small">The provisional same-day treatment agreement is signed after the practitioner clears treatment. The consultation agreement is signed now.</p></section>
+              </div>
+              <div v-if="bookingForSomeoneElse" class="signature-grid">
+                <section class="signature-panel"><h4>Booking arranger</h4><p class="muted small">{{ booker.name || 'Enter the arranger name in Step 1' }} accepts the booking and payment terms.</p><ElectronicSignaturePad v-model="bookingSignature" label="Booking arranger signature" /><label class="desk-checkbox summary-acknowledgement"><input v-model="policyAcknowledged" type="checkbox" :disabled="busy" /> I have read and accept the booking and payment terms.</label></section>
+                <section class="signature-panel"><h4>Care recipient</h4><p class="muted small">The person receiving care signs the agreements for appointments that are ready to proceed.</p><ElectronicSignaturePad v-model="treatmentSignature" label="Treatment recipient signature" /><label class="desk-checkbox summary-acknowledgement"><input v-model="treatmentAcknowledged" type="checkbox" :disabled="busy" /> I have read and accept the agreements for the appointments that are ready to proceed.</label></section>
+              </div>
+              <section v-else class="signature-panel"><h4>Care recipient signature</h4><p class="muted small">The recipient is also arranging this booking. One signature records acceptance of both agreements.</p><ElectronicSignaturePad v-model="bookingSignature" label="Care recipient and booking arranger signature" /><label class="desk-checkbox summary-acknowledgement"><input v-model="policyAcknowledged" type="checkbox" :disabled="busy" /> I have read and accept the booking and payment terms.</label><label class="desk-checkbox summary-acknowledgement"><input v-model="treatmentAcknowledged" type="checkbox" :disabled="busy" /> I have read and accept the agreements for the appointments that are ready to proceed.</label></section>
+              <p class="walk-in-payment-note">Step 3 is for payment. Appointments are submitted when payment starts. Cash is recorded here; card and GCash open PayMongo Checkout.</p>
+            </section>
             <div class="walk-in-step-actions">
               <button type="button" class="desk-button secondary" :disabled="busy" @click="goToBookingStep(1)">Back to client</button>
-              <button type="button" class="desk-button primary" :disabled="busy || !scheduleReady" @click="continueToReview">Review booking</button>
+              <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !clientReady || !scheduleReady || !flatVisits.length || !policyAcknowledged || !bookingSignature || !treatmentAcknowledged || !(bookingForSomeoneElse ? treatmentSignature : bookingSignature)" @click="continueToPayment">Continue to payment</button>
             </div>
           </section>
-          <section v-else class="desk-card booking-summary walk-in-step-panel">
-            <div class="section-heading"><div><p class="eyebrow">Step 3 of 3</p><h2>Review and confirm</h2><p class="muted small">Check the recipient, appointments, and total before the arranger accepts the booking terms.</p></div><strong class="total-price">{{ estimatedTotal }}</strong></div>
-            <div class="walk-in-review-list" aria-label="Appointment review">
-              <article v-for="item in appointmentReviewRows" :key="item.key" class="walk-in-review-row">
-                <div><strong>{{ item.serviceName }}</strong><span class="walk-in-review-type">{{ item.typeLabel }}</span><p>{{ item.date }} · {{ item.time }} · {{ item.practitioner }}</p><p v-if="item.sameDayTreatmentTime" class="walk-in-review-note">On-site consultation first; provisional treatment at {{ item.sameDayTreatmentTime }} after practitioner clearance.</p><p v-if="item.sessionCount > 1" class="walk-in-review-note">Treatment course: {{ item.sessionCount }} visits. This appointment starts the course.</p></div>
-                <strong class="walk-in-review-price"><small>{{ item.sameDayTreatmentTime ? 'Consultation due first' : 'Appointment total' }}</small>{{ item.price }}</strong>
-              </article>
-            </div>
-            <p class="walk-in-recipient-note">Recipient: <strong>{{ clientFor(selectedClientId)?.fullName || 'Select a client' }}</strong><span v-if="bookingForSomeoneElse"> · Arranged by {{ booker.name || 'name needed' }}</span>. The arranger accepts booking/payment terms; the recipient signs the treatment agreement before payment.</p>
-            <dl class="price-breakdown booking-price-breakdown" aria-label="Estimated appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(estimatedPricing.subtotal) }}</dd></div><div><dt>{{ estimatedPricing.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ estimatedPricing.vatApplicable ? currency(estimatedPricing.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(estimatedPricing.total) }}</dd></div></dl>
-            <details v-if="policy.clientContract?.configured" class="contract-preview"><summary>Review the clinic agreement</summary><ClientContractDocument :document="contractPreview" /></details>
-            <ClientContractDocument :document="bookingTermsPreview" />
-            <p class="muted small">Booking signer: <strong>{{ bookingForSomeoneElse ? booker.name || 'Enter the arranger name above' : clientFor(selectedClientId)?.fullName || 'Select the client above' }}</strong>. Hand the device to this person to accept booking and payment terms. This signature does not authorize treatment.</p>
-            <ElectronicSignaturePad v-model="bookingSignature" label="Booking arranger signature — booking and payment terms only" />
-            <label class="desk-checkbox summary-acknowledgement"><input v-model="policyAcknowledged" type="checkbox" :disabled="busy" /> I accept the displayed booking prices, schedules, and booking terms, and confirm this is my signature. This does not authorize treatment for someone else.</label>
-            <p class="walk-in-payment-note">Creating the booking does not collect payment. The recipient must sign the treatment agreement first; you can collect payment here or return later through the POS queue.</p>
-            <div class="walk-in-step-actions">
-              <button type="button" class="desk-button secondary" :disabled="busy" @click="goToBookingStep(2)">Back to schedule</button>
-              <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !clientReady || !scheduleReady || !flatVisits.length || !policyAcknowledged || !bookingSignature" @click="createAppointments">{{ busy ? 'Creating appointments…' : 'Create walk-in booking' }}</button>
-            </div>
-          </section>
-        </template>
-        <section v-else class="desk-card">
-            <div class="section-heading"><div><p class="eyebrow">Step 3</p><h2>Consent &amp; payment</h2><p class="muted small">For each appointment, have the treatment recipient sign the agreement before full payment. A same-day treatment stays locked until the practitioner clears it after the consultation.</p></div><div class="flex gap-2"><RouterLink to="/crm/pos" class="desk-button secondary">Open POS queue</RouterLink><button type="button" class="desk-button secondary" :disabled="busy" @click="startNewBooking">New booking</button></div></div>
+
+          <section v-else class="desk-card payment-step">
+            <div class="section-heading payment-step-heading"><div><p class="eyebrow">Step 3 of 3</p><h2>Payment</h2><p class="muted small">Choose a payment method for each appointment. You can return to the earlier steps to edit details until you start a payment.</p></div><strong class="total-price">{{ estimatedTotal }}</strong></div>
+            <article v-for="item in appointmentReviewRows" :key="item.key" class="payment-card">
+              <div class="payment-card-grid">
+                <div class="payment-appointment-details">
+                  <div class="payment-appointment-heading"><div><p class="eyebrow">{{ item.typeLabel }}</p><h3>{{ item.serviceName }}</h3></div><span class="payment-status is-due">Payment due</span></div>
+                  <p class="payment-client-name">{{ clientFor(selectedClientId)?.fullName || 'Care recipient' }}</p>
+                  <p class="muted small">{{ item.date }} · {{ item.time }} · {{ item.practitioner }}</p>
+                  <p v-if="item.sameDayTreatmentTime" class="walk-in-review-note">Consultation is due first. The provisional treatment fee is due only if the practitioner clears it.</p>
+                </div>
+                <aside class="payment-card-checkout">
+                  <dl class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(item.pricing.subtotal) }}</dd></div><div><dt>{{ item.pricing.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ item.pricing.vatApplicable ? currency(item.pricing.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(item.pricing.total) }}</dd></div></dl>
+                  <label :for="`draft-payment-method-${item.key}`" class="field-label">Payment method</label>
+                  <div class="payment-method-select"><select :id="`draft-payment-method-${item.key}`" :value="paymentMethods[item.key] || 'Cash'" class="desk-input" :disabled="busy" @change="paymentMethods[item.key] = $event.target.value"><option value="Cash">Cash</option><option value="Card">Card</option><option value="GCash">GCash</option></select><span aria-hidden="true"></span></div>
+                  <div v-if="(paymentMethods[item.key] || 'Cash') === 'Cash'" class="cash-received-field"><label :for="`draft-cash-${item.key}`" class="field-label">Cash received</label><input :id="`draft-cash-${item.key}`" v-model.number="cashReceived[item.key]" type="number" min="0" step="0.01" class="desk-input" :disabled="busy" placeholder="0.00" /></div>
+                  <p class="muted small payment-method-hint">{{ (paymentMethods[item.key] || 'Cash') === 'Cash' ? 'The cash received must cover this appointment total.' : `${paymentMethods[item.key]} payments open PayMongo Checkout.` }}</p>
+                  <button type="button" class="desk-button primary payment-submit" :class="(paymentMethods[item.key] || 'Cash') === 'Cash' ? 'cash-payment-action' : 'paymongo-payment-action'" :disabled="busy || !canRecordPayments" @click="startDraftPayment(item)">{{ busy ? 'Processing…' : (paymentMethods[item.key] || 'Cash') === 'Cash' ? 'Record cash payment' : 'Proceed to PayMongo Checkout' }}</button>
+                </aside>
+              </div>
+            </article>
+            <p v-if="!canRecordPayments" class="muted small">This draft has not been submitted. A staff member with walk-in payment access must start payment to submit the booking.</p>
+          </section>        </template>
+        <section v-else class="desk-card payment-step">
+          <div class="section-heading payment-step-heading"><div><p class="eyebrow">Step 3 of 3</p><h2>Payment</h2><p class="muted small">Agreements were reviewed in Step 2. Choose how the customer will pay for each appointment. Provisional treatment stays unpaid until clinical clearance.</p></div></div>
           <article v-for="appointment in createdAppointments" :key="appointment.id" class="payment-card">
-            <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>Total due</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
-            <p v-else class="muted small">Tax breakdown unavailable for this older booking. Total due: {{ currency(appointment.totalAmount ?? appointment.amount) }}</p>
-            <div class="section-heading"><div><h3>{{ appointment.clientName || appointment.customerName }}</h3><p>{{ appointment.service }}</p><p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p><p class="muted small">{{ appointment.customerEmail || 'No email provided — share booking details in person.' }}</p></div><strong>{{ currency(appointment.totalAmount ?? appointment.amount) }}</strong></div>
-            <p class="muted small">Arranged by {{ appointment.bookedByName }} · Booking terms signed. Treatment agreement: {{ appointment.contract?.status === 'signed' ? 'Signed by recipient' : 'Awaiting recipient signature' }}.</p>
-            <div v-if="appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="desk-alert agreement-required"><p>This treatment time is provisional. The assigned practitioner must finish the consultation and clear treatment for today before the recipient can sign or pay for it. Only the consultation can be paid now.</p></div>
-            <div v-else-if="appointment.paymentStatus !== 'Paid' && appointment.contract?.status !== 'signed'" class="desk-alert agreement-required"><p>The treatment recipient must sign before payment can be recorded.</p><button type="button" class="desk-button secondary agreement-button" :disabled="busy" @click="contractTarget = appointment">Review &amp; sign treatment agreement</button></div>
-            <div v-else-if="!receipts[appointment.id] && appointment.paymentStatus !== 'Paid' && canRecordPayments" class="payment-form">
-              <template v-if="pendingOnlineCheckouts[appointment.id]">
-                <div class="online-checkout-pending"><p>Waiting for {{ paymentMethodLabel(pendingOnlineCheckouts[appointment.id].method) }} checkout. Payment is recorded only after verification.</p><div class="flex flex-wrap gap-2"><a class="desk-button secondary" :href="pendingOnlineCheckouts[appointment.id].checkoutUrl" target="_blank" rel="noopener noreferrer">Open secure checkout</a><button type="button" class="desk-button primary" :disabled="busy" @click="verifyOnlinePayment(appointment)">Verify payment &amp; issue service code</button></div></div>
-              </template>
-              <template v-else>
-                <div><label :for="`cash-${appointment.id}`" class="field-label">Cash received</label><input :id="`cash-${appointment.id}`" v-model.number="cashReceived[appointment.id]" type="number" min="0" step="0.01" class="desk-input" :disabled="busy" placeholder="0.00" /></div>
-                <div class="flex flex-wrap gap-2"><button type="button" class="desk-button primary" :disabled="busy" @click="collectPayment(appointment)">Record full cash payment</button><button type="button" class="desk-button secondary" :disabled="busy" @click="startOnlineCheckout(appointment, 'Card')">Pay by card</button><button type="button" class="desk-button secondary" :disabled="busy" @click="startOnlineCheckout(appointment, 'GCash')">Pay by GCash</button></div>
-              </template>
+            <div class="payment-card-grid">
+              <div class="payment-appointment-details">
+                <div class="payment-appointment-heading"><div><p class="eyebrow">{{ appointment.type === 'Consultation' ? 'Consultation' : 'Appointment' }}</p><h3>{{ appointment.service }}</h3></div><span class="payment-status" :class="appointment.paymentStatus === 'Paid' ? 'is-paid' : appointment.sameDayTreatmentStatus === 'pending_clinical_clearance' ? 'is-waiting' : 'is-due'">{{ appointment.paymentStatus === 'Paid' ? 'Paid' : appointment.sameDayTreatmentStatus === 'pending_clinical_clearance' ? 'Awaiting clearance' : 'Payment due' }}</span></div>
+                <p class="payment-client-name">{{ appointment.clientName || appointment.customerName }}</p>
+                <p class="muted small">{{ dateLabel(appointment.date) }} · {{ formatClockTime(appointment.time) }} · {{ appointment.practitionerName }}</p>
+                <p class="muted small">{{ appointment.customerEmail || 'No email provided — share the receipt and service code in person.' }}</p>
+                <p class="agreement-status-line">Booking terms signed<span v-if="appointment.contract?.status === 'signed'"> · Treatment agreement signed by recipient</span></p>
+                <div v-if="appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'" class="desk-alert agreement-required"><p>The practitioner must clear this provisional treatment after the consultation before it can be paid.</p></div>
+                <div v-else-if="appointment.paymentStatus !== 'Paid' && appointment.contract?.status !== 'signed'" class="desk-alert agreement-required"><p>This older appointment has no saved treatment signature. Review and complete its agreement in Appointment Management before taking payment.</p></div>
+              </div>
+              <aside class="payment-card-checkout">
+                <dl v-if="appointment.pricingSnapshot" class="price-breakdown" aria-label="Appointment price breakdown"><div><dt>Subtotal</dt><dd>{{ currency(appointment.pricingSnapshot.subtotal) }}</dd></div><div><dt>{{ appointment.pricingSnapshot.vatApplicable ? 'VAT (12%)' : 'VAT' }}</dt><dd>{{ appointment.pricingSnapshot.vatApplicable ? currency(appointment.pricingSnapshot.vatAmount) : 'Not applied' }}</dd></div><div class="price-breakdown-total"><dt>{{ appointment.sameDayTreatmentStatus === 'pending_clinical_clearance' ? 'Amount if cleared' : 'Total due' }}</dt><dd>{{ currency(appointment.pricingSnapshot.total) }}</dd></div></dl>
+                <p v-else class="muted small">Tax breakdown unavailable for this older booking.</p>
+                <template v-if="receipts[appointment.id] || appointment.paymentStatus === 'Paid'">
+                  <div class="payment-success"><p>Payment recorded<span v-if="receipts[appointment.id]?.method === 'Cash'"> · Change: {{ currency(receipts[appointment.id].change) }}</span><span v-else-if="receipts[appointment.id]?.method"> · {{ receipts[appointment.id].method }} verified</span></p><template v-if="receipts[appointment.id]"><p>Service code: <strong>{{ receipts[appointment.id].serviceKey }}</strong></p><p class="small">{{ receipts[appointment.id].emailSent ? 'Service code emailed to the client.' : 'Email delivery was not confirmed. Give the client their receipt and service code.' }}</p><button type="button" class="desk-button secondary" @click="printReceipt(receipts[appointment.id])">Print receipt</button></template></div>
+                </template>
+                <template v-else-if="!canRecordPayments"><p class="muted small">A staff member with walk-in payment access must record payment.</p></template>
+                <template v-else-if="appointment.sameDayTreatmentStatus !== 'pending_clinical_clearance' && appointment.contract?.status === 'signed'">
+                  <div v-if="pendingOnlineCheckouts[appointment.id]" class="online-checkout-pending"><p>Waiting for {{ paymentMethodLabel(pendingOnlineCheckouts[appointment.id].method) }} checkout. Payment is recorded only after verification.</p><div class="flex flex-wrap gap-2"><a class="desk-button secondary" :href="pendingOnlineCheckouts[appointment.id].checkoutUrl" target="_blank" rel="noopener noreferrer">Open secure checkout</a><button type="button" class="desk-button primary" :disabled="busy" @click="verifyOnlinePayment(appointment)">Confirm payment</button></div></div>
+                  <div v-else class="payment-form payment-method-form">
+                    <label :for="`payment-method-${appointment.id}`" class="field-label">Payment method</label>
+                    <div class="payment-method-select"><select :id="`payment-method-${appointment.id}`" v-model="paymentMethods[appointment.id]" class="desk-input" :disabled="busy"><option value="Cash">Cash</option><option value="Card">Card</option><option value="GCash">GCash</option></select><span aria-hidden="true"></span></div>
+                    <div v-if="paymentMethods[appointment.id] === 'Cash'" class="cash-received-field"><label :for="`cash-${appointment.id}`" class="field-label">Cash received</label><input :id="`cash-${appointment.id}`" v-model.number="cashReceived[appointment.id]" type="number" min="0" step="0.01" class="desk-input" :disabled="busy" placeholder="0.00" /></div>
+                    <p class="muted small payment-method-hint">{{ paymentMethods[appointment.id] === 'Cash' ? 'Enter the amount received. The total due must be covered before payment is recorded.' : `${paymentMethods[appointment.id]} payments are completed securely through PayMongo.` }}</p>
+                    <button type="button" class="desk-button primary payment-submit" :class="paymentMethods[appointment.id] === 'Cash' ? 'cash-payment-action' : 'paymongo-payment-action'" :disabled="busy" @click="paymentMethods[appointment.id] === 'Cash' ? collectPayment(appointment) : startOnlineCheckout(appointment, paymentMethods[appointment.id])">{{ busy ? 'Processing…' : paymentMethods[appointment.id] === 'Cash' ? 'Record cash payment' : 'Proceed to PayMongo Checkout' }}</button>
+                  </div>
+                </template>
+              </aside>
             </div>
-            <p v-else-if="appointment.paymentStatus !== 'Paid' && !canRecordPayments" class="muted small">Consent is saved. A staff member with walk-in payment access must collect payment and issue the service code.</p>
-            <div v-else class="payment-success"><p>Payment recorded<span v-if="receipts[appointment.id]?.method === 'Cash'"> · Change: {{ currency(receipts[appointment.id].change) }}</span><span v-else-if="receipts[appointment.id]?.method"> · {{ receipts[appointment.id].method }} verified</span></p><template v-if="receipts[appointment.id]"><p>Service code: <strong>{{ receipts[appointment.id].serviceKey }}</strong></p><p class="small">{{ receipts[appointment.id].emailSent ? 'Service code emailed to the client.' : 'Email delivery was not confirmed. Give the client their receipt and service code.' }}</p><button type="button" class="desk-button secondary" @click="printReceipt(receipts[appointment.id])">Print receipt</button></template></div>
-            <button v-if="appointment.contract?.status === 'signed' || appointment.paymentStatus === 'Paid'" type="button" class="desk-button secondary agreement-button" :disabled="busy" @click="contractTarget = appointment">View treatment agreement</button>
           </article>
-          <p class="muted small">Cash, card, and GCash payments are supported. Online payments must be completed and verified before a receipt or service code is issued. Review contracts and check in the client in <RouterLink to="/crm/appointments">Appointment Management</RouterLink>.</p>
         </section>
       </div>
     </main>
-    <BookingContractModal :visible="Boolean(contractTarget)" :appointment="contractTarget" :read-only="contractTarget?.contract?.status === 'signed'" @close="contractTarget = null" @updated="updateContract" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { usePageLoading } from '@/composables/usePageLoading'
@@ -158,7 +165,6 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import ContractAppearanceSelect from '@/components/common/ContractAppearanceSelect.vue'
 import AppointmentCalendar from '@/components/common/AppointmentCalendar.vue'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
-import BookingContractModal from '@/components/BookingContractModal.vue'
 import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import { buildWeekScheduleMap } from '@/utils/employeeSchedules'
@@ -171,9 +177,7 @@ const { pageLoading, trackPageLoad } = usePageLoading()
 const { hasPermission } = usePermissions()
 const route = useRoute()
 const router = useRouter()
-const canCreateAppointments = computed(() => hasPermission('appointments:create'))
 const canRecordPayments = computed(() => hasPermission('payments:create'))
-const isPosRoute = computed(() => route.path === '/crm/pos')
 const pendingWalkInCheckoutsKey = 'pendingWalkInCheckouts'
 function readPendingWalkInCheckouts() {
   try {
@@ -188,15 +192,15 @@ function readPendingWalkInCheckouts() {
 }
 const pendingOnlineCheckouts = ref(readPendingWalkInCheckouts())
 const checkoutReturnNotice = computed(() => route.query.walkin_payment === 'success'
-  ? 'Checkout returned. Verify the payment here; the appointment is marked paid only after the provider confirms it.'
+  ? 'PayMongo returned to Step 3. Confirm the payment here; the appointment is marked paid only after verification.'
   : route.query.walkin_payment === 'cancelled'
-    ? 'Checkout was cancelled. Reopen the secure link below if the client wants to try again.'
+    ? 'Checkout was cancelled. You are back on Step 3 and can choose a payment method to try again.'
     : '')
 const branchId = ref(''), busy = ref(false), error = ref(''), clients = ref([]), services = ref([]), practitioners = ref([])
 const schedules = ref({}), leaves = ref({}), existingAppointments = ref([]), branch = ref({}), policy = ref({})
-const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false), bookingStep = ref(1)
-const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', phone: '' }), bookingSignature = ref('')
-const createdAppointments = ref([]), posAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), contractTarget = ref(null)
+const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false), treatmentAcknowledged = ref(false), bookingStep = ref(1)
+const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', phone: '' }), bookingSignature = ref(''), treatmentSignature = ref('')
+const createdAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), paymentMethods = ref({})
 const NEW_CLIENT_ID = '__new_client__'
 const emptyClient = () => ({ firstName: '', middleName: '', lastName: '', suffix: '', email: '', phone: '' })
 const newClient = ref(emptyClient()), now = ref(Date.now())
@@ -205,11 +209,16 @@ let apiBase = OTP_BACKEND_CANDIDATES[0], clockTimer, submissionId = crypto.rando
 const today = computed(() => manilaDate(now.value))
 const bookingSteps = computed(() => [
   { number: 1, label: 'Client', description: 'Choose who is receiving care' },
-  { number: 2, label: 'Schedule', description: 'Choose offering, practitioner, and time' },
-  { number: 3, label: createdAppointments.value.length ? 'Consent & payment' : 'Review & confirm', description: createdAppointments.value.length ? 'Recipient consent and payment' : 'Review terms and create booking' },
+  { number: 2, label: 'Visit & agreement', description: 'Schedule the visit and sign agreements' },
+  { number: 3, label: 'Payment', description: 'Choose a method and complete payment' },
 ])
 const progressStep = computed(() => createdAppointments.value.length ? 3 : bookingStep.value)
-const newVisit = () => ({ key: crypto.randomUUID(), serviceId: '', practitionerId: '', date: '', time: '', notes: '', sameDayConsultationRequested: false })
+const newVisit = () => {
+  const key = crypto.randomUUID()
+  paymentMethods.value[key] = 'Cash'
+  cashReceived.value[key] = 0
+  return { key, serviceId: '', practitionerId: '', date: '', time: '', notes: '', sameDayConsultationRequested: false }
+}
 const clientFor = id => id === NEW_CLIENT_ID ? {
   ...newClient.value,
   fullName: [newClient.value.firstName, newClient.value.middleName, newClient.value.lastName].map(value => String(value || '').trim()).filter(Boolean).join(' ')
@@ -312,9 +321,19 @@ const estimatedPricing = computed(() => sumAppointmentPricing(flatVisits.value
   .filter(row => serviceFor(row.serviceId))
   .map(visitPricing)))
 const estimatedTotal = computed(() => currency(estimatedPricing.value.total))
-const contractPreview = computed(() => buildClientContractDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
 const bookingTermsPreview = computed(() => buildBookingTermsDocument(policy.value, { branch: branch.value, source: 'walk_in' }))
-watch([bookingForSomeoneElse, booker, policy], () => { policyAcknowledged.value = false; bookingSignature.value = '' }, { deep: true })
+const treatmentContractPreviews = computed(() => appointmentReviewRows.value.map(item => {
+  const service = serviceFor(item.serviceId)
+  const contractService = item.sameDayTreatmentTime ? sameDayConsultationFor(service) || service : service
+  return {
+    key: item.key,
+    title: item.sameDayTreatmentTime ? `${contractService?.name || 'On-site consultation'} agreement` : `${service?.name || 'Appointment'} agreement`,
+    document: buildClientContractDocument(policy.value, { branch: branch.value, source: 'walk_in', serviceName: contractService?.name, serviceTerms: contractService?.termsAndConditions || '' }),
+  }
+}))
+const resetAgreementAcceptance = () => { policyAcknowledged.value = false; treatmentAcknowledged.value = false; bookingSignature.value = ''; treatmentSignature.value = '' }
+watch([bookingForSomeoneElse, booker, policy], resetAgreementAcceptance, { deep: true })
+watch(normalizedNewClient, resetAgreementAcceptance)
 const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: now.value })
 const scheduleReady = computed(() => Boolean(availabilityReady.value && clientReady.value && flatVisits.value.length
   && flatVisits.value.every(row => row.serviceId && row.practitionerId && row.date && row.time
@@ -333,6 +352,7 @@ const appointmentReviewRows = computed(() => flatVisits.value
       date: dateLabel(row.date),
       time: formatClockTime(row.time),
       price: currency(visitPricing(row).total),
+      pricing: visitPricing(row),
       sessionCount: Number(service.totalSessions || 1),
       sameDayTreatmentTime: row.sameDayConsultationRequested ? formatClockTime(sameDayTreatmentTime(row)) : '',
     }
@@ -350,12 +370,12 @@ const continueToSchedule = () => {
   if (!visits.value.length) visits.value = [newVisit()]
   bookingStep.value = 2
 }
-const continueToReview = () => {
+const continueToPayment = () => {
   error.value = ''
-  if (!scheduleReady.value) {
-    error.value = 'Choose an available offering, practitioner, date, and time for every appointment.'
-    return
-  }
+  if (!scheduleReady.value) return void (error.value = 'Choose an available offering, practitioner, date, and time for every appointment.')
+  if (!policyAcknowledged.value || !bookingSignature.value) return void (error.value = 'The booking arranger must review, accept, and sign the booking terms.')
+  if (!treatmentAcknowledged.value || !(bookingForSomeoneElse.value ? treatmentSignature.value : bookingSignature.value)) return void (error.value = 'The care recipient must review, accept, and sign the appointment agreement.')
+  if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
   bookingStep.value = 3
 }
 const goToBookingStep = step => {
@@ -364,11 +384,17 @@ const goToBookingStep = step => {
   bookingStep.value = step
 }
 const clearSchedule = visit => { visit.date = ''; visit.time = ''; visit.sameDayConsultationRequested = false }
-const removeVisit = key => { visits.value = visits.value.filter(visit => visit.key !== key) }
+const removeVisit = key => {
+  visits.value = visits.value.filter(visit => visit.key !== key)
+  delete paymentMethods.value[key]
+  delete cashReceived.value[key]
+}
 watch(selectedClientId, () => {
   bookingStep.value = 1
   policyAcknowledged.value = false
+  treatmentAcknowledged.value = false
   bookingSignature.value = ''
+  treatmentSignature.value = ''
   error.value = ''
   if (!visits.value.length && selectedClientId.value) visits.value = [newVisit()]
   else visits.value.forEach(clearSchedule)
@@ -381,7 +407,9 @@ watch(flatVisits, (next, previous = []) => {
     else if (visit.time && !availableSlots(visit).some(slot => slot.value === visit.time)) visit.time = ''
   }
   policyAcknowledged.value = false
+  treatmentAcknowledged.value = false
   bookingSignature.value = ''
+  treatmentSignature.value = ''
 })
 
 async function api(path, body) {
@@ -405,6 +433,30 @@ async function api(path, body) {
   }
   throw lastError
 }
+async function restorePaymentReturn() {
+  const appointmentId = String(route.query.appointmentId || '').trim()
+  if (!appointmentId || appointmentId.includes('/')) throw Error('The payment return did not include a valid appointment reference.')
+  const result = await api(`/walk-in/payment/${encodeURIComponent(appointmentId)}`)
+  if (!result.appointment?.id) throw Error('The appointment could not be restored after checkout.')
+  const appointments = Array.isArray(result.appointments) && result.appointments.length ? result.appointments : [result.appointment]
+  createdAppointments.value = appointments
+  bookingStep.value = 3
+  paymentMethods.value = { ...paymentMethods.value }
+  for (const appointment of appointments) {
+    const checkout = pendingOnlineCheckouts.value[appointment.id]
+    paymentMethods.value[appointment.id] = checkout?.method || 'Cash'
+    const receipt = result.receipts?.[appointment.id] || (appointment.id === result.appointment.id ? result.receipt : null)
+    if (!receipt) continue
+    receipts.value[appointment.id] = { ...receipt, emailSent: receipt.receiptEmailStatus === 'sent' }
+    appointment.paymentStatus = 'Paid'
+    appointment.status = 'Paid'
+  }
+  if (route.query.walkin_payment === 'cancelled') {
+    const next = { ...pendingOnlineCheckouts.value }
+    delete next[appointmentId]
+    savePendingOnlineCheckouts(next)
+  }
+}
 async function load() {
   const user = auth.currentUser
   if (!user) return
@@ -413,8 +465,8 @@ async function load() {
   if (!branchId.value) throw Error('Your account has no branch assignment.')
   const clinicSnap = await getDoc(doc(db, 'clinics', branchId.value))
   branch.value = clinicSnap.data() || {}
-  if (isPosRoute.value) {
-    await refreshPaymentQueue()
+  if (route.query.walkin_payment && route.query.appointmentId) {
+    await restorePaymentReturn()
     return
   }
   const [clientRows, serviceRows, availability] = await Promise.all([
@@ -438,24 +490,17 @@ async function refreshAvailability() {
   existingAppointments.value = result.appointments || []
   policy.value = result.policy || {}
   availabilityReady.value = true
-  if (isPosRoute.value) await refreshPaymentQueue()
-}
-async function refreshPaymentQueue() {
-  if (!branchId.value) return
-  error.value = ''
-  try {
-    const result = await api('/walk-in/pos?branchId=' + encodeURIComponent(branchId.value))
-    posAppointments.value = result.appointments || []
-  } catch (cause) { error.value = cause.message || 'Unable to refresh walk-in payments.' }
 }
 async function createAppointments() {
   error.value = ''
-  if (!selectedClientId.value || !flatVisits.value.length || !policyAcknowledged.value) return void (error.value = 'Choose a client, add services, and confirm the policies.')
-  if (!clientReady.value) return void (error.value = 'Check the recipient’s name and any email or phone number you entered.')
-  if (!scheduleReady.value) return void (error.value = 'Select an available date and time for every appointment. The same person needs separate dates.')
-  if (!bookingSignature.value) return void (error.value = 'The booking arranger must sign the booking and payment terms.')
-  if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
-  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: Date.now() }).some(slot => slot.value === row.time))) return void (error.value = 'Select an available date and time for every service. The same person needs separate dates.')
+  if (!selectedClientId.value || !flatVisits.value.length || !policyAcknowledged.value) { error.value = 'Choose a client, add services, and confirm the policies.'; return false }
+  if (!clientReady.value) { error.value = 'Check the recipient’s name and any email or phone number you entered.'; return false }
+  if (!scheduleReady.value) { error.value = 'Select an available date and time for every appointment. The same person needs separate dates.'; return false }
+  if (!bookingSignature.value) { error.value = 'The booking arranger must sign the booking and payment terms.'; return false }
+  const recipientSignature = bookingForSomeoneElse.value ? treatmentSignature.value : bookingSignature.value
+  if (!treatmentAcknowledged.value || !recipientSignature) { error.value = 'The care recipient must review, accept, and sign the treatment agreement in Step 2.'; return false }
+  if (!bookingArrangerReady.value) { error.value = 'Enter the booking arranger name and valid contact details.'; return false }
+  if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: Date.now() }).some(slot => slot.value === row.time))) { error.value = 'Select an available date and time for every service. The same person needs separate dates.'; return false }
   busy.value = true
   try {
     const result = await api('/walk-in/bookings', {
@@ -464,14 +509,35 @@ async function createAppointments() {
       ...(selectedClientId.value === NEW_CLIENT_ID ? { clientDetails: normalizedNewClient.value } : {}),
       submissionId,
       policyAcknowledged: true,
-      appointments: flatVisits.value,
+      appointments: flatVisits.value.map(row => ({ ...row, sourceVisitKey: row.key })),
       bookingForSomeoneElse: bookingForSomeoneElse.value,
       booker: bookingForSomeoneElse.value ? booker.value : null,
       bookingAcceptance: { accepted: true, signatureImage: bookingSignature.value },
+      treatmentAcceptance: { accepted: true, signatureImage: recipientSignature },
     })
-    createdAppointments.value = result.appointments
-  } catch (cause) { error.value = cause.message || 'Unable to create these appointments. No automatic retry was attempted.' }
+    createdAppointments.value = result.appointments || []
+    if (!createdAppointments.value.length) { error.value = 'The booking service did not return the appointments. Refresh before starting payment.'; return false }
+    bookingStep.value = 3
+    paymentMethods.value = Object.fromEntries(createdAppointments.value.map(appointment => [appointment.id, paymentMethods.value[appointment.sourceVisitKey] || 'Cash']))
+    cashReceived.value = Object.fromEntries(createdAppointments.value.map(appointment => [appointment.id, cashReceived.value[appointment.sourceVisitKey] || 0]))
+    return createdAppointments.value.length > 0
+  } catch (cause) { error.value = cause.message || 'Unable to create these appointments. No automatic retry was attempted.'; return false }
   finally { busy.value = false }
+}
+async function startDraftPayment(item) {
+  error.value = ''
+  if (!canRecordPayments.value) return void (error.value = 'Walk-in payment permission is required to collect payment.')
+  const method = paymentMethods.value[item.key] || 'Cash'
+  if (!['Cash', 'Card', 'GCash'].includes(method)) return void (error.value = 'Choose cash, card, or GCash as the payment method.')
+  const tendered = Number(cashReceived.value[item.key])
+  if (method === 'Cash' && (!Number.isFinite(tendered) || tendered < Number(item.pricing.total))) return void (error.value = 'Cash received must cover the full appointment amount.')
+  if (!await createAppointments()) return
+  const appointment = createdAppointments.value.find(row => row.sourceVisitKey === item.key && row.sameDayTreatmentStatus !== 'pending_clinical_clearance')
+  if (!appointment) return void (error.value = 'The appointment could not be matched to its payment details. Refresh the booking before taking payment.')
+  paymentMethods.value[appointment.id] = method
+  cashReceived.value[appointment.id] = Number(cashReceived.value[item.key] || 0)
+  if (method === 'Cash') await collectPayment(appointment)
+  else await startOnlineCheckout(appointment, method)
 }
 async function collectPayment(appointment) {
   error.value = ''
@@ -480,7 +546,12 @@ async function collectPayment(appointment) {
   const amount = Number(appointment.totalAmount ?? appointment.amount), tendered = Number(cashReceived.value[appointment.id])
   if (!Number.isFinite(tendered) || tendered < amount) return void (error.value = 'Cash received must cover the full appointment amount.')
   busy.value = true
-  try { receipts.value[appointment.id] = await api(`/appointments/${appointment.id}/walk-in-payment`, { amount, tendered, method: 'Cash' }); appointment.paymentStatus = 'Paid'; appointment.status = 'Paid' }
+  try {
+    receipts.value[appointment.id] = await api(`/appointments/${appointment.id}/walk-in-payment`, { amount, tendered, method: 'Cash' })
+    appointment.paymentStatus = 'Paid'
+    appointment.status = 'Paid'
+    if (route.query.walkin_payment) await router.replace({ path: '/crm/walk-in' })
+  }
   catch (cause) { error.value = cause.message || 'Unable to record payment.' }
   finally { busy.value = false }
 }
@@ -517,9 +588,9 @@ async function startOnlineCheckout(appointment, method) {
       ...((appointment.customerEmail || appointment.bookedByEmail)
         ? { billing: { name: appointment.bookedByName || appointment.clientName || appointment.customerName || 'Clinic customer', email: appointment.customerEmail || appointment.bookedByEmail } }
         : {}),
-      metadata: { module: 'clinic_walk_in_pos', saleMode: 'appointment', source: 'walk_in_pos', appointmentId: appointment.id, branchId: branchId.value },
-      successUrl: `${window.location.origin}/crm/pos?walkin_payment=success`,
-      cancelUrl: `${window.location.origin}/crm/pos?walkin_payment=cancelled`,
+      metadata: { module: 'clinic_walk_in_payment', saleMode: 'appointment', source: 'walk_in', appointmentId: appointment.id, branchId: branchId.value },
+      successUrl: `${window.location.origin}/crm/walk-in?walkin_payment=success&appointmentId=${encodeURIComponent(appointment.id)}`,
+      cancelUrl: `${window.location.origin}/crm/walk-in?walkin_payment=cancelled&appointmentId=${encodeURIComponent(appointment.id)}`,
     })
     if (!checkout?.id || !checkout?.checkout_url) throw Error('The payment provider did not return a checkout link.')
     const checkoutUrl = new URL(checkout.checkout_url)
@@ -552,12 +623,10 @@ async function verifyOnlinePayment(appointment) {
     const next = { ...pendingOnlineCheckouts.value }
     delete next[appointment.id]
     savePendingOnlineCheckouts(next)
-    if (isPosRoute.value && route.query.walkin_payment) await router.replace({ path: '/crm/pos' })
+    if (route.query.walkin_payment) await router.replace({ path: '/crm/walk-in' })
   } catch (cause) { error.value = cause.message || 'Unable to verify the online payment. The appointment remains unpaid until verification succeeds.' }
   finally { busy.value = false }
 }
-function updateContract(updated) { if (contractTarget.value && updated?.contract) contractTarget.value.contract = updated.contract }
-function startNewBooking() { contractTarget.value = null; createdAppointments.value = []; receipts.value = {}; cashReceived.value = {}; visits.value = []; selectedClientId.value = ''; bookingForSomeoneElse.value = false; booker.value = { name: '', email: '', phone: '' }; bookingSignature.value = ''; policyAcknowledged.value = false; bookingStep.value = 1; submissionId = crypto.randomUUID(); error.value = '' }
 function receiptPaidAt(value) {
   if (!value) return ''
   const timestamp = value?.toDate?.() || (typeof value === 'object' && Number.isFinite(Number(value._seconds ?? value.seconds))
@@ -607,7 +676,7 @@ function printReceipt(receipt) {
   window.setTimeout(() => { if (!popup.closed && !printStarted) { error.value = 'Unable to prepare the receipt for printing.'; popup.close() } }, 1500)
 }
 onMounted(trackPageLoad(() => load().catch(cause => { error.value = cause.message || 'Unable to load the Walk-In Desk.' })))
-onMounted(() => { clockTimer = setInterval(() => { now.value = Date.now(); if (branchId.value && !busy.value) { const refresh = isPosRoute.value ? refreshPaymentQueue() : !createdAppointments.value.length ? refreshAvailability() : null; refresh?.catch(cause => { availabilityReady.value = false; error.value = cause.message || 'Unable to refresh appointment availability.' }) } }, 60000) })
+onMounted(() => { clockTimer = setInterval(() => { now.value = Date.now(); if (branchId.value && !busy.value && !createdAppointments.value.length) refreshAvailability().catch(cause => { availabilityReady.value = false; error.value = cause.message || 'Unable to refresh appointment availability.' }) }, 60000) })
 onUnmounted(() => { clearInterval(clockTimer) })
 </script>
 
@@ -695,6 +764,14 @@ onUnmounted(() => { clearInterval(clockTimer) })
   background: var(--ac-primary-hover) !important;
   border-color: var(--ac-primary-hover) !important;
 }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.primary.cash-payment-action:not(:disabled) {
+  background: var(--ac-success) !important;
+  border-color: var(--ac-success) !important;
+  color: var(--ac-bg-deep) !important;
+}
+:global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button.primary.cash-payment-action:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
 :global(html[data-ac-theme="dark"]) .walk-in-desk .desk-button:disabled {
   cursor: not-allowed;
   opacity: 1;
@@ -750,5 +827,58 @@ button:disabled { cursor: not-allowed; opacity: .5; } button:focus-visible, inpu
 .payment-success { padding: 14px; background: #eef6ef; border: 1px solid #cadccc; border-radius: 10px; color: #426e56; font-size: 13px; }.payment-success p { margin: 0 0 8px; }
 .desk-alert { padding: 14px 16px; border-radius: 10px; font-size: 13px; }.error { border: 1px solid #e8b6aa; background: #fff0eb; color: #a04432; }.agreement-required { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border: 1px solid #edd19b; background: #fff7e7; color: #765423; }.agreement-required p { margin: 0; }.field-error { color: #a04432; font-size: 12px; margin: 10px 0; }.empty-note { padding: 24px; border: 1px dashed #dec19e; color: #876e59; font-size: 13px; border-radius: 10px; }
 .walk-in-desk :deep(.appearance-select) { margin: 0; }.walk-in-desk :deep(.appearance-select-trigger > span) { overflow-wrap: anywhere; }.walk-in-desk :deep(.appearance-select-menu li) { white-space: normal; }
+.walk-in-progress-step:not(:disabled):hover { border-color: #bd8d67; background: #fff7ec; }
+.step-edit-hint { color: #8d5a3b !important; font-weight: 700; }
+.agreement-review { display: grid; gap: 16px; margin-top: 22px; padding: 20px; border: 1px solid #ead2b7; border-radius: 13px; background: #fff9f1; }
+.agreement-review > .section-heading { margin-bottom: 0; }
+.agreement-documents, .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.agreement-document, .signature-panel { min-width: 0; padding: 16px; border: 1px solid #ead6c1; border-radius: 11px; background: #fffdf9; }
+.agreement-document h4, .signature-panel h4 { margin-bottom: 10px; color: #654733; font-size: 13px; }
+.appointment-contract-preview + .appointment-contract-preview { margin-top: 18px; padding-top: 18px; border-top: 1px solid #ead6c1; }
+.appointment-contract-preview h5 { margin: 0 0 8px; color: #79583f; font-size: 12px; }
+.agreement-document-scroll { max-height: 260px; overflow: auto; padding-right: 6px; overscroll-behavior: contain; }
+.signature-panel .desk-checkbox { margin-top: 12px; }
+.payment-step-heading { margin-bottom: 0; }
+.payment-card { margin: 0; padding: 22px; border-radius: 14px; background: #fffdf9; }
+.payment-card-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 24px; align-items: start; }
+.payment-appointment-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.payment-appointment-heading .eyebrow { margin-bottom: 5px; }
+.payment-appointment-heading h3 { overflow-wrap: anywhere; }
+.payment-client-name { margin: 14px 0 0; color: #493225; font-size: 15px; font-weight: 600; }
+.agreement-status-line { margin: 16px 0 0; color: #426e56; font-size: 12px; font-weight: 600; }
+.payment-status { flex: 0 0 auto; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.payment-status.is-due { background: #fff0d5; color: #805b21; }
+.payment-status.is-paid { background: #e9f4eb; color: #356545; }
+.payment-status.is-waiting { background: #fff5df; color: #795b25; }
+.payment-card-checkout { display: grid; gap: 14px; min-width: 0; padding: 16px; border: 1px solid #ead6c1; border-radius: 12px; background: #fff9f1; }
+.payment-card-checkout .price-breakdown { width: 100%; max-width: none; margin: 0; }
+.payment-method-form { display: grid; width: 100%; max-width: none; gap: 10px; }
+.payment-method-form .field-label { margin: 0; }
+.payment-method-select { position: relative; }
+.payment-method-select select { appearance: none; padding-right: 42px; cursor: pointer; }
+.payment-method-select > span { position: absolute; top: 50%; right: 17px; width: 8px; height: 8px; border-right: 1.5px solid #79583f; border-bottom: 1.5px solid #79583f; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.payment-method-hint { margin: 0; line-height: 1.5; }
+.payment-submit { width: 100%; min-height: 46px; }
+.desk-button.cash-payment-action { background: #426e56; border-color: #426e56; color: #fff; }
+.desk-button.cash-payment-action:hover:not(:disabled) { background: #355c47; border-color: #355c47; }
+.desk-button.paymongo-payment-action { background: #8d5a3b; border-color: #8d5a3b; color: #fffdf9; }
+.desk-button.paymongo-payment-action:hover:not(:disabled) { background: #74462d; border-color: #74462d; }
+.cash-received-field { display: grid; gap: 8px; }
+.walk-in-desk :deep(.appearance-select-trigger) { min-height: 46px; border-radius: 10px; }
+.walk-in-desk :deep(.appearance-select-trigger svg) { width: 14px; height: 14px; opacity: .65; }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .agreement-review,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-card-checkout { background: var(--ac-surface-soft); border-color: var(--ac-border); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .agreement-document,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .signature-panel,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-card { background: var(--ac-surface); border-color: var(--ac-border); color: var(--ac-text); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .agreement-document h4,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .signature-panel h4,
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-client-name { color: var(--ac-text); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .agreement-status-line { color: var(--ac-success); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-status.is-due { background: var(--ac-warning-bg); color: var(--ac-warning); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-status.is-paid { background: var(--ac-success-bg); color: var(--ac-success); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-status.is-waiting { background: var(--ac-warning-bg); color: var(--ac-warning); }
+:global(html[data-ac-theme="dark"]) .walk-in-desk .payment-method-select > span { border-color: var(--ac-text-secondary); }
+@media (max-width: 850px) { .agreement-documents, .signature-grid { grid-template-columns: minmax(0, 1fr); }.payment-card-grid { grid-template-columns: minmax(0, 1fr); }.payment-card-checkout { width: 100%; } }
 @media (max-width: 750px) { .walk-in-progress { grid-template-columns: minmax(0, 1fr); gap: 8px; }.walk-in-progress-step { padding: 10px 12px; }.walk-in-step-copy small { font-size: 10px; }.walk-in-review-row { flex-direction: column; }.walk-in-review-price { justify-items: start; text-align: left; }.desk-card, .client-card, .visit-card { padding: 16px; }.field-grid, .schedule-grid { grid-template-columns: minmax(0, 1fr); }.payment-form { flex-direction: column; align-items: stretch; }.payment-form > div { width: 100%; } }
 </style>

@@ -5174,10 +5174,14 @@ registerWalkInBookings(app, {
   reapExpiredAppointmentHolds: safelySweepAppointmentPaymentHolds,
   sendBooking: async appointment => {
     if (!appointment.customerEmail || !postmarkClient || !senderEmail) return
+    const provisionalTreatment = appointment.sameDayTreatmentStatus === 'pending_clinical_clearance'
+    const consentSummary = provisionalTreatment
+      ? 'You reviewed and signed the consultation agreement during booking. The treatment agreement will be signed after practitioner clearance.'
+      : 'Your treatment agreement was reviewed and signed during booking.'
     await sendPostmarkMessage({
       to: appointment.customerEmail,
-      subject: 'Your AesthetiCare walk-in appointment is booked',
-      text: `Hi ${appointment.customerName},\n\nYour walk-in appointment is confirmed.${appointment.bookingForSomeoneElse ? `\nArranged for you by: ${appointment.bookedByName}. They accepted the booking and payment terms; you must still review and sign your own treatment agreement before payment.` : ''}\nService: ${appointment.service}\nWhen: ${appointment.date} at ${appointment.time}\nPractitioner: ${appointment.practitionerName}\n\nThe clinic will ask you to review and sign your individual treatment agreement before collecting payment. After payment, your service code will be sent to this email. Bring the code on your appointment day.`,
+      subject: 'Your AesthetiCare walk-in appointment is scheduled',
+      text: `Hi ${appointment.customerName},\n\nYour walk-in appointment is scheduled.${appointment.bookingForSomeoneElse ? `\nArranged by: ${appointment.bookedByName}.` : ''}\nService: ${appointment.service}\nWhen: ${appointment.date} at ${appointment.time}\nPractitioner: ${appointment.practitionerName}\n\n${consentSummary} ${provisionalTreatment ? 'This same-day treatment remains provisional until the practitioner clears it after the consultation; payment is not due before clearance.' : 'Payment is still due. After the clinic records your payment, your service code will be sent to this email.'} Bring your service code on the appointment day once it has been issued.`,
     })
   },
 })
@@ -11464,10 +11468,10 @@ app.post('/paymongo/create-checkout-session', requireAuth, async (req, res) => {
         },
         success_url:
           successUrl ||
-          `${resolveFrontendBaseUrl(req)}/crm/pos?paymongo_status=success`,
+          `${resolveFrontendBaseUrl(req)}/crm/walk-in?paymongo_status=success`,
         cancel_url:
           cancelUrl ||
-          `${resolveFrontendBaseUrl(req)}/crm/pos?paymongo_status=cancelled`,
+          `${resolveFrontendBaseUrl(req)}/crm/walk-in?paymongo_status=cancelled`,
       },
     },
   }

@@ -12,6 +12,53 @@ export const assertWalkInPaymentAgreements = (appointment) => {
 }
 
 export const registerWalkInPayments = (app, { admin, requireAuth, authorizeClinicAction, verifyCheckout, sendReceipt }) => {
+  app.get('/walk-in/payment/:id', requireAuth, async (req, res) => {
+    try {
+      const db = admin.firestore()
+      const ref = db.collection('appointments').doc(String(req.params.id || '').trim())
+      const snap = await ref.get()
+      check(snap.exists, 'Walk-in appointment not found.', 404)
+      const appointment = snap.data() || {}
+      check(appointment.source === 'walk_in', 'This payment return does not match a walk-in appointment.', 404)
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'payments:create')
+      const bookingSnap = appointment.bookingId ? await db.collection('bookings').doc(appointment.bookingId).get() : null
+      const siblingIds = bookingSnap?.exists && bookingSnap.data()?.branchId === appointment.branchId
+        ? bookingSnap.data()?.appointmentIds
+        : null
+      const appointmentIds = Array.isArray(siblingIds) && siblingIds.length <= 40
+        ? [...new Set(siblingIds.filter(id => typeof id === 'string' && id.length > 0 && !id.includes('/')))]
+        : [ref.id]
+      if (!appointmentIds.includes(ref.id)) appointmentIds.unshift(ref.id)
+      const snapshots = await Promise.all(appointmentIds.map(id => db.collection('appointments').doc(id).get()))
+      const appointments = snapshots
+        .filter(row => row.exists && row.data()?.source === 'walk_in' && row.data()?.branchId === appointment.branchId)
+        .map(row => {
+          const data = row.data() || {}
+          const contract = data.contract || {}
+          return {
+            id: row.id, branchId: data.branchId, clientId: data.clientId || null,
+            clientName: data.clientName || data.customerName || 'Walk-in client',
+            customerName: data.customerName || data.clientName || 'Walk-in client',
+            customerEmail: data.customerEmail || '', bookedByName: data.bookedByName || data.clientName || data.customerName || 'Walk-in client',
+            bookedByEmail: data.bookedByEmail || '', service: data.service || 'Treatment', type: data.type || '',
+            date: data.date || '', time: data.time || '', practitionerName: data.practitionerName || '',
+            amount: data.amount ?? data.totalAmount ?? 0, totalAmount: data.totalAmount ?? data.amount ?? 0,
+            pricingSnapshot: data.pricingSnapshot || null, status: data.status || '', paymentStatus: data.paymentStatus || 'Pending',
+            bookingWorkflowVersion: Number(data.bookingWorkflowVersion || 0), bookingAgreementStatus: data.bookingAgreement?.status || '',
+            contract: { status: contract.status || 'pending' }, sameDayTreatmentStatus: data.sameDayTreatmentStatus || '',
+            sourceVisitKey: data.sourceVisitKey || '',
+          }
+        })
+      check(appointments.some(row => row.id === ref.id), 'Walk-in appointment not found.', 404)
+      const receiptSnaps = await Promise.all(appointments.map(row => db.collection('transactions').doc(`walk-in-${row.id}`).get()))
+      const receipts = Object.fromEntries(receiptSnaps.flatMap((receipt, index) => receipt.exists ? [[appointments[index].id, receipt.data()]] : []))
+      res.json({ success: true, data: {
+        appointment: appointments.find(row => row.id === ref.id), appointments, receipts,
+        receipt: receipts[ref.id] || null,
+      } })
+    } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+  })
+
   app.get('/walk-in/pos', requireAuth, async (req, res) => {
     try {
       const branchId = String(req.query?.branchId || '').trim()
