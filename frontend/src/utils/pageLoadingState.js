@@ -1,3 +1,5 @@
+import { toast } from 'vue3-toastify'
+
 // Track the first data load, including subscriptions whose first result arrives later.
 // Later live updates leave the page visible and preserve in-progress edits.
 export function createPageLoadingState(onChange) {
@@ -51,8 +53,16 @@ export function createPageLoadingState(onChange) {
         throw error
       }
     }
+    const reportUnscopedListenerError = (error) => {
+      const pathname = typeof window === 'undefined' ? 'unknown' : window.location.pathname
+      const isPermissionDenied = error?.code === 'permission-denied'
+      const message = isPermissionDenied
+        ? 'Some information could not be loaded for this account. Refresh the page, and contact support if it continues.'
+        : 'Some page information could not be loaded. Refresh the page and try again.'
+      toast.error(message, { toastId: `page-data-listener:${pathname}` })
+    }
     args[callbackIndex] = wrap(args[callbackIndex])
-    args[callbackIndex + 1] = wrap(args[callbackIndex + 1] || (error => console.error('Unable to load page data:', error)))
+    args[callbackIndex + 1] = wrap(args[callbackIndex + 1] || reportUnscopedListenerError)
     try {
       const unsubscribe = register(...args)
       return () => { finish(); unsubscribe?.() }

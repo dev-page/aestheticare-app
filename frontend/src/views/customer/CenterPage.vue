@@ -239,9 +239,6 @@
                           {{ item.durationMinutes }} mins
                         </span>
                       </div>
-                      <p class="mt-3 text-xs font-semibold text-[#8b6a4d]">
-                        Book this separately from regular services. Choose your preferred consultation mode.
-                      </p>
                       <label class="mt-3 block text-sm font-medium text-[#6f4a2d]">Consultation mode
                         <select v-model="consultationModeSelection[item.id]" class="mt-1 w-full rounded-xl border border-[#e0c09a] bg-[#fffaf3] px-3 py-2 text-[#3d281d]">
                           <option v-for="mode in item.consultationModes" :key="mode" :value="mode">{{ mode === 'on-site' ? 'On-site' : 'Online' }}</option>
@@ -251,7 +248,7 @@
                         <button
                           @click="toggleConsultationForBooking(item)"
                           :class="[
-                            'center-action-button px-3 py-2 rounded-xl text-white',
+                            'center-action-button px-3 py-2 rounded-xl',
                             isConsultationSelected(item)
                               ? 'is-warm'
                               : 'is-cool'
@@ -509,16 +506,16 @@
               <p v-if="availabilityMessage" class="booking-notice mt-2 text-xs">{{ availabilityMessage }}</p>
               <textarea v-model="bookingForm.notes" rows="3" class="mt-4 w-full px-3 py-3 rounded-2xl bg-[#fffaf3] text-[#3d281d] border border-[#e0c09a] placeholder:text-[#a78a6e] focus:outline-none focus:ring-4 focus:ring-[#e8bf8a]/20" placeholder="Notes (optional)"></textarea>
               <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <button v-if="!groupBookingEnabled && !sameDayConsultationRequested" type="button" :disabled="bookingPaymentSaving" class="w-full rounded-2xl border border-[#e0c09a] px-4 py-2 text-[#6f4a2d] sm:w-auto" @click="saveScheduledService">Save schedule &amp; add another service</button>
+                <button v-if="!groupBookingEnabled && !sameDayConsultationRequested" type="button" :disabled="bookingPaymentSaving" class="center-booking-secondary-button w-full sm:w-auto" @click="saveScheduledService">Save schedule &amp; add another service</button>
                 <button
                   type="button"
                   @click="submitBooking"
                   :disabled="bookingPaymentSaving"
-                  class="w-full rounded-2xl bg-[#8d5a3b] px-4 py-2 text-white shadow-md shadow-amber-950/20 hover:bg-[#6f4329] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  class="center-booking-primary-button w-full sm:w-auto"
                 >
                   {{ bookingPaymentSaving ? 'Submitting...' : 'Submit Booking Request' }}
                 </button>
-                <button type="button" @click="clearBookingSelection" class="w-full rounded-2xl border border-[#e0c09a] bg-[#fffaf3] px-4 py-2 text-[#6f4a2d] hover:bg-[#fff2e1] sm:w-auto">Cancel</button>
+                <button type="button" @click="clearBookingSelection" class="center-booking-secondary-button w-full sm:w-auto">Cancel</button>
               </div>
             </div>
           </div>
@@ -3394,6 +3391,56 @@ const formatChatTime = (timestamp) => {
 .center-action-button {
   background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
   box-shadow: 0 14px 26px rgba(111, 63, 42, 0.14);
+}
+
+.center-booking-primary-button,
+.center-booking-secondary-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+  transition: transform 0.18s ease, background-color 0.18s ease, filter 0.18s ease;
+}
+
+.center-booking-primary-button {
+  border: 1px solid #6f4329;
+  background: linear-gradient(135deg, #8d5a3b 0%, #6f4329 100%);
+  color: #fff8eb;
+  box-shadow: 0 8px 18px rgba(71, 40, 23, 0.18);
+}
+
+.center-booking-primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.center-booking-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.center-booking-secondary-button {
+  border: 1px solid #e0c09a;
+  background: #fffaf3;
+  color: #6f4a2d;
+}
+
+.center-booking-secondary-button:hover:not(:disabled) {
+  border-color: #c99b70;
+  background: #fff2e1;
+  transform: translateY(-1px);
+}
+
+.center-booking-primary-button:focus-visible,
+.center-booking-secondary-button:focus-visible,
+.center-action-button:focus-visible {
+  outline: 3px solid rgba(236, 191, 138, 0.8);
+  outline-offset: 3px;
 }
 
 .center-secondary-button {

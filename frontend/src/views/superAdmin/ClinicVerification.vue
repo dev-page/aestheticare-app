@@ -712,6 +712,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       { id: 'approved', label: 'Approved Clinics', count: verifiedClinics.value.length },
     ])
     let unsubscribeClinics = null
+    let unsubscribeRejectedRegistrations = null
 
     const showModal = ref(false)
     const selectedRecord = ref(null)
@@ -1101,24 +1102,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     }
 
-    const loadRejectedRegistrations = async () => {
+    const loadRejectedRegistrations = (forceRefresh = false) => {
+      if (unsubscribeRejectedRegistrations && !forceRefresh) return
+      unsubscribeRejectedRegistrations?.()
       loadingRejectedRegistrations.value = true
-      try {
-        const snapshot = await getDocs(query(collection(db, 'registrationRejectionHistory'), where('applicantType', '==', 'clinic')))
+      const rejectedQuery = query(collection(db, 'registrationRejectionHistory'), where('applicantType', '==', 'clinic'))
+      unsubscribeRejectedRegistrations = pageListener(onSnapshot, rejectedQuery, (snapshot) => {
         rejectedRegistrations.value = sortRecordsNewestFirst(snapshot.docs.map((item) => {
           const data = item.data() || {}
           return { id: item.id, ...data, fullName: data.applicantName || data.email || 'Unnamed Applicant', clinicName: data.clinicName || '', rejectionReason: data.reason || '' }
         }))
-      } catch (err) {
+        loadingRejectedRegistrations.value = false
+      }, (err) => {
         console.error('Failed to load rejected clinic registrations:', err)
         error.value = 'Failed to load rejected clinic registrations. Please try again.'
-      } finally {
         loadingRejectedRegistrations.value = false
-      }
+      })
     }
 
     const refreshClinicLists = async () => {
-      await Promise.all([loadPendingClinics(), loadVerifiedClinics(true), loadRejectedRegistrations()])
+      await Promise.all([loadPendingClinics(), loadVerifiedClinics(true)])
+      loadRejectedRegistrations(true)
     }
 
     const openDetails = (record) => {
@@ -1399,7 +1403,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
     onMounted(trackPageLoad(async () => { await Promise.all([loadPendingClinics(), loadVerifiedClinics(), loadRejectedRegistrations()]) }))
-    onUnmounted(() => unsubscribeClinics?.())
+    onUnmounted(() => {
+      unsubscribeClinics?.()
+      unsubscribeRejectedRegistrations?.()
+    })
 
     return {
       pageLoading,

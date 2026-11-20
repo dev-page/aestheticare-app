@@ -1,4 +1,4 @@
-import { isClinicCustomerDiscoverable, isPublicClinicCustomerDiscoverable, isCustomerCareListing, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
+import { isClinicCustomerDiscoverable, isPublicClinicCustomerDiscoverable, isCustomerCareListing, getCustomerCareListingName, assertCustomerCheckoutSupported } from '../../shared/customerCatalog.js'
 import { findClinicNameMatches } from '../../shared/clinicNameMatching.js'
 import publicClinicProjection from '../functions/publicClinicProjection.cjs'
 import { registerAppointmentPaymentWebhook } from './appointmentPaymentWebhook.js'
@@ -6265,11 +6265,26 @@ const hasRegisteredClinicName = async (transaction, firestore, clinicInput) => {
   return clinicNameMatchesInSnapshot(snapshot, clinicInput)
 }
 
-const publicClinicProfile = (clinicId, clinicData) => {
+const PUBLIC_SUBSCRIPTION_FIELDS = [
+  'subscriptionPlan', 'plan', 'selectedPlan', 'paymentStatus',
+  'subscriptionAccessStatus', 'subscriptionStatus', 'subscriptionExpiresAt',
+  'subscriptionTrialEndsAt', 'subscriptionGraceEndsAt', 'gracePeriodEndDate',
+]
+
+const publicClinicProfile = (clinicId, clinicData, ownerData = {}) => {
   const ownerId = String(clinicData?.ownerId || clinicData?.organizationOwnerId || clinicId || '').trim()
   const organizationOwnerId = String(clinicData?.organizationOwnerId || ownerId).trim()
+  const clinicSubscription = subscriptionLifecycle(clinicData)
+  const ownerSubscription = subscriptionLifecycle(ownerData)
+  const subscriptionSource = ownerSubscription.isOperational && !clinicSubscription.isOperational
+    ? ownerData
+    : clinicData
+  const subscriptionFields = Object.fromEntries(PUBLIC_SUBSCRIPTION_FIELDS
+    .filter((field) => subscriptionSource?.[field] !== undefined)
+    .map((field) => [field, subscriptionSource[field]]))
   const normalizedClinic = {
     ...clinicData,
+    ...subscriptionFields,
     ownerId,
     organizationOwnerId,
     clinicName: clinicData?.clinicName || clinicData?.businessName || clinicData?.companyName || clinicData?.clinicBranch || '',
@@ -6288,11 +6303,39 @@ const publicClinicProfile = (clinicId, clinicData) => {
 // asynchronous publicClinics projection is being repaired or caught up.
 app.get('/public/clinics', async (_req, res) => {
   try {
-    const snapshot = await admin.firestore().collection('clinics').where('isPublished', '==', true).get()
-    const clinics = snapshot.docs
-      .map((clinicDoc) => publicClinicProfile(clinicDoc.id, clinicDoc.data() || {}))
+    const firestore = admin.firestore()
+    const snapshot = await firestore.collection('clinics').where('isPublished', '==', true).get()
+    const sourceClinics = snapshot.docs.map((clinicDoc) => ({ id: clinicDoc.id, data: clinicDoc.data() || {} }))
+    const ownerIds = [...new Set(sourceClinics
+      .map(({ id, data }) => String(data.ownerId || data.organizationOwnerId || id).trim())
+      .filter(Boolean))]
+    const ownerSnapshots = await Promise.all(ownerIds.map((ownerId) => firestore.collection('users').doc(ownerId).get()))
+    const ownersById = new Map(ownerSnapshots.map((ownerSnapshot) => [ownerSnapshot.id, ownerSnapshot.exists ? ownerSnapshot.data() || {} : {}]))
+    const clinics = sourceClinics
+      .map(({ id, data }) => publicClinicProfile(id, data, ownersById.get(String(data.ownerId || data.organizationOwnerId || id).trim()) || {}))
       .filter(Boolean)
-    return res.json({ success: true, data: { clinics } })
+    const serviceNamesByBranch = new Map()
+    const clinicIds = clinics.map((clinic) => clinic.id)
+    for (let offset = 0; offset < clinicIds.length; offset += 10) {
+      const branchIds = clinicIds.slice(offset, offset + 10)
+      const postsSnapshot = await firestore.collection('productServicePosts')
+        .where('branchId', 'in', branchIds)
+        .get()
+      postsSnapshot.forEach((postSnapshot) => {
+        const post = postSnapshot.data() || {}
+        if (!isCustomerCareListing(post)) return
+        const serviceName = getCustomerCareListingName(post)
+        const branchId = String(post.branchId || '').trim()
+        if (!branchId || !serviceName) return
+        if (!serviceNamesByBranch.has(branchId)) serviceNamesByBranch.set(branchId, new Set())
+        serviceNamesByBranch.get(branchId).add(serviceName)
+      })
+    }
+    const clinicsWithServices = clinics.map((clinic) => {
+      const listedServices = Array.from(serviceNamesByBranch.get(clinic.id) || [])
+      return listedServices.length ? { ...clinic, services: listedServices } : clinic
+    })
+    return res.json({ success: true, data: { clinics: clinicsWithServices } })
   } catch (error) {
     console.error('Public clinic discovery failed:', error?.code || error?.message || error)
     return res.status(500).json({ success: false, error: 'Unable to load clinics right now.' })
@@ -6320,8 +6363,14 @@ app.get('/public/clinics/:branchId/profile', async (req, res) => {
     return res.status(400).json({ success: false, error: 'A valid clinic branch is required.' })
   }
   try {
-    const clinicSnap = await admin.firestore().collection('clinics').doc(branchId).get()
-    const clinic = clinicSnap.exists ? publicClinicProfile(branchId, clinicSnap.data() || {}) : null
+    const firestore = admin.firestore()
+    const clinicSnap = await firestore.collection('clinics').doc(branchId).get()
+    const clinicData = clinicSnap.exists ? clinicSnap.data() || {} : {}
+    const ownerId = String(clinicData.ownerId || clinicData.organizationOwnerId || branchId).trim()
+    const ownerSnap = ownerId ? await firestore.collection('users').doc(ownerId).get() : null
+    const clinic = clinicSnap.exists
+      ? publicClinicProfile(branchId, clinicData, ownerSnap?.exists ? ownerSnap.data() || {} : {})
+      : null
     if (!clinic) return res.status(404).json({ success: false, error: 'Center unavailable.' })
     return res.json({ success: true, data: { clinic } })
   } catch (error) {

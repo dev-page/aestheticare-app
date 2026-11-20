@@ -397,7 +397,13 @@ const handleLogin = async () => {
         throw profileError
       }
     } catch (err) {
-      console.error(err)
+      const expectedCredentialFailure = [
+        'auth/invalid-credential',
+        'auth/invalid-login-credentials',
+        'auth/wrong-password',
+        'auth/user-not-found',
+      ].includes(err?.code)
+      if (!expectedCredentialFailure) console.error(err)
       const isProfileError = err instanceof AggregateError
         || err?.message === 'Unable to load the authenticated profile.'
       const message = firebaseLoginMessages[err.code]

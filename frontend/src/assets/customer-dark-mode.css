@@ -127,7 +127,7 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
 }
 
 html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
-  button:not(.customer-home-primary-action):not(.cart-checkout-button):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.settings-button-primary):not(.settings-button-danger):not(.settings-button-warning):not(.recovery-primary):not(.center-cart-button):not(.center-chat-button):not(.center-action-button):not(.customer-center-button):not(.customer-chat-send),
+  button:not(.customer-home-primary-action):not(.cart-checkout-button):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.settings-button-primary):not(.settings-button-danger):not(.settings-button-warning):not(.recovery-primary):not(.center-cart-button):not(.center-chat-button):not(.center-action-button):not(.center-booking-primary-button):not(.center-booking-secondary-button):not(.customer-center-button):not(.customer-chat-send),
   a[role="button"]:not(.customer-home-primary-action):not(.orders-button-primary):not(.orders-button-success):not(.appointments-pay-link):not(.appointment-button-primary):not(.checkout-submit):not(.profile-save-button):not(.recovery-primary):not(.center-cart-button):not(.center-action-button):not(.customer-center-button)
 ) {
   border-color: var(--ac-border-strong) !important;
@@ -142,7 +142,8 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
   .customer-home-secondary-action, .orders-button-primary,
   .appointments-pay-link, .appointment-button-primary, .checkout-submit,
   .profile-save-button, .settings-button-primary, .recovery-primary,
-  .center-cart-button, .center-chat-button, .center-action-button, .customer-center-button,
+  .center-cart-button, .center-chat-button, .center-action-button,
+  .center-booking-primary-button, .customer-center-button,
   .customer-chat-send
 ) {
   border-color: var(--ac-primary) !important;
@@ -157,9 +158,30 @@ html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
   .orders-button-primary, .appointments-pay-link, .appointment-button-primary,
   .checkout-submit, .profile-save-button, .settings-button-primary,
   .recovery-primary, .center-cart-button, .center-chat-button, .center-action-button,
+  .center-booking-primary-button,
   .customer-center-button, .customer-chat-send
 ) * {
   color: var(--ac-on-primary) !important;
+}
+
+/* Keep primary customer booking actions readable over their brown surfaces in
+   both themes. The general customer text rules intentionally darken .text-white. */
+.aestheticare-app .customer-theme main :is(
+  .center-action-button, .center-booking-primary-button
+) {
+  color: #fff8eb !important;
+}
+
+.aestheticare-app .customer-theme main :is(
+  .center-action-button, .center-booking-primary-button
+) * {
+  color: #fff8eb !important;
+}
+
+html[data-ac-theme="dark"] .aestheticare-app .customer-theme main .center-booking-secondary-button {
+  border-color: var(--ac-border-strong) !important;
+  background: var(--ac-surface-soft) !important;
+  color: var(--ac-text-secondary) !important;
 }
 
 html[data-ac-theme="dark"] .aestheticare-app .customer-theme :is(
