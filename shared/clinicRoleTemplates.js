@@ -15,7 +15,7 @@ export const permissionSuggestionRules = [
   },
   {
     match: ['finance', 'accounting', 'cashier'],
-    permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
+    permissions: ['payments:view', 'reports:view', 'payroll:view', 'payroll:approve', 'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle', 'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view', 'services:view', 'services:review', 'leave:create', 'overtime:view', 'overtime:create', 'notifications:view', 'profile:view', 'password:update'],
   },
   {
     match: ['branch manager', 'manager', 'operations', 'supervisor'],

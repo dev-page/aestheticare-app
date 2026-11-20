@@ -153,7 +153,7 @@ const routes = [
   { path: "/crm/inbox", name: "crm-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "inbox:view" } },
   { path: "/crm/activity-logs", name: "crm-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
   // Finance routes
-  { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view" } },
+  { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["services:review", "finance:reports:view"] } },
   // Finance reports are plan-aware: Basic users see operational finance only,
   // while Payroll data is added only for plans that include it.
   { path: "/finance/dashboard", redirect: "/finance/reports" },

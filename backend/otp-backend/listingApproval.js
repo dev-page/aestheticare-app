@@ -58,7 +58,7 @@ export const listingTransition = (post, action, role, uid, note = '', permission
   const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }) }
   const permissionSet = permissions instanceof Set ? permissions : new Set(permissions)
   const canManageListings = ['Owner', 'Manager'].includes(role) || permissionSet.has('services:update')
-  const canReviewListingTerms = ['Finance', 'Owner'].includes(role) || permissionSet.has('finance:reports:view')
+  const canReviewListingTerms = ['Finance', 'Owner'].includes(role) || permissionSet.has('services:review') || permissionSet.has('finance:reports:view')
   if (post.archived) fail('Restore the listing before submitting it for review.')
   if (['submit', 'publish'].includes(action)) {
     const error = validateListingNumbers(post)

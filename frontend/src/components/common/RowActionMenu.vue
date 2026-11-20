@@ -38,8 +38,11 @@ const onMenuKeydown = event => {
     buttons[index]?.focus()
   }
 }
-const outside = event => { if (!root.value?.contains(event.target) && !menu.value?.contains(event.target)) close() }
-const moved = event => { if (!menu.value?.contains(event.target)) close() }
+const outside = event => {
+  if (!(event.target instanceof Node)) { close(); return }
+  if (!root.value?.contains(event.target) && !menu.value?.contains(event.target)) close()
+}
+const moved = () => close()
 onMounted(() => { document.addEventListener('pointerdown', outside); window.addEventListener('scroll', moved, true); window.addEventListener('resize', moved) })
 onUnmounted(() => { document.removeEventListener('pointerdown', outside); window.removeEventListener('scroll', moved, true); window.removeEventListener('resize', moved) })
 </script>

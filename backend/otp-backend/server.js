@@ -1849,6 +1849,7 @@ const CLINIC_OWNER_ADDITIONAL_PERMISSIONS = new Set([
 const CLINIC_ROLE_PERMISSION_KEYS = new Set([
   ...CLINIC_ADMIN_PERMISSIONS,
   ...CLINIC_OWNER_ADDITIONAL_PERMISSIONS,
+  'services:review',
 ])
 
 const loadUserContext = async (uid) => {

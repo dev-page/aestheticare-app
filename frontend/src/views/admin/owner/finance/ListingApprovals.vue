@@ -31,7 +31,7 @@
               <td class="listing-review-price"><strong>{{ formatPrice(post.price) }}</strong><small>{{ ['Service', 'Consultation', 'Package'].includes(post.postType) ? (post.vatPriceMode === 'inclusive' ? 'Includes 12% VAT' : '+12% VAT at checkout') : 'Not applicable to product orders' }}</small><small v-if="post.consultationFee">Consultation: {{ formatPrice(post.consultationFee) }}</small><small v-if="post.discountPercent">Discount: {{ post.discountPercent }}%</small><small v-if="post.discountAmount">Discount: {{ formatPrice(post.discountAmount) }}</small></td>
               <td><span class="listing-review-policy">Clinic payment policy</span><small class="listing-review-policy-note">Applies to this listing</small></td>
               <td><span class="listing-review-status" :class="'is-' + listingStatus(post)">{{ reviewStatusLabel(post) }}</span></td>
-              <td><RowActionMenu :label="'Actions for ' + (post.title || 'listing')" :items="[{ action: 'view', label: 'View Details' }, { action: 'approve', label: 'Approve', disabled: !!busy || listingStatus(post) !== 'pending' || !canReviewListings, title: 'Available for pending listings reviewed by Finance or the owner' }, { action: 'reject', label: 'Request Change', disabled: !!busy || listingStatus(post) !== 'pending' || !canReviewListings, title: 'Available for pending listings reviewed by Finance or the owner' }]" @select="handleListingAction(post, $event)" /></td>
+              <td><RowActionMenu :label="'Actions for ' + (post.title || 'listing')" :items="[{ action: 'view', label: 'View Details' }, { action: 'approve', label: 'Approve', disabled: !!busy || listingStatus(post) !== 'pending' || !canReviewListings, title: 'Requires listing review permission' }, { action: 'reject', label: 'Request Change', disabled: !!busy || listingStatus(post) !== 'pending' || !canReviewListings, title: 'Requires listing review permission' }]" @select="handleListingAction(post, $event)" /></td>
             </tr><tr v-if="!visiblePosts.length"><td colspan="6"><strong>{{ loading ? 'Loading listings...' : 'No listings found' }}</strong><p v-if="!loading">Try a different search, branch, or review status.</p><button v-if="!loading && (search || filter !== 'all' || selectedBranchId !== 'all')" @click="search = ''; filter = 'all'; selectedBranchId = 'all'">Clear filters</button></td></tr></tbody>
           </table>
         </div>
@@ -80,8 +80,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 const posts = ref([]), branches = ref([]), selectedBranchId = ref('all'), filter = ref('all'), error = ref(''), busy = ref(''), loading = ref(true), search = ref('')
 const selectedPost = ref(null)
 const failedListingImages = ref(new Set())
-const { userRole, isClinicAdminOwner } = usePermissions()
-const canReviewListings = computed(() => isClinicAdminOwner.value || String(userRole.value || '').trim().toLowerCase() === 'finance')
+const { hasPermission, isClinicAdminOwner } = usePermissions()
+const canReviewListings = computed(() => isClinicAdminOwner.value || hasPermission('services:review') || hasPermission('finance:reports:view'))
 const formatPrice = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', currencyDisplay: 'symbol' }).format(Number(value || 0))
 const reviewStatusLabel = post => ({ pending: 'Pending', approved: 'Approved', rejected: 'Changes Requested' })[listingStatus(post)] || 'Not reviewed'
 const listingStatus = (post) => String(post?.financeStatus || 'draft').trim().toLowerCase() || 'draft'
@@ -129,7 +129,7 @@ onUnmounted(() => { stopAuth?.(); stopPosts() })
 const handleListingAction = (post, action) => { if (action === 'view') selectedPost.value = post; else if (action === 'approve' || action === 'reject') review(post, action) }
 const review = async (post, action) => {
   if (!canReviewListings.value) {
-    toast.error('Only Finance or the clinic owner can review listing financial terms.')
+    toast.error('You do not have permission to review listing financial terms.')
     return
   }
   const result = await Swal.fire({ title: action === 'approve' ? 'Approve financial terms?' : 'Request financial changes', text: post.title, input: 'textarea', inputLabel: action === 'approve' ? 'Review note (optional)' : 'Explain the changes needed', showCancelButton: true, confirmButtonColor: '#8d5c3c', cancelButtonColor: '#8a725f', background: '#fffdf9', color: '#3d281d', inputValidator: (value) => action === 'reject' && !value.trim() ? 'A reason is required.' : undefined })
