@@ -20,6 +20,8 @@ import { builtInRoleTemplates, getTemplatePermissions } from '../../../../../sha
 import { withRecurringScheduleVersion } from '@/utils/employeeSchedules'
 import { usePermissions } from '@/composables/usePermissions'
 import CreateAccountScheduleStep from './hr/CreateAccountScheduleStep.vue'
+import CreateAccountCommissionAgreements from '@/components/common/CreateAccountCommissionAgreements.vue'
+import { compensationApi } from '@/utils/compensationApi'
 import { logActivity } from '@/utils/activityLogger'
 
 const PASSWORD_LENGTH = 12
@@ -69,7 +71,7 @@ const generateSecurePassword = (length = PASSWORD_LENGTH) => {
 
 export default {
   name: 'AddStaff',
-  components: { OwnerSidebar, OwnerPageSkeleton, ContractAppearanceSelect, CreateAccountScheduleStep },
+  components: { OwnerSidebar, OwnerPageSkeleton, ContractAppearanceSelect, CreateAccountScheduleStep, CreateAccountCommissionAgreements },
   props: { embedded: { type: Boolean, default: false } },
   emits: ['close'],
   setup(props, { emit }) {
@@ -89,16 +91,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const emailAvailability = ref('idle')
     const emailAvailabilityMessage = ref('')
     const { initSubscription, activePlan, hasFeature } = useSubscription()
-    const { hasPermission } = usePermissions()
+    const { hasPermission, isClinicAdminOwner } = usePermissions()
     const activeStep = ref(1)
     const scheduleStepRef = ref(null)
+    const commissionEditorRef = ref(null)
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: {} })
     const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' })
+    const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
     const canUseHr = computed(() => hasFeature('hr'))
     const canViewShifts = computed(() => canUseHr.value && hasPermission('hr:view'))
     const canCreateShifts = computed(() => canUseHr.value && hasPermission('hr:create'))
     const canAssignShifts = computed(() => canUseHr.value && hasPermission('hr:update'))
     const canManagePay = computed(() => hasFeature('payroll') && hasPermission('payroll:update'))
+    const canManageCommissions = computed(() => hasFeature('payroll') && isClinicAdminOwner.value === true)
 
     const currentStaff = ref({
       firstName: '',
@@ -279,6 +284,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       activeStep.value = 1
       scheduleDraft.value = { branchId: '', effectiveFrom: '', weeklyHoursCap: 40, assignments: {} }
       basePay.value = { basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176, employmentStartDate: '' }
+      commissionDraft.value = { approvedServiceIds: [], rates: [] }
       practitionerIdFile.value = null
       practitionerOcrSequence += 1
       practitionerOcrBusy.value = false
@@ -498,6 +504,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error(basePayError.value)
         return false
       }
+      if (activeStep.value === 4 && isPractitionerRole.value && canManageCommissions.value) {
+        const error = commissionEditorRef.value?.validationError
+        if (error) { toast.error(error); return false }
+      }
       return true
     }
 
@@ -585,6 +595,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       currentStaff.value.practitionerType = ''
       practitionerIdFile.value = null
       if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
+    })
+    watch(() => currentStaff.value.practitionerType, () => {
+      commissionDraft.value = { approvedServiceIds: [], rates: [] }
     })
     watch(
       () => [currentStaff.value.firstName, currentStaff.value.middleName, currentStaff.value.lastName, currentStaff.value.suffix].map(value => String(value || '').trim()).join('|'),
@@ -780,6 +793,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         let practitionerLicenseFileRef = null
         let profileCreated = false
         let scheduleWarning = ''
+        let commissionWarning = ''
 
         try {
           let practitionerLicenseUrl = ''
@@ -847,6 +861,21 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
           profileCreated = true
 
+          if (isPractitionerRole.value && canManageCommissions.value && (commissionDraft.value.approvedServiceIds.length || commissionDraft.value.rates.length)) {
+            try {
+              await compensationApi(`/practitioner-profiles/${encodeURIComponent(uid)}`, 'POST', {
+                type: currentStaff.value.practitionerType,
+                credentialNumber: practitionerOcrResult.value?.licenseNumber || '',
+                credentialsVerified: false,
+                approvedServiceIds: commissionDraft.value.approvedServiceIds,
+                rates: commissionDraft.value.rates,
+              })
+            } catch (commissionError) {
+              console.error('Employee account was created but commission agreements were not saved:', commissionError)
+              commissionWarning = 'The employee account was created, but commission agreements could not be saved. Set them in Employee Compensation.'
+            }
+          }
+
           if (canAssignShifts.value && scheduleDraft.value.branchId && Object.values(scheduleDraft.value.assignments || {}).some(Boolean)) {
             try {
               const scheduleAssignments = { ...scheduleDraft.value.assignments }
@@ -893,7 +922,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
 
           if (scheduleWarning) toast.warn(scheduleWarning)
-          else toast.success('Staff member added successfully.')
+          if (commissionWarning) toast.warn(commissionWarning)
+          if (!scheduleWarning && !commissionWarning) toast.success('Staff member added successfully.')
           resetForm()
           emit('close')
         } catch (firestoreError) {
@@ -950,6 +980,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       resetForm,
       activeStep,
       scheduleStepRef,
+      commissionEditorRef,
       scheduleDraft,
       basePay,
       basePayError,
@@ -957,6 +988,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       canCreateShifts,
       canAssignShifts,
       canManagePay,
+      canManageCommissions,
+      commissionDraft,
       goToNextStep,
       goToPreviousStep,
       requestClose,
@@ -1025,7 +1058,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           </header>
 
           <ol class="grid grid-cols-2 gap-2 md:grid-cols-4" aria-label="Create account steps">
-            <li v-for="(label, index) in ['Personal & Contact', 'Role & Branch', 'Shift Assignment', 'Base Pay']" :key="label" class="rounded-xl border px-3 py-2" :class="activeStep === index + 1 ? 'border-amber-500 bg-amber-500/10 text-amber-100' : activeStep > index + 1 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100' : 'border-slate-700 bg-slate-900/50 text-slate-400'">
+            <li v-for="(label, index) in ['Personal & Contact', 'Role & Branch', 'Shift Assignment', 'Base Pay & Commissions']" :key="label" class="rounded-xl border px-3 py-2" :class="activeStep === index + 1 ? 'border-amber-500 bg-amber-500/10 text-amber-100' : activeStep > index + 1 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100' : 'border-slate-700 bg-slate-900/50 text-slate-400'">
               <span class="block text-[10px] font-semibold uppercase tracking-wider">Step {{ index + 1 }}</span>
               <span class="mt-1 block text-xs font-semibold sm:text-sm">{{ label }}</span>
             </li>
@@ -1316,8 +1349,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           />
 
           <section v-if="activeStep === 4" class="rounded-2xl border border-slate-700 bg-slate-900/50 p-4 sm:p-6">
-            <h3 class="text-lg font-semibold text-white">Base Pay</h3>
-            <p class="mt-1 text-sm text-slate-400">Set the same pay terms used in Employee Compensation.</p>
+            <h3 class="text-lg font-semibold text-white">Base Pay &amp; Commissions</h3>
+            <p class="mt-1 text-sm text-slate-400">Set the same pay terms and practitioner service commission agreements used in Employee Compensation.</p>
             <div v-if="isStudentIntern" class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
               OJT / Intern accounts do not use employee base pay. Record any approved allowance in Finance → Other Expenses after the account is created.
             </div>
@@ -1339,6 +1372,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               </label>
               <p class="sm:col-span-2 text-xs text-slate-400">Enter a rate or a start date to continue. Start date supports paid leave eligibility; payroll uses saved pay terms and attendance.</p>
               <p v-if="basePayError" class="sm:col-span-2 text-sm text-rose-300" role="alert">{{ basePayError }}</p>
+            </div>
+
+            <div v-if="isPractitionerRole" class="mt-6 border-t border-slate-700 pt-5">
+              <template v-if="canManageCommissions">
+                <CreateAccountCommissionAgreements ref="commissionEditorRef" v-model="commissionDraft" :branch-ids="currentStaff.branchIds" />
+              </template>
+              <div v-else class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                Commission agreements can be set by the clinic owner in Employee Compensation after this account is created.
+              </div>
             </div>
           </section>
 

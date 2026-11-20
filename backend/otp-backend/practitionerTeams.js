@@ -237,8 +237,16 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
       const listing = (await db.collection('productServicePosts').doc(id).get()).data()
       check(listing && [user.branchId, ...(user.branchIds || [])].includes(listing.branchId) && listing.postType !== 'Product', 'Choose a service from the employee’s assigned branches.', 400)
     }
+    const profileRef = db.collection('practitionerProfiles').doc(req.params.id)
+    const existingProfile = (await profileRef.get()).data() || {}
     const batch = db.batch()
-    batch.set(db.collection('practitionerProfiles').doc(req.params.id), { ...profile, branchId: user.branchId, updatedBy: req.user.uid, updatedAt: now() })
+    batch.set(profileRef, {
+      ...profile,
+      ...(existingProfile.credentialExpiryDate ? { credentialExpiryDate: existingProfile.credentialExpiryDate } : {}),
+      branchId: user.branchId,
+      updatedBy: req.user.uid,
+      updatedAt: now(),
+    })
     batch.update(db.collection('users').doc(req.params.id), { practitionerType: profile.type })
     batch.set(db.collection('practitionerProfileAudit').doc(), { employeeId: req.params.id, branchId: user.branchId, actorId: req.user.uid, profile, createdAt: now() })
     await batch.commit()
