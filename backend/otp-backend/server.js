@@ -182,7 +182,10 @@ const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
-const AUTO_VERIFICATION_THRESHOLD = Math.max(0.74, Math.min(1, Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)))
+const configuredAutoVerificationThreshold = Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)
+const AUTO_VERIFICATION_THRESHOLD = Number.isFinite(configuredAutoVerificationThreshold)
+  ? Math.max(0.74, Math.min(1, configuredAutoVerificationThreshold))
+  : 0.74
 // A 30-day window gives administrators and registrants advance notice. Only
 // documents with seven or fewer days remaining require replacement before
 // review; already expired documents remain rejected.
@@ -2198,6 +2201,57 @@ const getRegistrationComparisonNameMatch = (comparisons) => {
   return nameComparisons.every((item) => item.status === 'match') ? true : null
 }
 
+const REGISTRATION_OCR_SCORE_WEIGHTS = Object.freeze({
+  ocrQuality: 0.35,
+  readability: 0.15,
+  identityMatch: 0.10,
+  documentNumberMatch: 0.35,
+  expiryValidity: 0.05,
+})
+
+const calculateRegistrationOcrScore = ({
+  ocrConfidence,
+  readableText,
+  hasSomeText,
+  nameMatch,
+  hasNameComparison,
+  requiresDocumentNumber,
+  documentNumberDetected,
+  requiresExpiry,
+  expiryValid,
+}) => {
+  const ocrQuality = ocrConfidence ?? (readableText ? 0.75 : hasSomeText ? 0.4 : 0)
+  const componentValues = {
+    ocrQuality,
+    readability: readableText ? 1 : hasSomeText ? 0.5 : 0,
+    identityMatch: hasNameComparison ? (nameMatch === true ? 1 : 0) : null,
+    documentNumberMatch: requiresDocumentNumber ? (documentNumberDetected ? 1 : 0) : null,
+    expiryValidity: requiresExpiry ? (expiryValid === true ? 1 : 0) : null,
+  }
+  const applicableWeight = Object.entries(componentValues).reduce((total, [key, value]) =>
+    total + (value === null ? 0 : REGISTRATION_OCR_SCORE_WEIGHTS[key]), 0)
+  const weightedScore = Object.entries(componentValues).reduce((total, [key, value]) =>
+    total + (value === null ? 0 : REGISTRATION_OCR_SCORE_WEIGHTS[key] * value), 0)
+  const percentage = (value) => value === null ? null : Math.round(value * 100)
+  const score = applicableWeight > 0 ? weightedScore / applicableWeight : 0
+  const weights = Object.fromEntries(Object.entries(componentValues).map(([key, value]) => [
+    key,
+    value === null ? null : Math.round((REGISTRATION_OCR_SCORE_WEIGHTS[key] / applicableWeight) * 100),
+  ]))
+  return {
+    score,
+    breakdown: {
+      ocrQuality: percentage(componentValues.ocrQuality),
+      readability: percentage(componentValues.readability),
+      identityMatch: percentage(componentValues.identityMatch),
+      documentNumberMatch: percentage(componentValues.documentNumberMatch),
+      expiryValidity: percentage(componentValues.expiryValidity),
+      applicableWeight: Math.round(applicableWeight * 100),
+      weights,
+    },
+  }
+}
+
 const getRegistrationDocumentOcr = async ({ visionClient, bucketName, storagePath, contentType, bytes, uid, docKey }) => {
   if (String(contentType || '').toLowerCase() !== 'application/pdf') {
     const [response] = await visionClient.documentTextDetection({ image: { content: bytes.toString('base64') } })
@@ -2317,15 +2371,19 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     const expiryValidation = getOcrExpiryValidation(extractedText, requiresExpiry)
     const expiryDate = expiryValidation.validTo
     const expiryValid = expiryValidation.valid
-    const ocrQuality = ocrConfidence ?? (readableText ? 0.75 : hasSomeText ? 0.4 : 0)
-    const score = Math.min(1, (
-      ocrQuality * 0.35
-      + (readableText ? 1 : hasSomeText ? 0.5 : 0) * 0.15
-      + (nameMatch === true ? 1 : 0) * 0.1
-      + (requiresNumber ? (detectedDocumentNumber ? 1 : 0) : 1) * 0.35
-      + (requiresExpiry ? (expiryValid ? 1 : 0) : 1) * 0.05
-    ))
-    result.confidence = score
+    const score = calculateRegistrationOcrScore({
+      ocrConfidence,
+      readableText,
+      hasSomeText,
+      nameMatch,
+      hasNameComparison: comparisons.some((item) => item.field !== 'birthDate'),
+      requiresDocumentNumber: requiresNumber,
+      documentNumberDetected: Boolean(detectedDocumentNumber),
+      requiresExpiry,
+      expiryValid,
+    })
+    result.confidence = score.score
+    result.scoreBreakdown = score.breakdown
     result.ocrConfidence = ocrConfidence
     result.detectedDocumentNumber = detectedDocumentNumber
     result.detectedDates = detectedDates
@@ -2353,7 +2411,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       ? 'rejected'
       : expiryAccountHold ? 'held_pending'
       : isAuthorizationDocument ? 'manual_review'
-      : readableText && score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
+      : readableText && score.score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
     result.reason = !readableText
       ? 'OCR could not read enough text to compare the document. An administrator must inspect the original file.'
       : expiredDocument
@@ -2586,18 +2644,17 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       // therefore verifies that a number is readable; it does not falsely
       // report a mismatch against a non-existent applicant-entered value.
       const numberMatch = null
-      const ocrQuality = ocrConfidence ?? (hasReadableText ? 0.75 : hasSomeText ? 0.4 : 0)
-      const readabilityScore = hasReadableText ? 1 : hasSomeText ? 0.5 : 0
-      const identityScore = nameMatch ? 1 : 0
-      const numberScore = requiresDocumentNumber ? (documentNumberDetected ? 1 : 0) : 1
-      const expiryScore = expiryValid ? 1 : 0
-      const confidence = Math.min(1, (
-        ocrQuality * 0.35
-        + readabilityScore * 0.15
-        + identityScore * 0.1
-        + numberScore * 0.35
-        + expiryScore * 0.05
-      ))
+      const score = calculateRegistrationOcrScore({
+        ocrConfidence,
+        readableText: hasReadableText,
+        hasSomeText,
+        nameMatch,
+        hasNameComparison: comparisons.some((item) => item.field !== 'birthDate'),
+        requiresDocumentNumber,
+        documentNumberDetected,
+        requiresExpiry: expiryApplicable,
+        expiryValid,
+      })
       result.numberMatch = numberMatch
       result.detectedDocumentNumber = docKey === 'governmentIdRepresentativeFront'
         ? ''
@@ -2622,21 +2679,8 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         expiryDaysRemaining: expiryApplicable ? expiryValidation.daysRemaining : null,
         expiryAccountHold: expiryApplicable ? expiryValidation.accountHold : false,
       }
-      result.scoreBreakdown = {
-        ocrQuality: Math.round(ocrQuality * 100),
-        readability: Math.round(readabilityScore * 100),
-        identityMatch: Math.round(identityScore * 100),
-        documentNumberMatch: Math.round(numberScore * 100),
-        expiryValidity: Math.round(expiryScore * 100),
-        weights: {
-          ocrQuality: 35,
-          readability: 15,
-          identityMatch: 10,
-          documentNumberMatch: 35,
-          expiryValidity: 5,
-        },
-      }
-      result.confidence = confidence
+      result.scoreBreakdown = score.breakdown
+      result.confidence = score.score
       const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
         && (!expiryApplicable || expiryValid)
       const expiredDocument = expiryApplicable && expiryValidation.expired
@@ -2646,7 +2690,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
         : isAuthorizationDocument ? 'manual_review'
-        : hasReadableText && confidence >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
+        : hasReadableText && score.score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
       if (!hasSomeText) {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
       } else if (expiredDocument) {

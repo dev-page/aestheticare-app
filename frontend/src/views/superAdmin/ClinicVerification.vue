@@ -331,7 +331,10 @@
             </div>
             <p class="mt-2 text-xs text-slate-400">
               Processed: {{ formatDateValue(selectedRecord.verificationProcessedAt) }}
-              <span v-if="selectedRecord.verificationThreshold !== null"> · Automatic threshold: {{ Math.round(Number(selectedRecord.verificationThreshold) * 100) }}%</span>
+              <span v-if="selectedRecord.verificationThreshold != null"> · Automatic threshold: {{ (Number(selectedRecord.verificationThreshold) * 100).toFixed(2) }}%</span>
+            </p>
+            <p class="mt-1 text-xs leading-relaxed text-slate-400">
+              Per-document OCR-Verified range: {{ (Number(selectedRecord.verificationThreshold || 0.74) * 100).toFixed(2) }}–100% when all applicable checks pass. Manual Review: below the threshold or any unclear or mismatched applicable check, even at a higher score. The total above is an average across documents, not the status cutoff. Authorization letters always need administrator review; documents expiring within 7 days are held, and expired or invalid documents require resubmission.
             </p>
             <div class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
               <div class="flex items-center justify-between gap-3">
@@ -360,7 +363,7 @@
                   </div>
                 </div>
                 <div class="mt-4 border-t border-slate-800 pt-3">
-                  <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Step 1 comparison</p>
+                  <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Applicant-provided information comparison</p>
                   <div v-if="result.comparisons.length" class="mt-2 space-y-3">
                     <div v-for="comparison in result.comparisons" :key="comparison.field" class="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                       <div class="flex flex-wrap items-center justify-between gap-2">
@@ -605,8 +608,8 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   .map(([key, result = {}]) => ({
   key,
   status: String(result.status || 'manual_review').replaceAll('_', ' '),
-  confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 100) : 0,
-  ocrConfidence: result.ocrConfidence == null || !Number.isFinite(Number(result.ocrConfidence)) ? null : Math.round(Number(result.ocrConfidence) * 100),
+  confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 10000) / 100 : 0,
+  ocrConfidence: result.ocrConfidence == null || !Number.isFinite(Number(result.ocrConfidence)) ? null : Math.round(Number(result.ocrConfidence) * 10000) / 100,
   comparisons: Array.isArray(result.comparisons) ? result.comparisons.map((comparison = {}) => ({
     field: String(comparison.field || ''),
     label: String(comparison.label || comparison.field || 'Registration detail'),
@@ -654,7 +657,7 @@ const documentUrl = (record, key) => record?.documents?.find((document) => docum
 const getOverallConfidence = (results = []) => {
   const scores = results.map((result) => Number(result.confidence)).filter((score) => Number.isFinite(score))
   if (!scores.length) return null
-  return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length)
+  return Math.round((scores.reduce((total, score) => total + score, 0) / scores.length) * 100) / 100
 }
 
 const getPlanDurationDays = (planKey) => (planKey === 'free-trial' ? 14 : 30)
