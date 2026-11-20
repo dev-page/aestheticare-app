@@ -1,20 +1,20 @@
 <template>
-  <div class="flex owner-theme bg-slate-900 min-h-screen">
+  <div class="flex owner-theme backup-page min-h-screen">
     <OwnerSidebar />
 
-    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'settings', fields: 2, sections: 1 }, { variant: 'table', columns: 5, rows: 4 }] }" class="flex-1 p-8">
+    <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'settings', fields: 2, sections: 1 }, { variant: 'table', columns: 5, rows: 4 }] }" class="backup-content flex-1 p-8">
       <OwnerPageSkeleton v-if="loading" />
       <div v-else>
       <div class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-white mb-2">Backup Database</h1>
-          <p class="text-slate-400">Generate and download a clinic data export for offline reference or analysis.</p>
-          <p class="mt-2 max-w-3xl text-xs leading-5 text-slate-500">Restore adds records missing from a saved backup and keeps existing records unchanged. Exports do not include every Firebase resource, uploaded files, or Firebase Authentication accounts.</p>
+          <h1 class="backup-title text-3xl font-bold mb-2">Backup Database</h1>
+          <p class="backup-muted">Generate and download a clinic data export for offline reference or analysis.</p>
+          <p class="backup-footnote mt-2 max-w-3xl text-xs leading-5">Restore adds records missing from a saved backup and keeps existing records unchanged. Exports include selected clinic records only; they do not include uploaded files or Firebase sign-in accounts.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800"
+            class="backup-button backup-button-secondary px-4 py-2 rounded-lg border"
             :disabled="loading"
             @click="refreshBackups"
           >
@@ -23,7 +23,7 @@
           <button
             v-if="canCreate"
             type="button"
-            class="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
+            class="backup-button backup-button-primary px-4 py-2 rounded-lg"
             :disabled="loading || creating"
             @click="createBackup"
           >
@@ -32,71 +32,71 @@
         </div>
       </div>
 
-      <p v-if="error" class="mb-4 text-sm text-rose-400">{{ error }}</p>
-      <p v-if="success" class="mb-4 text-sm text-emerald-300">{{ success }}</p>
+      <p v-if="error" class="backup-alert backup-alert-error mb-4 text-sm">{{ error }}</p>
+      <p v-if="success" class="backup-alert backup-alert-success mb-4 text-sm">{{ success }}</p>
 
       <section class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h2 class="text-sm text-slate-400 mb-1">Last Backup</h2>
-          <p class="text-lg text-white font-semibold">{{ lastBackupLabel }}</p>
-          <p class="text-xs text-slate-500 mt-1">{{ lastBackupStatus }}</p>
+        <div class="backup-card border rounded-xl p-6">
+          <h2 class="backup-label text-sm mb-1">Last Backup</h2>
+          <p class="backup-value text-lg font-semibold">{{ lastBackupLabel }}</p>
+          <p class="backup-footnote text-xs mt-1">{{ lastBackupStatus }}</p>
         </div>
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h2 class="text-sm text-slate-400 mb-1">Total Backups</h2>
-          <p class="text-lg text-white font-semibold">{{ backups.length }}</p>
+        <div class="backup-card border rounded-xl p-6">
+          <h2 class="backup-label text-sm mb-1">Total Backups</h2>
+          <p class="backup-value text-lg font-semibold">{{ backups.length }}</p>
         </div>
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h2 class="text-sm text-slate-400 mb-1">Latest Size</h2>
-          <p class="text-lg text-white font-semibold">{{ lastBackupSize }}</p>
+        <div class="backup-card border rounded-xl p-6">
+          <h2 class="backup-label text-sm mb-1">Latest Size</h2>
+          <p class="backup-value text-lg font-semibold">{{ lastBackupSize }}</p>
         </div>
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-          <h2 class="text-sm text-slate-400 mb-1">Automatic Exports</h2>
-          <p class="text-lg text-white font-semibold">{{ backupScheduleLabel }}</p>
-          <p class="text-xs text-slate-500 mt-1">{{ backupScheduleNote }}</p>
+        <div class="backup-card border rounded-xl p-6">
+          <h2 class="backup-label text-sm mb-1">Automatic Backups</h2>
+          <p class="backup-value text-lg font-semibold">{{ backupScheduleLabel }}</p>
+          <p class="backup-footnote text-xs mt-1">{{ backupScheduleNote }}</p>
         </div>
       </section>
 
-      <section class="bg-slate-800 border border-slate-700 rounded-xl overflow-visible">
-        <div class="px-4 py-3 border-b border-slate-700 text-sm text-slate-400">
+      <section class="backup-table-panel border rounded-xl overflow-visible">
+        <div class="backup-table-heading px-4 py-3 border-b text-sm">
           Backups
         </div>
 
         <div class="max-h-[720px] min-h-[520px] overflow-y-auto overflow-x-auto">
           <table class="w-full text-sm">
-            <thead class="border-b border-slate-700 bg-slate-800">
+            <thead class="backup-table-head border-b">
               <tr>
-                <th class="text-left text-slate-300 px-4 py-3">Created</th>
-                <th class="text-left text-slate-300 px-4 py-3">Status</th>
-                <th class="text-left text-slate-300 px-4 py-3">Size</th>
-                <th class="text-left text-slate-300 px-4 py-3">File</th>
-                <th class="text-right text-slate-300 px-4 py-3">Actions</th>
+                <th class="text-left px-4 py-3">Created</th>
+                <th class="text-left px-4 py-3">Status</th>
+                <th class="text-left px-4 py-3">Size</th>
+                <th class="text-left px-4 py-3">File</th>
+                <th class="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td class="px-4 py-3 text-slate-300" colspan="5">Loading backups...</td>
+                <td class="backup-table-empty px-4 py-3" colspan="5">Loading backups...</td>
               </tr>
               <tr v-else-if="!backups.length">
-                <td class="px-4 py-3 text-slate-300" colspan="5">No backups yet.</td>
+                <td class="backup-table-empty px-4 py-3" colspan="5">No backups yet.</td>
               </tr>
               <tr
                 v-for="backup in backups"
                 :key="backup.id"
-                class="border-b border-slate-700/60 last:border-b-0"
+                class="backup-table-row border-b last:border-b-0"
               >
-                <td class="px-4 py-3 text-slate-200">{{ backup.createdLabel }}</td>
+                <td class="backup-table-cell px-4 py-3">{{ backup.createdLabel }}</td>
                 <td class="px-4 py-3">
-                  <span class="px-2 py-1 rounded-md text-xs font-medium" :class="statusClass(backup.status)">
+                  <span class="backup-status px-2 py-1 rounded-md text-xs font-medium" :class="statusClass(backup.status)">
                     {{ backup.status || 'Unknown' }}
                   </span>
                 </td>
-                <td class="px-4 py-3 text-slate-300">{{ backup.sizeLabel }}</td>
-                <td class="px-4 py-3 text-slate-400">{{ backup.fileName || '-' }}</td>
+                <td class="backup-table-cell px-4 py-3">{{ backup.sizeLabel }}</td>
+                <td class="backup-table-muted px-4 py-3">{{ backup.fileName || '-' }}</td>
                 <td class="px-4 py-3 text-right">
                   <div class="relative inline-block text-left">
                     <button
                       type="button"
-                      class="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-700"
+                      class="backup-button backup-button-secondary backup-download-button px-3 py-1.5 rounded-lg border"
                       :disabled="!backup.storagePath || downloadingId === backup.id"
                       @click="openDownloadMenu(backup, $event)"
                       :title="downloadTooltip"
@@ -121,14 +121,14 @@
       @click="closeMenu"
     >
       <div
-        class="absolute w-48 origin-top-right rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
+        class="backup-menu absolute w-48 origin-top-right rounded-lg border"
         :style="{ top: `${menuState.y}px`, left: `${menuState.x}px` }"
         @click.stop
       >
         <button
           v-if="canRestoreBackups"
           type="button"
-          class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          class="backup-menu-item w-full text-left px-4 py-2 text-sm"
           :disabled="menuState.backup?.status !== 'complete'"
           @click="openRestoreDialog(menuState.backup)"
         >
@@ -136,21 +136,21 @@
         </button>
         <button
           type="button"
-          class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          class="backup-menu-item w-full text-left px-4 py-2 text-sm"
           @click="downloadBackup(menuState.backup)"
         >
           Download JSON
         </button>
         <button
           type="button"
-          class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          class="backup-menu-item w-full text-left px-4 py-2 text-sm"
           @click="downloadCsv(menuState.backup)"
         >
           Export CSV
         </button>
         <button
           type="button"
-          class="w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          class="backup-menu-item w-full text-left px-4 py-2 text-sm"
           @click="downloadZip(menuState.backup)"
         >
           Download ZIP
@@ -165,22 +165,22 @@
       class="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
       @click.self="closeRestoreDialog"
     >
-      <section role="dialog" aria-modal="true" aria-labelledby="restore-backup-title" class="w-full max-w-lg rounded-xl border border-slate-600 bg-slate-900 p-6 shadow-2xl">
-        <h2 id="restore-backup-title" class="text-xl font-semibold text-white">Restore missing clinic records?</h2>
-        <p class="mt-3 text-sm leading-6 text-slate-300">
+      <section role="dialog" aria-modal="true" aria-labelledby="restore-backup-title" class="backup-dialog w-full max-w-lg rounded-xl border p-6">
+        <h2 id="restore-backup-title" class="backup-dialog-title text-xl font-semibold">Restore missing clinic records?</h2>
+        <p class="backup-dialog-copy mt-3 text-sm leading-6">
           This adds records from <strong>{{ restoreState.backup?.fileName }}</strong> only when their document is missing. Records that exist now will be left unchanged.
         </p>
-        <p class="mt-2 text-sm leading-6 text-slate-400">
+        <p class="backup-dialog-note mt-2 text-sm leading-6">
           This cannot restore uploaded files or Firebase sign-in accounts. Staff profiles may be restored, but their sign-in accounts must still exist.
         </p>
-        <label class="mt-5 flex items-start gap-3 text-sm text-slate-200">
+        <label class="backup-dialog-copy mt-5 flex items-start gap-3 text-sm">
           <input v-model="restoreConfirmed" type="checkbox" class="mt-1 accent-emerald-500" :disabled="restoring" />
           <span>I understand this will add missing records from the selected backup.</span>
         </label>
-        <p v-if="restoreError" class="mt-3 text-sm text-rose-300">{{ restoreError }}</p>
+        <p v-if="restoreError" class="backup-alert backup-alert-error mt-3 text-sm">{{ restoreError }}</p>
         <div class="mt-6 flex justify-end gap-3">
-          <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" :disabled="restoring" @click="closeRestoreDialog">Cancel</button>
-          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!restoreConfirmed || restoring" @click="restoreBackup">
+          <button type="button" class="backup-button backup-button-secondary rounded-lg border px-4 py-2 text-sm" :disabled="restoring" @click="closeRestoreDialog">Cancel</button>
+          <button type="button" class="backup-button backup-button-primary rounded-lg px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="!restoreConfirmed || restoring" @click="restoreBackup">
             {{ restoring ? 'Restoring…' : 'Restore missing records' }}
           </button>
         </div>
@@ -268,15 +268,15 @@ const formatBytes = (bytes) => {
 const statusClass = (status) => {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'complete' || normalized === 'success') {
-    return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+    return 'is-complete'
   }
   if (normalized === 'processing') {
-    return 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+    return 'is-processing'
   }
   if (normalized === 'failed') {
-    return 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+    return 'is-failed'
   }
-  return 'bg-slate-600/30 text-slate-200 border border-slate-500/40'
+  return 'is-unknown'
 }
 
 const lastBackup = computed(() => backups.value[0])
@@ -286,9 +286,9 @@ const lastBackupSize = computed(() => (lastBackup.value ? lastBackup.value.sizeL
 const downloadTooltip = 'Your browser will choose the save location.'
 
 const backupScheduleLabel = computed(() => {
-  if (backupScheduleLoading.value) return 'Checking server…'
+  if (backupScheduleLoading.value) return 'Checking server...'
   if (!backupSchedule.value) return 'Status unavailable'
-  if (!backupSchedule.value.enabled) return 'Disabled on server'
+  if (!backupSchedule.value.enabled) return 'Off'
   const hour = Number(backupSchedule.value.dailyHour)
   const time = Number.isFinite(hour)
     ? new Date(2000, 0, 1, hour).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
@@ -297,10 +297,10 @@ const backupScheduleLabel = computed(() => {
 })
 
 const backupScheduleNote = computed(() => {
-  if (backupScheduleLoading.value) return 'Reading the backend schedule configuration.'
-  if (!backupSchedule.value) return 'The backend schedule could not be checked.'
-  if (!backupSchedule.value.enabled) return 'Enable BACKUP_SCHEDULE_ENABLED on the server to run automatic exports.'
-  return `Monthly export on day ${backupSchedule.value.monthlyDay} · ${backupSchedule.value.timeZone || 'server time'}`
+  if (backupScheduleLoading.value) return 'Checking whether automatic backups are enabled.'
+  if (!backupSchedule.value) return 'Automatic backup status could not be checked.'
+  if (!backupSchedule.value.enabled) return 'Automatic backups are off on this server. You can create one manually here.'
+  return `A monthly archive is also created on day ${backupSchedule.value.monthlyDay}. Times use ${backupSchedule.value.timeZone || 'server time'}.`
 })
 
 const refreshBackupSchedule = async () => {
@@ -650,3 +650,42 @@ onUnmounted(() => {
   if (unsubscribe) unsubscribe()
 })
 </script>
+
+<style scoped>
+.backup-page { background: var(--ac-bg); color: var(--ac-text); }
+.backup-content { min-width: 0; background: transparent; color: var(--ac-text); }
+.backup-title { color: var(--ac-text); }
+.backup-muted, .backup-label, .backup-table-heading { color: var(--ac-text-secondary); }
+.backup-footnote, .backup-table-muted { color: var(--ac-text-muted); }
+.backup-card, .backup-table-panel { background: var(--ac-surface); border-color: var(--ac-border); box-shadow: var(--ac-shadow-sm); }
+.backup-value, .backup-table-cell { color: var(--ac-text); }
+.backup-table-heading { border-color: var(--ac-border); }
+.backup-table-head { background: var(--ac-surface-muted); border-color: var(--ac-border); color: var(--ac-text-secondary); }
+.backup-table-row { border-color: var(--ac-border); }
+.backup-table-row:hover { background: var(--ac-surface-soft); }
+.backup-table-empty { color: var(--ac-text-muted); }
+.backup-button { min-height: 2.5rem; font-weight: 600; transition: background-color .16s ease, border-color .16s ease, color .16s ease; }
+.backup-button:disabled { cursor: not-allowed; opacity: .6; }
+.backup-button-secondary { border-color: var(--ac-border-strong); background: var(--ac-surface); color: var(--ac-text-secondary); }
+.backup-button-secondary:hover:not(:disabled) { background: var(--ac-surface-muted); border-color: var(--ac-accent); color: var(--ac-text); }
+.backup-button-primary { background: var(--ac-primary); color: var(--ac-on-primary); }
+.backup-button-primary:hover:not(:disabled) { background: var(--ac-primary-hover); }
+.backup-status { display: inline-flex; align-items: center; border: 1px solid transparent; }
+.backup-status.is-complete { color: var(--ac-success); background: var(--ac-success-bg); border-color: var(--ac-success); }
+.backup-status.is-processing { color: var(--ac-warning-text); background: var(--ac-warning-bg); border-color: var(--ac-border-strong); }
+.backup-status.is-failed { color: var(--ac-danger); background: var(--ac-danger-bg); border-color: var(--ac-danger); }
+.backup-status.is-unknown { color: var(--ac-text-secondary); background: var(--ac-surface-muted); border-color: var(--ac-border); }
+.backup-menu, .backup-dialog { color: var(--ac-text); background: var(--ac-surface); border-color: var(--ac-border); box-shadow: var(--ac-shadow-lg); }
+.backup-menu-item { color: var(--ac-text-secondary); }
+.backup-menu-item:hover:not(:disabled) { color: var(--ac-text); background: var(--ac-surface-muted); }
+.backup-menu-item:disabled { color: var(--ac-text-muted); cursor: not-allowed; }
+.backup-dialog-title { color: var(--ac-text); }
+.backup-dialog-copy { color: var(--ac-text-secondary); }
+.backup-dialog-note { color: var(--ac-text-muted); }
+.backup-alert-error { color: var(--ac-danger); }
+.backup-alert-success { color: var(--ac-success); }
+@media (max-width: 640px) {
+  .backup-content { padding: 1rem; }
+  .backup-card { padding: 1rem; }
+}
+</style>

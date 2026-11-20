@@ -243,7 +243,7 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     check(services.every((service) => String(service.termsAndConditions || '').trim()), 'The clinic must publish contract terms for each selected service before it can be booked.')
   }
   if (isOnline) {
-    const notice = `Online consultation: ${duration} minutes from the verified start. Join up to five minutes early. Arrival grace: ${consultationPolicy.graceMinutes} minutes. Late arrivals and connection failures require clinic review before penalties, rescheduling, or refunds. Report delivery problems within 48 hours of completion.`
+    const notice = `Online consultation: ${duration} minutes from the verified start. Join up to five minutes early. Arrival grace: ${consultationPolicy.graceMinutes} minutes. If the assigned practitioner is present and the customer has not entered the waiting room by the end of this period, the appointment is automatically recorded as a no-show and the payment is retained. If a clinic-side or connection issue prevented attendance, report it within 48 hours for clinic review.`
     terms += '\n\n' + notice
     if (contractDocument) contractDocument.sections.push({ title: 'Online consultation timing and review', text: notice })
   }

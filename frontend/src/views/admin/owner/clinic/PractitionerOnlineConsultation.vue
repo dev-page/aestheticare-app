@@ -27,6 +27,7 @@
               <option value="">All</option>
               <option value="Scheduled">Scheduled</option>
               <option value="Completed">Completed</option>
+              <option value="No-show">No-show</option>
               <option value="Cancelled">Cancelled</option>
             </select>
           </div>
@@ -55,7 +56,7 @@
             </thead>
             <tbody class="divide-y divide-slate-700">
               <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Demo</span></td>
+                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Demo</span><span v-if="String(appointment.status || '').toLowerCase() === 'no-show'" class="ml-2 rounded-full bg-rose-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-200">No-show · payment retained</span></td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
                 <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
                 <td class="px-6 py-4">

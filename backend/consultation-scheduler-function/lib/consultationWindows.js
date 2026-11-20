@@ -54,6 +54,45 @@ export const closeExpiredConsultations = async admin => {
         return true
       }
       if (now < window.arrivalDeadline) return false
+      // A no-show is attributable to the customer only when the practitioner
+      // entered the waiting room and the customer did not. If the customer
+      // entered, or clinic attendance is unclear, keep it in clinic review.
+      const customerNoShow = !appointment.clientJoinedAt && Boolean(appointment.practitionerJoinedAt)
+        && !appointment.consultationNeedsReview && appointment.consultationDispute?.status !== 'Open'
+      if (customerNoShow) {
+        const status = 'No-show'
+        const reason = `The customer did not enter the waiting room within the ${window.policy.graceMinutes}-minute arrival grace period while the practitioner was present.`
+        tx.update(doc.ref, {
+          status,
+          noShowAt: stamp,
+          noShowMarkedById: 'system',
+          noShowOutcome: 'Forfeited',
+          noShowReason: reason,
+          consultationWindowEndedAt: stamp,
+          consultationEndedByTimer: true,
+          consultationEndedAt: appointment.consultationEndedAt || window.arrivalDeadline.toISOString(),
+          consultationEndedById: appointment.consultationEndedById || 'system',
+          consultationActualDurationSeconds: 0,
+          consultationNeedsReview: false,
+          updatedAt: stamp,
+        })
+        tx.set(db.collection('appointmentAudit').doc(), { appointmentId: doc.id, branchId: appointment.branchId, actorId: 'system', action: 'no_show', previousStatus: appointment.status, nextStatus: status, noShowOutcome: 'Forfeited', createdAt: stamp })
+        if (appointment.customerId) tx.set(db.collection('notifications').doc('consultation-no-show-customer-' + doc.id), {
+          recipientUserId: appointment.customerId,
+          title: 'Online consultation marked as a no-show',
+          message: `You did not enter the consultation within the ${window.policy.graceMinutes}-minute arrival grace period. The appointment was marked as a no-show and the payment was retained. If a technical or clinic-side issue prevented you from joining, report it within 48 hours for review.`,
+          link: '/customer/appointments', read: false, createdAt: stamp,
+        })
+        const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId
+        if (practitionerId) tx.set(db.collection('notifications').doc('consultation-no-show-practitioner-' + doc.id), {
+          recipientUserId: practitionerId,
+          branchId: appointment.branchId,
+          title: 'Online consultation no-show recorded',
+          message: 'The customer did not enter the waiting room before the arrival grace period ended. The appointment was automatically marked as a no-show; no refund was issued.',
+          link: '/crm/appointments?tab=queue&mode=online', read: false, createdAt: stamp,
+        })
+        return true
+      }
       const status = 'Consultation Review'
       tx.update(doc.ref, { status, consultationReviewReason: 'Arrival grace period elapsed. Review attendance, practitioner availability, and technical problems before assigning fault.', consultationWindowEndedAt: stamp, consultationEndedByTimer: true, consultationEndedAt: appointment.consultationEndedAt || window.arrivalDeadline.toISOString(), consultationEndedById: appointment.consultationEndedById || 'system', consultationActualDurationSeconds: 0, consultationNeedsReview: true, updatedAt: stamp })
       tx.set(db.collection('appointmentAudit').doc(), { appointmentId: doc.id, branchId: appointment.branchId, actorId: 'system', action: 'consultation_window_expired', previousStatus: appointment.status, nextStatus: status, createdAt: stamp })
