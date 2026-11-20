@@ -70,6 +70,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Payroll Management', icon: 'mdi:calculator', to: '/finance/payroll-management', feature: 'payroll', permission: 'payroll:update' },
       { label: 'Payroll Approval', icon: 'mdi:cash-check', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
       { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'finance:payables:view' },
+      { label: 'Other Expenses', icon: 'mdi:cash-minus', to: '/finance/expenses-payments?tab=other', permission: 'finance:payables:view' },
     ]
   },
   {

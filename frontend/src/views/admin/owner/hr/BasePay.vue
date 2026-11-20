@@ -1,7 +1,7 @@
 <script>
 import { usePageLoading } from '@/composables/usePageLoading'
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -26,6 +26,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const loading = ref(false)
     const savingId = ref('')
     const basePayErrors = ref({})
+    const editingStaff = ref(null)
+    const basePayRateInput = ref(null)
+    let lastEditButton = null
 
     const loadStaff = trackPageLoad(async () => {
       if (!currentBranchId.value) {
@@ -62,7 +65,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const saveBasePay = async (staff) => {
-      if (!staff) return
+      if (!staff) return false
       const rawValue = String(staff.basePay ?? '').trim()
       const hasBasePay = Boolean(rawValue)
       const basePayValue = Number(rawValue)
@@ -85,7 +88,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (validationMessage) {
         basePayErrors.value = { ...basePayErrors.value, [staff.id]: validationMessage }
         toast.error(validationMessage)
-        return
+        return false
       }
       const nextErrors = { ...basePayErrors.value }
       delete nextErrors[staff.id]
@@ -108,13 +111,39 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           targetUserName: staff.fullName
         })
 
+        const staffIndex = staffList.value.findIndex((entry) => entry.id === staff.id)
+        if (staffIndex >= 0) staffList.value.splice(staffIndex, 1, { ...staffList.value[staffIndex], ...updates })
         toast.success('Base pay saved.')
+        return true
       } catch (error) {
         console.error('Failed to save base pay:', error)
         toast.error('Failed to save base pay.')
+        return false
       } finally {
         savingId.value = ''
       }
+    }
+
+    const openEditModal = async (staff, event) => {
+      editingStaff.value = { ...staff }
+      clearBasePayError(staff.id)
+      lastEditButton = event?.currentTarget || null
+      await nextTick()
+      basePayRateInput.value?.focus()
+    }
+
+    const closeEditModal = async () => {
+      if (savingId.value) return
+      editingStaff.value = null
+      await nextTick()
+      lastEditButton?.focus?.()
+      lastEditButton = null
+    }
+
+    const submitEditModal = async () => {
+      const staff = editingStaff.value
+      if (!staff || savingId.value) return
+      if (await saveBasePay(staff)) await closeEditModal()
     }
 
     const clearBasePayError = (staffId) => {
@@ -135,6 +164,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       staff.basePay = value === '' ? '' : Number(value)
       clearBasePayError(staff.id)
+    }
+
+    const payModelLabel = (model) => ({
+      hourly: 'Hourly / Professional Fee',
+      daily: 'Daily',
+      'monthly-retainer': 'Monthly Retainer',
+    })[model] || 'Pay model not set'
+
+    const basePaySummary = (staff) => {
+      if (staff.basePay === '' || staff.basePay == null || !Number.isFinite(Number(staff.basePay))) return 'Not configured'
+      const amount = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(staff.basePay))
+      const unit = staff.basePayModel === 'daily' ? ' / day' : staff.basePayModel === 'monthly-retainer' ? ' / month' : ' / hour'
+      return `${amount}${unit}`
     }
 
     let unsubscribeAuth = null
@@ -171,8 +213,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       loading,
       savingId,
       basePayErrors,
+      editingStaff,
+      basePayRateInput,
       clearBasePayError,
       updateBasePayRate,
+      payModelLabel,
+      basePaySummary,
+      openEditModal,
+      closeEditModal,
+      submitEditModal,
       saveBasePay
     }
   }
@@ -196,11 +245,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           <PageSectionSkeleton variant="table" :rows="6" :columns="4" />
         </div>
         <p class="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-          Student interns / OJT do not receive employee base pay through payroll. Record any clinic stipend in <a class="underline underline-offset-2" href="/finance/expenses-payments?tab=other">Finance → Other Expenses</a>.
+          Student interns / OJT are excluded from employee payroll. Record each approved allowance in <a class="underline underline-offset-2" href="/finance/expenses-payments?tab=other">Finance → Other Expenses</a> with category “Student intern / OJT allowance,” the intern as payee, and the coverage period in the notes. Then record the payment there.
         </p>
         <p class="mb-4 text-sm text-slate-400">Hourly pay uses worked hours; daily pay uses completed attendance days. A fixed monthly retainer pays the full agreed monthly amount without automatic proration. Configure its agreed monthly hours for the hourly equivalent.</p>
-        <p class="mb-4 text-sm text-slate-400">Record each employee’s start date here. HR uses it to check the clinic’s paid leave eligibility rule.</p>
-        <table class="w-full text-left min-w-[900px] border-collapse">
+        <p class="mb-4 text-sm text-slate-400">Employment start date is used to check paid leave eligibility; it does not set or change payroll amounts.</p>
+        <table class="w-full text-left min-w-[620px] border-collapse">
           <thead>
             <tr class="text-slate-400 uppercase text-xs sm:text-sm border-b border-slate-700">
               <th class="py-2 px-3 sm:py-3 sm:px-4">Employee</th>
@@ -214,34 +263,18 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <td class="py-2 px-3 sm:py-3 sm:px-4 font-medium">{{ staff.fullName }}</td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">{{ staff.role }}</td>
               <td class="py-2 px-3 sm:py-3 sm:px-4">
-                <ContractAppearanceSelect :id="`base-pay-model-${staff.id}`" v-model="staff.basePayModel" label="Pay model" :options="[{ value: 'hourly', label: 'Hourly / Professional Fee' }, { value: 'daily', label: 'Daily' }, { value: 'monthly-retainer', label: 'Monthly Retainer' }]" />
-                <label :for="`base-pay-rate-${staff.id}`" class="block mb-2 text-xs">Rate (PHP)</label>
-                <input
-                  :id="`base-pay-rate-${staff.id}`"
-                  type="number"
-                  min="0.01"
-                  max="1000000"
-                  step="0.01"
-                  :value="staff.basePay"
-                  inputmode="decimal"
-                  maxlength="12"
-                  @keydown="($event.key === '-' || $event.key === 'Subtract') && $event.preventDefault()"
-                  @input="updateBasePayRate(staff, $event)"
-                  :aria-invalid="!!basePayErrors[staff.id]"
-                  :aria-describedby="basePayErrors[staff.id] ? `base-pay-error-${staff.id}` : undefined"
-                  class="w-full min-w-[140px] px-3 py-2 rounded-lg bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <label v-if="staff.basePayModel === 'monthly-retainer'" class="block mt-3 text-xs">Agreed monthly hours<input v-model.number="staff.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border px-3 py-2" /></label>
-                <label class="block mt-3 text-xs">Employment start date<input v-model="staff.employmentStartDate" type="date" class="mt-2 w-full rounded-lg border px-3 py-2" /></label>
-                <p v-if="basePayErrors[staff.id]" :id="`base-pay-error-${staff.id}`" class="mt-1 text-xs text-rose-300" role="alert">{{ basePayErrors[staff.id] }}</p>
+                <strong class="block">{{ basePaySummary(staff) }}</strong>
+                <small class="text-slate-400">{{ payModelLabel(staff.basePayModel) }}<template v-if="staff.basePayModel === 'monthly-retainer'"> · {{ staff.monthlyBaseHours }} agreed hours / month</template></small>
               </td>
-              <td class="py-2 px-3 sm:py-3 sm:px-4">
+              <td class="py-2 px-3 sm:py-3 sm:px-4 text-right">
                 <button
-                  @click="saveBasePay(staff)"
-                  :disabled="savingId === staff.id"
-                  class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  @click="openEditModal(staff, $event)"
+                  :aria-label="`Edit compensation for ${staff.fullName}`"
+                  :title="`Edit compensation for ${staff.fullName}`"
+                  class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-700/30 bg-amber-800 text-white transition hover:bg-amber-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
                 >
-                  {{ savingId === staff.id ? 'Saving...' : 'Save' }}
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
                 </button>
               </td>
             </tr>
@@ -253,5 +286,55 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         </table>
       </div>
     </component>
+
+    <div v-if="editingStaff" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-4" @click.self="closeEditModal" @keydown.esc.stop.prevent="closeEditModal">
+      <form class="app-modal-panel finance-dialog w-full max-w-xl overflow-y-auto rounded-2xl border border-amber-800/25 bg-slate-900 p-5 text-white shadow-2xl sm:p-7" role="dialog" aria-modal="true" aria-labelledby="base-pay-modal-title" :aria-busy="savingId === editingStaff.id" @submit.prevent="submitEditModal">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-700 pb-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[.18em] text-amber-300">Employee compensation</p>
+            <h2 id="base-pay-modal-title" class="mt-1 text-xl font-bold">{{ editingStaff.fullName }}</h2>
+            <p class="mt-1 text-sm text-slate-400">{{ editingStaff.role }}</p>
+          </div>
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800" aria-label="Close compensation editor" :disabled="savingId === editingStaff.id" @click="closeEditModal">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18" stroke-linecap="round"/></svg>
+          </button>
+        </header>
+
+        <div class="mt-5 grid gap-4">
+          <ContractAppearanceSelect :id="`base-pay-model-${editingStaff.id}`" v-model="editingStaff.basePayModel" label="Pay model" :options="[{ value: 'hourly', label: 'Hourly / Professional Fee' }, { value: 'daily', label: 'Daily' }, { value: 'monthly-retainer', label: 'Monthly Retainer' }]" />
+          <label :for="`base-pay-rate-${editingStaff.id}`" class="block text-sm font-medium">Rate (PHP)
+            <input
+              :id="`base-pay-rate-${editingStaff.id}`"
+              ref="basePayRateInput"
+              type="number"
+              min="0.01"
+              max="1000000"
+              step="0.01"
+              :value="editingStaff.basePay"
+              inputmode="decimal"
+              maxlength="12"
+              @keydown="($event.key === '-' || $event.key === 'Subtract') && $event.preventDefault()"
+              @input="updateBasePayRate(editingStaff, $event)"
+              :aria-invalid="!!basePayErrors[editingStaff.id]"
+              :aria-describedby="basePayErrors[editingStaff.id] ? `base-pay-error-${editingStaff.id}` : undefined"
+              class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"
+            />
+          </label>
+          <label v-if="editingStaff.basePayModel === 'monthly-retainer'" class="block text-sm font-medium">Agreed monthly hours
+            <input v-model.number="editingStaff.monthlyBaseHours" type="number" min="1" max="744" step="1" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+          </label>
+          <label class="block text-sm font-medium">Employment start date
+            <input v-model="editingStaff.employmentStartDate" type="date" class="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white" />
+          </label>
+          <p class="text-xs text-slate-400">Used for paid leave eligibility; payroll amounts are calculated from the saved pay terms and attendance.</p>
+          <p v-if="basePayErrors[editingStaff.id]" :id="`base-pay-error-${editingStaff.id}`" class="text-sm text-rose-300" role="alert">{{ basePayErrors[editingStaff.id] }}</p>
+        </div>
+
+        <footer class="mt-6 flex justify-end gap-3 border-t border-slate-700 pt-4">
+          <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" :disabled="savingId === editingStaff.id" @click="closeEditModal">Cancel</button>
+          <button type="submit" class="rounded-lg bg-amber-800 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-900 disabled:cursor-not-allowed disabled:opacity-50" :disabled="savingId === editingStaff.id">{{ savingId === editingStaff.id ? 'Saving…' : 'Save changes' }}</button>
+        </footer>
+      </form>
+    </div>
   </div>
 </template>

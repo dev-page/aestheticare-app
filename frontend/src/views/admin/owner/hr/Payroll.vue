@@ -7,6 +7,7 @@
         <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Payroll Management</h1>
         <p class="text-slate-400 text-sm md:text-base">Create payroll entries and generate payslips for your branch staff.</p>
       </div>
+      <p v-if="pageDataError" role="status" class="mb-4 rounded-lg border border-rose-500/40 bg-rose-950/30 px-4 py-3 text-sm text-rose-200">{{ pageDataError }}</p>
 
       <section class="mb-6 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4" aria-label="Payroll workflow">
         <div class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300"><strong class="block text-amber-300">1. HR prepares</strong>Payroll is calculated from attendance, approved overtime, base pay, and deductions.</div>
@@ -102,6 +103,9 @@
               {{ summaryStatusLabel }}
             </span>
           </div>
+          <p v-if="summaryStatusUnavailable" role="status" class="mb-4 text-sm text-rose-200">
+            Payroll approval status is unavailable. Payroll changes are paused until it can be loaded.
+          </p>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-300 mb-4">
             <div class="bg-slate-700/60 rounded-lg px-4 py-3 border border-slate-600">
@@ -122,7 +126,7 @@
             <button
               type="button"
               class="bg-amber-500/90 hover:bg-amber-500 text-slate-900 px-4 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="summaryLoading || isPayrollApproved"
+              :disabled="summaryLoading || isPayrollApproved || summaryStatusUnavailable"
               @click="generateMonthlySummary"
             >
               {{ summaryLoading ? 'Generating...' : 'Generate Summary (All Employees)' }}
@@ -130,7 +134,7 @@
             <button
               type="button"
               class="border border-slate-500 text-slate-200 px-4 py-2 rounded-lg font-semibold hover:bg-slate-700/60"
-              :disabled="!monthlyPayrollEntries.length"
+              :disabled="!monthlyPayrollEntries.length || summaryStatusUnavailable"
               @click="openSummaryModalForMonth(approvalMonthKey, approvalMonthLabel, isPayrollApproved)"
             >
               View Summary Details
@@ -444,9 +448,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp())
 
     const loading = ref(false)
+    const pageDataError = ref('')
     const currentUserId = ref('')
     const currentBranchId = ref('')
     const isPayrollApproved = ref(false)
+    const summaryStatusUnavailable = ref(false)
     const approvalMonthKey = computed(() => {
       const now = new Date()
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -506,6 +512,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const summaryStatusLabel = computed(() => {
+      if (summaryStatusUnavailable.value) return 'Unavailable'
       const status = String(summaryStatus.value || 'pending').toLowerCase()
       if (status === 'approved') return 'Approved'
       if (status === 'rejected') return 'Rejected'
@@ -513,6 +520,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const summaryStatusClass = computed(() => {
+      if (summaryStatusUnavailable.value) return 'bg-rose-500/20 text-rose-300'
       const status = String(summaryStatus.value || 'pending').toLowerCase()
       if (status === 'approved') return 'bg-emerald-500/20 text-emerald-300'
       if (status === 'rejected') return 'bg-rose-500/20 text-rose-300'
@@ -1085,6 +1093,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const generateMonthlySummary = async () => {
+      if (summaryStatusUnavailable.value) return
       if (isPayrollApproved.value) { toast.info('Approved payroll is locked. Finance must review any adjustment separately.'); return }
       if (!currentBranchId.value) return
       summaryLoading.value = true
@@ -1388,6 +1397,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
 
     const savePayrollAndPayslip = async () => {
+      if (summaryStatusUnavailable.value) return
       const employee = employees.value.find(item => item.id === selectedEmployeeId.value)
       if (!employee) { toast.error('Choose an employee.'); return }
       if (isPayrollApproved.value) { toast.error('Approved payroll is locked.'); return }
@@ -1440,6 +1450,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     onMounted(trackPageLoad(() => {
       unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
+        pageDataError.value = ''
         if (!user) {
           currentUserId.value = ''
           currentBranchId.value = ''
@@ -1449,59 +1460,48 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         currentUserId.value = user.uid
-        const userDoc = await getDoc(doc(db, 'users', user.uid))
-        currentBranchId.value = userDoc.exists() ? (userDoc.data().branchId || '') : ''
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid))
+          currentBranchId.value = userDoc.exists() ? (userDoc.data().branchId || '') : ''
 
-        if (!currentBranchId.value) {
-          employees.value = []
-          payrolls.value = []
-          toast.error('Your account has no branch assignment.', { toastId: 'missing-branch-assignment' })
-          return
-        }
+          if (!currentBranchId.value) {
+            employees.value = []
+            payrolls.value = []
+            pageDataError.value = 'Your account has no branch assignment. Ask your clinic owner to assign one.'
+            return
+          }
 
-        await loadEmployees()
-        await loadPayrolls()
-        await loadPayrollSettings()
-        await loadPayslips()
-        await loadApprovedSummaries()
-
-        if (currentBranchId.value) {
-          if (unsubscribeApproval) unsubscribeApproval()
-          const summaryId = `${currentBranchId.value}_${approvalMonthKey.value}`
-          unsubscribeApproval = pageListener(onSnapshot, doc(db, 'payrollSummaries', summaryId), (snap) => {
-            if (!snap.exists()) {
-              isPayrollApproved.value = false
-              summaryStatus.value = 'pending'
-              summaryUpdatedAt.value = null
-              summaryTotals.value = {
-                totalEmployees: 0,
-                totalPayroll: 0,
-                totalNetPay: 0,
-                totalDeductions: 0
-              }
-              return
-            }
-            const data = snap.data() || {}
-            summaryStatus.value = data.status || 'pending'
-            summaryUpdatedAt.value = data.updatedAt || data.createdAt || null
-            summaryTotals.value = {
-              totalEmployees: Number(data.totalEmployees || 0),
-              totalPayroll: Number(data.totalPayroll || 0),
-              totalNetPay: Number(data.totalNetPay || 0),
-              totalDeductions: Number(data.totalDeductions || 0)
-            }
-            isPayrollApproved.value = String(data.status || '').toLowerCase() === 'approved'
-          })
+          await loadEmployees()
+          await loadPayrolls()
+          await loadPayrollSettings()
+          await loadPayslips()
+          await loadApprovedSummaries()
+        } catch (_error) {
+          pageDataError.value = 'Payroll information could not be loaded. Refresh the page to try again.'
         }
       })
     }))
 
     watch(currentBranchId, (branchId) => {
+      if (unsubscribeApproval) {
+        unsubscribeApproval()
+        unsubscribeApproval = null
+      }
+      summaryStatusUnavailable.value = false
+      isPayrollApproved.value = false
+      summaryStatus.value = 'pending'
+      summaryUpdatedAt.value = null
+      summaryTotals.value = { totalEmployees: 0, totalPayroll: 0, totalNetPay: 0, totalDeductions: 0 }
       if (!branchId) return
-      if (unsubscribeApproval) unsubscribeApproval()
-      const summaryId = `${branchId}_${approvalMonthKey.value}`
-      unsubscribeApproval = pageListener(onSnapshot, doc(db, 'payrollSummaries', summaryId), (snap) => {
-        if (!snap.exists()) {
+      const summariesQuery = query(
+        collection(db, 'payrollSummaries'),
+        where('branchId', '==', branchId)
+      )
+      unsubscribeApproval = pageListener(onSnapshot, summariesQuery, (snapshot) => {
+        const summary = snapshot.docs.find((summaryDoc) => summaryDoc.id === `${branchId}_${approvalMonthKey.value}`)
+          || snapshot.docs.find((summaryDoc) => summaryDoc.data()?.monthKey === approvalMonthKey.value)
+        summaryStatusUnavailable.value = false
+        if (!summary) {
           isPayrollApproved.value = false
           summaryStatus.value = 'pending'
           summaryUpdatedAt.value = null
@@ -1513,7 +1513,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
           return
         }
-        const data = snap.data() || {}
+        const data = summary.data() || {}
         summaryStatus.value = data.status || 'pending'
         summaryUpdatedAt.value = data.updatedAt || data.createdAt || null
         summaryTotals.value = {
@@ -1523,6 +1523,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           totalDeductions: Number(data.totalDeductions || 0)
         }
         isPayrollApproved.value = String(data.status || '').toLowerCase() === 'approved'
+      }, () => {
+        summaryStatusUnavailable.value = true
+        isPayrollApproved.value = false
       })
     })
 
@@ -1533,6 +1536,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     return {
       pageLoading,
+      pageDataError,
       loading,
       employees,
       payrolls,
@@ -1555,6 +1559,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       formatCurrency,
       formatDate,
       isPayrollApproved,
+      summaryStatusUnavailable,
       approvalMonthLabel,
       summaryLoading,
       summaryStatusLabel,
