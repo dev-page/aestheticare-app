@@ -72,7 +72,10 @@ const generateSecurePassword = (length = PASSWORD_LENGTH) => {
 export default {
   name: 'AddStaff',
   components: { OwnerSidebar, OwnerPageSkeleton, ContractAppearanceSelect, CreateAccountScheduleStep, CreateAccountCommissionAgreements },
-  props: { embedded: { type: Boolean, default: false } },
+  props: {
+    embedded: { type: Boolean, default: false },
+    inline: { type: Boolean, default: false },
+  },
   emits: ['close'],
   setup(props, { emit }) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -1024,12 +1027,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 </script>
 
 <template>
-  <div class="flex flex-row owner-theme w-full" :class="embedded ? 'fixed inset-0 z-[10000] items-center justify-center bg-black/70 p-2 sm:p-5' : 'bg-slate-900 min-h-screen'" tabindex="-1" @click.self="requestClose" @keydown.esc.stop.prevent="requestClose">
-    <OwnerSidebar v-if="!embedded" />
+  <div class="flex flex-row owner-theme w-full" :class="embedded ? 'fixed inset-0 z-[10000] items-center justify-center bg-black/70 p-2 sm:p-5' : inline ? 'min-w-0' : 'bg-slate-900 min-h-screen'" :tabindex="embedded ? -1 : undefined" @click.self="embedded && requestClose()" @keydown.esc.stop.prevent="embedded && requestClose()">
+    <OwnerSidebar v-if="!embedded && !inline" />
 
-    <component v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 3, header: !embedded }" :is="embedded ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? 'max-h-[96vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl sm:p-6' : 'p-4 md:p-8'" :role="embedded ? 'dialog' : undefined" :aria-modal="embedded ? 'true' : undefined" :aria-label="embedded ? 'Create employee account' : undefined">
+    <component v-page-loading="{ active: pageLoading, variant: 'form', fields: 6, sections: 3, header: !embedded && !inline }" :is="embedded || inline ? 'div' : 'main'" class="flex-1 min-w-0" :class="embedded ? 'max-h-[96vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl sm:p-6' : inline ? 'w-full min-w-0' : 'p-4 md:p-8'" :role="embedded ? 'dialog' : undefined" :aria-modal="embedded ? 'true' : undefined" :aria-label="embedded ? 'Create employee account' : undefined">
       <!-- Page Header -->
-      <div v-if="!embedded" class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+      <div v-if="!embedded && !inline" class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h1 class="text-2xl md:text-3xl font-bold text-white mb-1">Add Staff Member</h1>
           <p class="text-slate-400 text-sm md:text-base">Create a staff account, choose their employment type, and set up their work details.</p>
@@ -1038,7 +1041,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       <!-- Loading Skeleton -->
       <div v-if="loading" class="space-y-4">
-        <header v-if="embedded" class="flex items-center justify-between gap-4">
+        <header v-if="embedded || inline" class="flex items-center justify-between gap-4">
           <div><p class="text-xs font-semibold uppercase tracking-[.18em] text-amber-300">Employee Management</p><h2 class="mt-1 text-2xl font-bold text-white">Create Account</h2></div>
           <button type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700" aria-label="Close create account" @click="requestClose">×</button>
         </header>
@@ -1046,7 +1049,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       </div>
 
       <!-- Add Staff Member Form -->
-      <div v-else :class="embedded ? 'w-full' : 'mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8'">
+      <div v-else :class="embedded || inline ? 'w-full' : 'mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg md:p-8'">
         <form class="space-y-6" @submit.prevent="goToNextStep" :aria-busy="savingStaff">
           <header class="flex items-start justify-between gap-4 border-b border-slate-700 pb-4">
             <div>

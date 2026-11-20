@@ -38,9 +38,9 @@ const closeCreateAccount = () => router.replace('/hr/employees')
           <span v-else class="employee-tab is-disabled" aria-disabled="true" title="You do not have permission to access this tab.">{{ tab.label }}</span>
         </template>
       </nav>
-      <StaffProfile v-if="(activeTab === 'profiles' || activeTab === 'create') && canView" embedded />
+      <StaffProfile v-if="activeTab === 'profiles' && canView" embedded />
       <ArchivedEmployees v-else-if="activeTab === 'archived' && canManageAccess" embedded />
-      <AddStaff v-if="activeTab === 'create' && canCreate" embedded @close="closeCreateAccount" />
+      <AddStaff v-if="activeTab === 'create' && canCreate" inline @close="closeCreateAccount" />
       <p v-if="(activeTab === 'profiles' && !canView) || (activeTab === 'create' && !canCreate) || (activeTab === 'archived' && !canManageAccess)" class="text-sm text-slate-400">You do not have access to this tab.</p>
     </main>
   </div>
