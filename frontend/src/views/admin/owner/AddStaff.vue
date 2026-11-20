@@ -895,10 +895,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 weeklyHoursCap: Number(scheduleDraft.value.weeklyHoursCap || currentStaff.value.weeklyHoursTarget),
                 assignments: scheduleAssignments,
                 assignmentLabels: { ...(scheduleDraft.value.assignmentLabels || {}) },
-                updatedAt: serverTimestamp(),
-                createdAt: serverTimestamp(),
               })
-              await setDoc(doc(db, 'users', uid, 'schedules', 'recurring'), schedulePayload)
+              await compensationApi(`/staff/${encodeURIComponent(uid)}/recurring-schedule`, 'PUT', schedulePayload)
               await logActivity(db, {
                 module: 'HR',
                 action: 'Assigned recurring schedule',

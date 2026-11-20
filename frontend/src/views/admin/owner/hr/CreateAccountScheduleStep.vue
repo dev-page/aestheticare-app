@@ -1,11 +1,10 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, where } from 'firebase/firestore'
-import { auth, db } from '@/config/firebaseConfig'
+import { db } from '@/config/firebaseConfig'
 import { recommendRecurringShifts } from '@/utils/shiftRecommendations'
 import { parseShiftDurationHours } from '@/utils/employeeSchedules'
-import { resolveRecurringScheduleVersion } from '../../../../../../shared/recurringEmployeeSchedules.js'
 import { logActivity } from '@/utils/activityLogger'
+import { compensationApi } from '@/utils/compensationApi'
 import { toast } from 'vue3-toastify'
 
 const props = defineProps({
@@ -122,34 +121,17 @@ const loadBranchData = async () => {
   loading.value = true
   shiftError.value = ''
   try {
-    const shiftSnapshot = await getDocs(query(collection(db, 'shifts'), where('branchId', '==', props.branchId)))
-    shifts.value = shiftSnapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }))
-    if (!props.canAssignShifts) {
-      capacitySchedules.value = []
-      return
-    }
-
-    const [primaryBranchStaff, additionalBranchStaff] = await Promise.all([
-      getDocs(query(collection(db, 'users'), where('branchId', '==', props.branchId), where('userType', '==', 'Staff'))),
-      getDocs(query(collection(db, 'users'), where('branchIds', 'array-contains', props.branchId))),
-    ])
-    const staffById = new Map([...primaryBranchStaff.docs, ...additionalBranchStaff.docs].map(entry => [entry.id, entry]))
-    const activeStaff = [...staffById.values()].filter(entry => {
-      const data = entry.data() || {}
-      return String(data.userType || '').toLowerCase() === 'staff' && !data.archived
+    const queryParams = new URLSearchParams({
+      includeCapacity: props.canAssignShifts ? 'true' : 'false',
+      effectiveFrom: schedule.value.effectiveFrom || currentWeekStart(),
     })
-    const currentWeek = schedule.value.effectiveFrom || currentWeekStart()
-    const scheduleSnapshots = await Promise.all(activeStaff.map(entry => getDoc(doc(db, 'users', entry.id, 'schedules', 'recurring'))))
-    capacitySchedules.value = scheduleSnapshots.map((entry, index) => {
-      const data = entry.data() || {}
-      const effective = resolveRecurringScheduleVersion(data, currentWeek)
-      return { employeeId: activeStaff[index]?.id, assignments: effective?.assignments || {} }
-    })
+    const result = await compensationApi(`/hr/branches/${encodeURIComponent(props.branchId)}/shift-templates?${queryParams}`)
+    shifts.value = Array.isArray(result.shifts) ? result.shifts : []
+    capacitySchedules.value = Array.isArray(result.capacitySchedules) ? result.capacitySchedules : []
   } catch (error) {
-    console.error('Unable to load shifts for employee setup:', error)
     shifts.value = []
     capacitySchedules.value = []
-    shiftError.value = 'We could not load this branch’s shift templates. Retry before continuing.'
+    shiftError.value = error.message || 'We could not load this branch’s shift templates. Retry before continuing.'
   } finally {
     loading.value = false
   }
@@ -191,21 +173,16 @@ const createShift = async () => {
   savingShift.value = true
   try {
     const payload = {
-      shiftType: name,
+      name,
       start,
       end,
       unpaidMealBreakMinutes: 0,
-      branch: props.branchName,
-      branchId: props.branchId,
       notes: String(currentShift.value.notes || '').trim(),
       capacity,
-      isArchived: false,
-      employees: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
     }
-    const created = await addDoc(collection(db, 'shifts'), payload)
-    shifts.value = [...shifts.value, { ...payload, id: created.id, unpaidMealBreakMinutes: 0 }]
+    const result = await compensationApi(`/hr/branches/${encodeURIComponent(props.branchId)}/shifts`, 'POST', payload)
+    const created = result.shift || {}
+    shifts.value = [...shifts.value, { ...created, unpaidMealBreakMinutes: 0 }]
     await logActivity(db, {
       module: 'HR',
       action: 'Added shift',
@@ -214,8 +191,7 @@ const createShift = async () => {
     currentShift.value = { name: '', start: '09:00', end: '17:00', capacity: 1, notes: '' }
     toast.success('Shift template added to this branch.')
   } catch (error) {
-    console.error('Unable to create shift during employee setup:', error)
-    toast.error('Unable to save the shift template. Please try again.')
+    toast.error(error.message || 'Unable to save the shift template. Please try again.')
   } finally {
     savingShift.value = false
   }
@@ -308,7 +284,7 @@ defineExpose({ validationError })
         <span class="text-slate-300">Assigned: <strong class="text-white">{{ totalAssignedHours }} / {{ schedule.weeklyHoursCap || 0 }} hours</strong></span>
         <span class="text-slate-300">Effective Monday: <strong class="text-white">{{ schedule.effectiveFrom || currentWeekStart() }}</strong></span>
       </div>
-      <p v-if="validationError" class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200" role="alert">{{ validationError }}</p>
+      <p v-if="validationError && !shiftError" class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200" role="alert">{{ validationError }}</p>
       <p v-else-if="!canAssignShifts" class="mt-3 text-sm text-slate-400">An authorized HR manager can assign this employee’s schedule later.</p>
       </template>
     </section>

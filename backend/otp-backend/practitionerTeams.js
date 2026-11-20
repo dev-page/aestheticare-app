@@ -179,12 +179,23 @@ export const registerPractitionerTeams = (app, { admin, requireAuth, loadUserCon
       const licenseNumber = extractPractitionerLicenseNumber(extractedText)
       const confidence = getVisionWordConfidence(annotation)
       const validation = validatePractitionerCredentialDocument({ ...employeeName, text: extractedText, confidence })
-      return res.json({ success: true, data: {
+      const employeeNameMatched = validation.nameMatch?.status === 'match'
+      const safeValidation = employeeNameMatched ? validation : {
         ...validation,
+        nameMatch: { status: validation.nameMatch?.status || 'needs_review', detectedValue: '' },
+        expiryDate: '',
+        expiryStatus: 'unreadable',
+      }
+      return res.json({ success: true, data: {
+        ...safeValidation,
         reason: validation.accepted
           ? `${validation.reason}${licenseNumber ? ' The license number was also read.' : ''}`
           : validation.reason,
-        extractedText: extractedText.slice(0, 12000), licenseNumber, confidence,
+        // Do not disclose OCR personal data or a detected registration number
+        // when the submitted credential does not identify this employee.
+        extractedText: employeeNameMatched ? extractedText.slice(0, 12000) : '',
+        licenseNumber: employeeNameMatched ? licenseNumber : '',
+        confidence: employeeNameMatched ? confidence : null,
       } })
     } catch (error) {
       if (error.status) return res.status(error.status).json({ success: false, error: error.message })

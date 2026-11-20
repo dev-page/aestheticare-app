@@ -59,7 +59,7 @@ import { registerAttendanceManagement } from './attendanceManagement.js'
 import { registerAttendanceImports } from './attendanceImports.js'
 import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgreementDocument.js'
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
-import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
+import { resolveRecurringScheduleVersion, withRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { defaultClinicRolePermissions } from '../../shared/clinicRoleDefaults.js'
 import {
   clinicRolePagePermissionKeys,
@@ -9254,6 +9254,327 @@ app.post('/staff/:userId/branch-assignments', requireAuth, requirePermission('st
     await targetRef.update({ branchId: branchIds[0], branchIds, organizationOwnerId: ownerId, clinicLocation: branches[0].clinicLocation || '', updatedAt: admin.firestore.FieldValue.serverTimestamp() })
     res.json({ success: true, data: { branchId: branchIds[0], branchIds } })
   } catch (error) { res.status(error.status || 500).json({ success: false, error: 'Unable to update employee branch assignments.' }) }
+})
+
+app.patch('/staff/:userId/status', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadUserContext(req.user.uid)
+    assertWorkflow(actor.permissions.has('staff:disable') || actor.permissions.has('administrator:full_access'), 'You do not have permission to change employee access status.', 403)
+    const firestore = admin.firestore()
+    const targetRef = firestore.collection('users').doc(String(req.params.userId || '').trim())
+    const target = await targetRef.get()
+    assertWorkflow(target.exists && String(target.data()?.userType || '').toLowerCase() === 'staff', 'Employee profile not found.', 404)
+    const employee = target.data() || {}
+    const branchIds = [...new Set([employee.branchId, ...(Array.isArray(employee.branchIds) ? employee.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))]
+    const currentBranch = branchIds.length ? await firestore.collection('clinics').doc(branchIds[0]).get() : null
+    const ownerId = String(employee.organizationOwnerId || currentBranch?.data()?.ownerId || '').trim()
+    const actorIsOwner = actor.roleKey === 'Owner' && req.user.uid === ownerId
+    if (!actorIsOwner) assertWorkflow((await Promise.all(branchIds.map(id => resolveBranchAccess(req.user.uid, id)))).some(Boolean), 'You are not authorized to update this employee.', 403)
+    const status = String(req.body?.status || '').trim()
+    assertWorkflow(['Pending Activation', 'Active', 'Inactive'].includes(status), 'Choose a valid employee status.', 400)
+    await targetRef.update({
+      status,
+      archived: status === 'Inactive',
+      archivedAt: status === 'Inactive' ? admin.firestore.FieldValue.serverTimestamp() : null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    return res.json({ success: true, data: { id: target.id, status, archived: status === 'Inactive' } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to change employee access status.' })
+  }
+})
+
+// Employee profile writes use the same server-side custom-role resolver as
+// authenticated APIs. Firestore rules intentionally validate a materialized
+// permission snapshot, which can lag a clinic role update in an open browser.
+app.patch('/staff/:userId/profile', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadUserContext(req.user.uid)
+    const permissions = actor.permissions
+    assertWorkflow(permissions.has('staff:update') || permissions.has('administrator:full_access'), 'You do not have permission to update employee profiles.', 403)
+
+    const targetId = String(req.params.userId || '').trim()
+    const firestore = admin.firestore()
+    const targetRef = firestore.collection('users').doc(targetId)
+    const targetSnap = await targetRef.get()
+    if (!targetSnap.exists || String(targetSnap.data()?.userType || '').toLowerCase() !== 'staff') {
+      return res.status(404).json({ success: false, error: 'Employee profile not found.' })
+    }
+    const current = targetSnap.data() || {}
+    const currentBranchIds = [...new Set([current.branchId, ...(Array.isArray(current.branchIds) ? current.branchIds : [])].map(value => String(value || '').trim()).filter(Boolean))]
+    const selectedBranchIds = [...new Set((Array.isArray(req.body?.branchIds) ? req.body.branchIds : currentBranchIds).map(value => String(value || '').trim()).filter(Boolean))]
+    if (!selectedBranchIds.length || selectedBranchIds.length > 100) return res.status(400).json({ success: false, error: 'Select between 1 and 100 assigned branches.' })
+
+    const [currentBranchSnaps, branchSnaps] = await Promise.all([
+      Promise.all(currentBranchIds.map(id => firestore.collection('clinics').doc(id).get())),
+      Promise.all(selectedBranchIds.map(id => firestore.collection('clinics').doc(id).get())),
+    ])
+    const allBranchSnaps = [...currentBranchSnaps, ...branchSnaps]
+    if (allBranchSnaps.some(snapshot => !snapshot.exists)) return res.status(400).json({ success: false, error: 'One or more employee branches do not exist.' })
+    const allBranches = allBranchSnaps.map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
+    const ownerId = String(allBranches[0]?.ownerId || '').trim()
+    if (!ownerId || allBranches.some(branch => String(branch.ownerId || '') !== ownerId)
+      || (current.organizationOwnerId && String(current.organizationOwnerId) !== ownerId)) {
+      return res.status(403).json({ success: false, error: 'Employee branches must belong to the same clinic organization.' })
+    }
+    const actorIsOwner = actor.roleKey === 'Owner' && req.user.uid === ownerId
+    if (!actorIsOwner && !(await Promise.all(currentBranchIds.map(id => resolveBranchAccess(req.user.uid, id)))).some(Boolean)) {
+      return res.status(403).json({ success: false, error: 'You are not authorized to update this employee.' })
+    }
+    if (!actorIsOwner && !(await Promise.all(selectedBranchIds.map(id => resolveBranchAccess(req.user.uid, id)))).every(Boolean)) {
+      return res.status(403).json({ success: false, error: 'You are not authorized for every selected branch.' })
+    }
+
+    const text = (value, max = 250) => String(value ?? '').trim().slice(0, max)
+    const firstName = text(req.body?.firstName, 100)
+    const lastName = text(req.body?.lastName, 100)
+    const email = text(req.body?.email, 320).toLowerCase()
+    const phoneNumber = text(req.body?.phoneNumber, 30)
+    const engagementType = text(req.body?.engagementType, 40).toLowerCase()
+    const employmentType = text(req.body?.employmentType, 40)
+    const weeklyHoursTarget = Number(req.body?.weeklyHoursTarget)
+    const namePattern = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u
+    if (!namePattern.test(firstName) || !namePattern.test(lastName)) return res.status(400).json({ success: false, error: 'Enter a valid first and last name.' })
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' })
+    if (!/^\+639\d{9}$/.test(phoneNumber)) return res.status(400).json({ success: false, error: 'Enter a valid Philippine mobile number.' })
+    if (!['employee', 'student_intern'].includes(engagementType)
+      || (engagementType === 'employee' && !['Full-time', 'Part-time'].includes(employmentType))
+      || (engagementType === 'student_intern' && employmentType !== 'Intern')
+      || !Number.isFinite(weeklyHoursTarget) || weeklyHoursTarget < 1 || weeklyHoursTarget > 48
+      || Math.round(weeklyHoursTarget * 2) !== weeklyHoursTarget * 2
+      || (engagementType === 'employee' && employmentType === 'Full-time' && weeklyHoursTarget < 40)
+      || (engagementType === 'employee' && employmentType === 'Part-time' && weeklyHoursTarget >= 40)) {
+      return res.status(400).json({ success: false, error: 'Enter valid employment type and agreed weekly hours (maximum 48).' })
+    }
+
+    const updates = {
+      firstName, lastName, fullName: `${firstName} ${lastName}`.trim(), email, phoneNumber,
+      engagementType, employmentType, weeklyHoursTarget,
+      branchId: selectedBranchIds[0], branchIds: selectedBranchIds, organizationOwnerId: ownerId,
+      clinicBranch: text(allBranches.find(branch => branch.id === selectedBranchIds[0])?.clinicBranch, 150),
+      clinicLocation: text(allBranches.find(branch => branch.id === selectedBranchIds[0])?.clinicLocation, 250),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+
+    if (req.body?.status !== undefined && String(req.body.status) !== String(current.status || '')) {
+      assertWorkflow(permissions.has('staff:disable') || permissions.has('administrator:full_access'), 'You do not have permission to change employee access status.', 403)
+      const status = text(req.body.status, 40)
+      assertWorkflow(['Pending Activation', 'Active', 'Inactive'].includes(status), 'Choose a valid employee status.', 400)
+      Object.assign(updates, { status, archived: status === 'Inactive', archivedAt: status === 'Inactive' ? admin.firestore.FieldValue.serverTimestamp() : null })
+    }
+
+    if (Array.isArray(req.body?.customRoleIds)) {
+      assertWorkflow(permissions.has('roles:manage') || permissions.has('administrator:full_access'), 'You do not have permission to change employee roles.', 403)
+      const customRoleIds = [...new Set(req.body.customRoleIds.map(value => String(value || '').trim()).filter(Boolean))]
+      assertWorkflow(customRoleIds.length > 0 && customRoleIds.length <= 20, 'Assign at least one valid clinic role.', 400)
+      const roleSnaps = await Promise.all(customRoleIds.map(id => firestore.collection('clinicRoles').doc(id).get()))
+      assertWorkflow(roleSnaps.every(snapshot => snapshot.exists && String(snapshot.data()?.ownerId || '') === ownerId), 'One or more selected roles are not available to this clinic.', 400)
+      const roles = roleSnaps.map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
+      const effectivePermissions = [...new Set([
+        ...defaultClinicRolePermissions,
+        ...(Array.isArray(current.permissions) ? current.permissions : []),
+        ...roles.flatMap(role => expandClinicRolePermissions(Array.isArray(role.permissions) ? role.permissions : [])),
+      ])].filter(permission => CLINIC_ROLE_PERMISSION_KEYS.has(permission))
+      const roleNames = roles.map(role => String(role.name || '').trim()).filter(Boolean)
+      Object.assign(updates, {
+        role: roleNames.join(', ') || 'Staff',
+        customRoleId: customRoleIds[0], customRoleIds,
+        customRoleName: roleNames.join(', '), effectivePermissions,
+      })
+    }
+
+    await targetRef.update(updates)
+    return res.json({ success: true, data: { id: targetId, branchId: selectedBranchIds[0], branchIds: selectedBranchIds } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to update employee profile.' })
+  }
+})
+
+const staffScheduleDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const staffShiftMinutes = value => {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || ''))
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null
+}
+const staffShiftHours = shift => {
+  const start = staffShiftMinutes(shift.start), end = staffShiftMinutes(shift.end)
+  if (start === null || end === null || end <= start) return 0
+  const elapsed = end - start
+  const requestedBreak = Number(shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes)
+  const breakMinutes = Number.isFinite(requestedBreak) && requestedBreak >= 0 ? requestedBreak : elapsed > 8 * 60 ? 60 : 0
+  return Math.max(0, elapsed - breakMinutes) / 60
+}
+
+// HR setup APIs authorize against live clinic roles, avoiding direct client
+// reads/writes that can fail when Firestore's permission snapshot is stale.
+app.get('/hr/branches/:branchId/shift-templates', requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.params.branchId || '').trim()
+    const actor = await loadUserContext(req.user.uid)
+    assertWorkflow(actor.permissions.has('hr:view') || actor.permissions.has('administrator:full_access'), 'You do not have permission to view shift templates.', 403)
+    assertWorkflow(await resolveBranchAccess(req.user.uid, branchId), 'You are not assigned to this branch.', 403)
+    const firestore = admin.firestore()
+    await assertClinicPlanFeature(firestore, branchId, 'hr')
+    const shiftSnapshot = await firestore.collection('shifts').where('branchId', '==', branchId).get()
+    const shifts = shiftSnapshot.docs.map(snapshot => {
+      const shift = snapshot.data() || {}
+      return {
+        id: snapshot.id,
+        shiftType: String(shift.shiftType || ''),
+        start: String(shift.start || ''),
+        end: String(shift.end || ''),
+        unpaidMealBreakMinutes: Number(shift.unpaidMealBreakMinutes ?? shift.mealBreakMinutes ?? 0),
+        capacity: Number(shift.capacity || 1),
+        notes: String(shift.notes || ''),
+        isArchived: shift.isArchived === true,
+      }
+    })
+    let capacitySchedules = []
+    if (String(req.query.includeCapacity || '').toLowerCase() === 'true') {
+      assertWorkflow(actor.permissions.has('hr:update') || actor.permissions.has('administrator:full_access'), 'You do not have permission to assign employee shifts.', 403)
+      const [primaryStaff, additionalStaff] = await Promise.all([
+        firestore.collection('users').where('branchId', '==', branchId).where('userType', '==', 'Staff').get(),
+        firestore.collection('users').where('branchIds', 'array-contains', branchId).get(),
+      ])
+      const staffById = new Map([...primaryStaff.docs, ...additionalStaff.docs].map(snapshot => [snapshot.id, snapshot]))
+      const activeStaff = [...staffById.values()].filter(snapshot => {
+        const data = snapshot.data() || {}
+        return ['staff', 'employee'].includes(String(data.userType || '').toLowerCase())
+          && data.archived !== true && String(data.status || '').toLowerCase() !== 'inactive'
+      })
+      const effectiveFrom = String(req.query.effectiveFrom || '')
+      const schedules = await Promise.all(activeStaff.map(snapshot => snapshot.ref.collection('schedules').doc('recurring').get()))
+      capacitySchedules = schedules.map(snapshot => {
+        const effective = resolveRecurringScheduleVersion(snapshot.data() || {}, effectiveFrom)
+        return { assignments: effective?.assignments || {} }
+      })
+    }
+    return res.json({ success: true, data: { shifts, capacitySchedules } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to load branch shift templates.' })
+  }
+})
+
+app.post('/hr/branches/:branchId/shifts', requireAuth, async (req, res) => {
+  try {
+    const branchId = String(req.params.branchId || '').trim()
+    const actor = await loadUserContext(req.user.uid)
+    assertWorkflow(actor.permissions.has('hr:create') || actor.permissions.has('administrator:full_access'), 'You do not have permission to create shift templates.', 403)
+    assertWorkflow(await resolveBranchAccess(req.user.uid, branchId), 'You are not assigned to this branch.', 403)
+    const firestore = admin.firestore()
+    const { clinic } = await assertClinicPlanFeature(firestore, branchId, 'hr')
+    const name = String(req.body?.name || '').trim()
+    const start = String(req.body?.start || '').trim()
+    const end = String(req.body?.end || '').trim()
+    const notes = String(req.body?.notes || '').trim()
+    const capacity = Number(req.body?.capacity)
+    const startMinutes = staffShiftMinutes(start), endMinutes = staffShiftMinutes(end)
+    assertWorkflow(name.length > 0 && name.length <= 80 && startMinutes !== null && endMinutes !== null && endMinutes > startMinutes, 'Enter a shift name and valid same-day start and end times.', 400)
+    assertWorkflow(Number.isInteger(capacity) && capacity >= 1 && capacity <= 500 && notes.length <= 300, 'Enter valid shift capacity and notes.', 400)
+    const existing = await firestore.collection('shifts').where('branchId', '==', branchId).get()
+    const duplicate = existing.docs.some(snapshot => {
+      const shift = snapshot.data() || {}
+      return shift.isArchived !== true
+        && String(shift.shiftType || '').trim().toLowerCase() === name.toLowerCase()
+        && String(shift.start || '') === start && String(shift.end || '') === end
+    })
+    assertWorkflow(!duplicate, 'A shift with the same name and time already exists for this branch.', 409)
+    const shiftRef = firestore.collection('shifts').doc()
+    const shift = {
+      shiftType: name, start, end, unpaidMealBreakMinutes: 0,
+      branch: String(clinic.clinicBranch || ''), branchId, notes, capacity,
+      isArchived: false, employees: [], createdBy: req.user.uid, updatedBy: req.user.uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    await shiftRef.set(shift)
+    return res.status(201).json({ success: true, data: { shift: {
+      id: shiftRef.id, shiftType: name, start, end, unpaidMealBreakMinutes: 0,
+      capacity, notes, isArchived: false,
+    } } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to create the shift template.' })
+  }
+})
+
+app.put('/staff/:userId/recurring-schedule', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadUserContext(req.user.uid)
+    assertWorkflow(actor.permissions.has('hr:update') || actor.permissions.has('administrator:full_access'), 'You do not have permission to assign employee shifts.', 403)
+    const userId = String(req.params.userId || '').trim()
+    const branchId = String(req.body?.branchId || '').trim()
+    assertWorkflow(await resolveBranchAccess(req.user.uid, branchId), 'You are not assigned to this branch.', 403)
+    const firestore = admin.firestore()
+    await assertClinicPlanFeature(firestore, branchId, 'hr')
+    const employeeRef = firestore.collection('users').doc(userId)
+    const employeeSnapshot = await employeeRef.get()
+    const employee = employeeSnapshot.data() || {}
+    assertWorkflow(employeeSnapshot.exists && String(employee.userType || '').toLowerCase() === 'staff', 'Employee profile not found.', 404)
+    const assignedBranches = [employee.branchId, ...(Array.isArray(employee.branchIds) ? employee.branchIds : [])].map(value => String(value || '').trim())
+    assertWorkflow(assignedBranches.includes(branchId), 'Employee is not assigned to this branch.', 403)
+    const effectiveFrom = String(req.body?.effectiveFrom || '')
+    const date = new Date(`${effectiveFrom}T00:00:00.000Z`)
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === effectiveFrom
+    assertWorkflow(validDate && date.getUTCDay() === 1, 'Choose a valid Monday for the schedule to take effect.', 400)
+    const manilaParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).reduce((result, part) => ({ ...result, [part.type]: part.value }), {})
+    const manilaToday = new Date(`${manilaParts.year}-${manilaParts.month}-${manilaParts.day}T00:00:00.000Z`)
+    manilaToday.setUTCDate(manilaToday.getUTCDate() - ((manilaToday.getUTCDay() + 6) % 7))
+    assertWorkflow(effectiveFrom >= manilaToday.toISOString().slice(0, 10), 'The recurring schedule cannot start in a past week.', 400)
+    const weeklyHoursCap = Number(req.body?.weeklyHoursCap)
+    const agreedHours = Number(employee.weeklyHoursTarget || 0)
+    assertWorkflow(Number.isFinite(weeklyHoursCap) && weeklyHoursCap >= 1 && weeklyHoursCap <= Math.min(48, agreedHours), 'The weekly limit cannot exceed the employee’s agreed hours or 48 hours.', 400)
+    const requestedAssignments = req.body?.assignments && typeof req.body.assignments === 'object' ? req.body.assignments : {}
+    const assignments = Object.fromEntries(staffScheduleDays.map(day => [day, String(requestedAssignments[day] || '').trim()]))
+    assertWorkflow(staffScheduleDays.every(day => !assignments[day] || assignments[day].length <= 150) && staffScheduleDays.some(day => assignments[day]), 'Assign at least one valid shift day.', 400)
+    const shiftIds = [...new Set(Object.values(assignments).filter(Boolean))]
+    const shiftSnaps = await Promise.all(shiftIds.map(id => firestore.collection('shifts').doc(id).get()))
+    assertWorkflow(shiftSnaps.every(snapshot => snapshot.exists && String(snapshot.data()?.branchId || '') === branchId && snapshot.data()?.isArchived !== true), 'Select active shift templates from this branch.', 400)
+    const shiftsById = new Map(shiftSnaps.map(snapshot => [snapshot.id, snapshot.data() || {}]))
+    const assignedHours = staffScheduleDays.reduce((total, day) => total + (shiftsById.has(assignments[day]) ? staffShiftHours(shiftsById.get(assignments[day])) : 0), 0)
+    assertWorkflow(assignedHours <= weeklyHoursCap, `Assigned shifts total ${assignedHours} hours, above the ${weeklyHoursCap}-hour weekly limit.`, 400)
+
+    const [primaryStaff, additionalStaff] = await Promise.all([
+      firestore.collection('users').where('branchId', '==', branchId).where('userType', '==', 'Staff').get(),
+      firestore.collection('users').where('branchIds', 'array-contains', branchId).get(),
+    ])
+    const staffById = new Map([...primaryStaff.docs, ...additionalStaff.docs].map(snapshot => [snapshot.id, snapshot]))
+    const activeStaff = [...staffById.values()].filter(snapshot => snapshot.id !== userId && snapshot.data()?.archived !== true && String(snapshot.data()?.status || '').toLowerCase() !== 'inactive')
+    const schedules = await Promise.all(activeStaff.map(snapshot => snapshot.ref.collection('schedules').doc('recurring').get()))
+    const capacityCounts = new Map(staffScheduleDays.map(day => [day, new Map()]))
+    schedules.forEach(snapshot => {
+      const effective = resolveRecurringScheduleVersion(snapshot.data() || {}, effectiveFrom)
+      staffScheduleDays.forEach(day => {
+        const shiftId = String(effective?.assignments?.[day] || '')
+        if (shiftId) {
+          const counts = capacityCounts.get(day)
+          counts.set(shiftId, (counts.get(shiftId) || 0) + 1)
+        }
+      })
+    })
+    for (const day of staffScheduleDays) {
+      const shiftId = assignments[day]
+      if (!shiftId) continue
+      const shift = shiftsById.get(shiftId)
+      const assigned = capacityCounts.get(day).get(shiftId) || 0
+      assertWorkflow(assigned < Number(shift.capacity || 1), `Shift capacity is full on ${day}. Choose another shift or day.`, 409)
+    }
+
+    const scheduleRef = employeeRef.collection('schedules').doc('recurring')
+    const existingSchedule = await scheduleRef.get()
+    const assignmentLabels = Object.fromEntries(staffScheduleDays.map(day => {
+      const shift = shiftsById.get(assignments[day])
+      return [day, shift ? `${shift.shiftType || 'Shift'} || ${shift.start || ''} - ${shift.end || ''}` : '']
+    }))
+    const nextSchedule = withRecurringScheduleVersion(existingSchedule.data() || {}, {
+      employeeId: userId, employeeName: String(employee.fullName || `${employee.firstName || ''} ${employee.lastName || ''}`).trim(),
+      employeeRole: String(employee.role || 'Staff'), branchId, weekStart: null, effectiveFrom,
+      recurring: true, type: 'recurring', availability: null, weeklyHoursCap, assignments, assignmentLabels,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(!existingSchedule.exists ? { createdAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+    })
+    await scheduleRef.set(nextSchedule)
+    return res.json({ success: true, data: { employeeId: userId, branchId, effectiveFrom, assignedHours } })
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to assign the recurring employee schedule.' })
+  }
 })
 
 // Staff accounts are created in Firebase Authentication by the browser's

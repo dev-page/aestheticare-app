@@ -2,7 +2,7 @@
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getFirestore, collection, getDocs, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, onSnapshot, doc, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -18,7 +18,6 @@ import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchSc
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { storage } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
-import { defaultClinicRolePermissions } from '@/config/clinicPermissionRegistry'
 
 export default {
   name: 'OwnerStaff',
@@ -49,6 +48,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const licenseOcrResult = ref(null)
     const licenseOcrBusy = ref(false)
     let licenseOcrSequence = 0
+    const licenseOcrNameMatched = computed(() => licenseOcrResult.value?.nameMatch?.status === 'match')
     const showLicenseField = computed(() => Boolean(String(currentStaff.value.practitionerType || '').trim() || String(currentStaff.value.credentialNumber || '').trim()))
     const isStudentIntern = computed(() => currentStaff.value.engagementType === 'student_intern')
     let staffUnsubscribers = []
@@ -305,7 +305,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to process this credential image.')
         if (sequence !== licenseOcrSequence) return
         licenseOcrResult.value = payload.data || null
-        if (payload.data?.licenseNumber) currentStaff.value.credentialNumber = payload.data.licenseNumber
+        if (payload.data?.nameMatch?.status === 'match' && payload.data?.licenseNumber) currentStaff.value.credentialNumber = payload.data.licenseNumber
       } catch (error) {
         if (sequence === licenseOcrSequence) licenseOcrResult.value = { status: 'manual_review', reason: error.message || 'OCR is unavailable. Enter the number manually and review the document.' }
       } finally {
@@ -376,23 +376,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         try {
-          const staffRef = doc(db, "users", staff.id)
-          await updateDoc(staffRef, { status: 'Inactive', archived: true, archivedAt: serverTimestamp() })
+          await compensationApi(`/staff/${encodeURIComponent(staff.id)}/status`, 'PATCH', { status: 'Inactive' })
           staff.status = 'Inactive'
           toast.success(`${fullName} has been deactivated.`)
         } catch (error) {
-          console.error(error)
-          toast.error("Failed to deactivate staff.")
+          toast.error(error.message || 'Failed to deactivate staff.')
         }
       } else {
         try {
-          const staffRef = doc(db, "users", staff.id)
-          await updateDoc(staffRef, { status: 'Active', archived: false, archivedAt: null })
+          await compensationApi(`/staff/${encodeURIComponent(staff.id)}/status`, 'PATCH', { status: 'Active' })
           staff.status = 'Active'
           toast.success(`${fullName} has been reactivated.`)
         } catch (error) {
-          console.error(error)
-          toast.error("Failed to reactivate staff.")
+          toast.error(error.message || 'Failed to reactivate staff.')
         }
       }
     }
@@ -408,14 +404,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.error('You do not have permission to change employee access status.')
         return
       }
-      const { firstName, lastName, email, phoneNumber, clinicBranch, clinicLocation } = currentStaff.value
+      const { firstName, lastName, email, phoneNumber } = currentStaff.value
       const fullName = `${firstName} ${lastName}`
       const selectedRoleIds = Array.isArray(currentStaff.value.customRoleIds)
         ? currentStaff.value.customRoleIds
         : [currentStaff.value.customRoleId].filter(Boolean)
-      const selectedRoleNames = customRoles.value
-        .filter((entry) => selectedRoleIds.includes(entry.id))
-        .map((entry) => entry.name)
+      if (canManageRoles.value && !selectedRoleIds.length) {
+        toast.error('Assign at least one clinic role to this employee.')
+        return
+      }
 
       if (!validateEditStaff()) {
         const firstError = Object.values(editErrors.value)[0]
@@ -441,12 +438,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             return
           }
 
-          const staffRef = doc(db, "users", currentStaff.value.id)
           savingEmployee.value = true
-          const token = await auth.currentUser?.getIdToken()
-          const branchResponse = await fetch(`${OTP_API_BASE}/staff/${currentStaff.value.id}/branch-assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ branchIds: currentStaff.value.branchIds }) })
-          const branchPayload = await branchResponse.json()
-          if (!branchResponse.ok) throw new Error(branchPayload.error || 'Unable to update assigned branches.')
           let licenseDocument = null
           if (licenseFile.value) {
             const ownerId = auth.currentUser?.uid
@@ -459,8 +451,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           if (currentStaff.value.practitionerType !== originalSpecialty.value.type || currentStaff.value.credentialNumber !== originalSpecialty.value.credentialNumber || licenseDocument) {
             await compensationApi(`/staff/${currentStaff.value.id}/practitioner-details`, 'POST', { type: currentStaff.value.practitionerType, credentialNumber: currentStaff.value.credentialNumber, licenseDocument })
           }
-          const nextStatus = currentStaff.value.status
-          const shouldArchive = String(nextStatus || '').trim().toLowerCase() === 'inactive'
           const staffUpdates = {
             firstName: currentStaff.value.firstName.trim(),
             lastName: currentStaff.value.lastName.trim(),
@@ -470,24 +460,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             engagementType: currentStaff.value.engagementType,
             employmentType: currentStaff.value.employmentType,
             weeklyHoursTarget: Number(currentStaff.value.weeklyHoursTarget),
+            branchIds: currentStaff.value.branchIds,
           }
-          if (canDisableStaff.value) Object.assign(staffUpdates, {
-            status: nextStatus,
-            archived: shouldArchive,
-            archivedAt: shouldArchive ? serverTimestamp() : null,
-          })
-          if (canManageRoles.value) {
-            Object.assign(staffUpdates, {
-              role: selectedRoleNames.join(', ') || currentStaff.value.role || null,
-              customRoleId: selectedRoleIds[0] || null,
-              customRoleIds: selectedRoleIds,
-              customRoleName: selectedRoleNames.join(', ') || null,
-              effectivePermissions: [...new Set([...defaultClinicRolePermissions, ...customRoles.value
-                .filter((entry) => selectedRoleIds.includes(entry.id))
-                .flatMap((entry) => entry.permissions || [])])],
-            })
-          }
-          await updateDoc(staffRef, staffUpdates)
+          if (canDisableStaff.value) staffUpdates.status = currentStaff.value.status
+          if (canManageRoles.value) staffUpdates.customRoleIds = selectedRoleIds
+          await compensationApi(`/staff/${encodeURIComponent(currentStaff.value.id)}/profile`, 'PATCH', staffUpdates)
           toast.success(`${fullName}'s information updated successfully!`)
           showEditModal.value = false
         }
@@ -534,7 +511,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       filteredStaffList,
       customRoles,
       employeeSpecialtyTypes, loadingSpecialty, specialtyError, showLicenseField, savingEmployee,
-      licenseFile, licenseOcrResult, licenseOcrBusy, handleLicenseFile, normalizeCredentialNumber
+      licenseFile, licenseOcrResult, licenseOcrBusy, licenseOcrNameMatched, handleLicenseFile, normalizeCredentialNumber
     }
   }
 }
@@ -770,7 +747,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                 <p class="employee-edit-caption">If entered, the credential number must be exactly 7 digits. The image is optional when editing; upload one JPEG or PNG image (up to 5MB) to run OCR, then verify the number manually.</p>
                 <p class="employee-edit-caption">Changing professional details or the uploaded document requires a new credential review by the clinic owner.</p>
                 <p v-if="licenseOcrBusy" class="employee-edit-caption" role="status">Reading the credential with OCR…</p>
-                <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></div>
+                <div v-else-if="licenseOcrResult" class="employee-license-ocr" aria-live="polite"><strong>OCR suggestion · owner review required</strong><p>{{ licenseOcrResult.reason }}</p><template v-if="licenseOcrNameMatched"><p v-if="licenseOcrResult.confidence != null">Text recognition confidence: {{ Math.round(licenseOcrResult.confidence * 100) }}%</p><details v-if="licenseOcrResult.extractedText"><summary>View extracted text</summary><pre>{{ licenseOcrResult.extractedText }}</pre></details></template></div>
               </template>
             </fieldset>
             <p v-if="specialtyError" class="employee-edit-error" role="alert">{{ specialtyError }}</p>
@@ -817,7 +794,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 .employee-license-ocr { margin-top: 10px; padding: 12px; border: 1px solid #e8c99f; border-radius: 9px; background: #fbf1df; color: #5d4536; font-size: 12px; }
 .employee-license-ocr strong { color: #805337; }
 .employee-license-ocr p { margin-top: 5px; }
-.employee-license-ocr summary { cursor: pointer; font-weight: 600; }
+.employee-license-ocr details { margin-top: 8px; }
+.employee-license-ocr summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; list-style: none; font-weight: 600; }
+.employee-license-ocr summary::-webkit-details-marker { display: none; }
+.employee-license-ocr summary::after { content: ''; width: 7px; height: 7px; margin-left: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
+.employee-license-ocr details[open] summary::after { transform: rotate(225deg) translate(-1px, -1px); }
 .employee-license-ocr pre { max-height: 160px; margin-top: 8px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: #fffdf9; padding: 9px; font: 11px/1.5 ui-monospace, monospace; }
 .employee-edit-error { color: #a13732; font-size: 12px; margin-top: 8px; }
 .employee-edit-cancel, .employee-edit-save { padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; min-height: 42px; }
