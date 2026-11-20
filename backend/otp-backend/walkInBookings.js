@@ -40,6 +40,14 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
       const clientDetails = req.body?.clientDetails || null
       const creatingClient = !requestedClientId
       check(creatingClient ? Boolean(clientDetails) : true, 'Enter the care recipient details.', 400)
+      const clientContact = !creatingClient ? {
+        email: normalized(req.body?.clientContact?.email || ''),
+        phone: String(req.body?.clientContact?.phone || '').trim(),
+      } : null
+      if (clientContact) {
+        check(clientContact.email.length <= 254 && /^\S+@\S+\.\S+$/.test(clientContact.email), 'Enter a valid recipient email address.', 400)
+        check(clientContact.phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(clientContact.phone), 'Enter a valid recipient contact number.', 400)
+      }
       check(!req.body.groupBooking, 'Group bookings are not available for walk-ins.', 400)
       check(typeof branchId === 'string' && branchId.trim(), 'Select a branch.', 400)
       await authorizeClinicAction(req.user.uid, branchId, 'appointments:create')
@@ -66,8 +74,9 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         phone: String(req.body.booker?.phone || '').trim(),
       } : null
       if (booker) {
-        check(booker.name.length >= 2 && booker.name.length <= 150 && /^\+?[0-9 ()-]{7,25}$/.test(booker.phone), 'Enter the booking arranger name and valid contact number.', 400)
-        check(!booker.email || (booker.email.length <= 254 && /^\S+@\S+\.\S+$/.test(booker.email)), 'Enter a valid booking arranger email.', 400)
+        check(booker.name.length >= 2 && booker.name.length <= 150, 'Enter the booking arranger name.', 400)
+        check(booker.email.length <= 254 && /^\S+@\S+\.\S+$/.test(booker.email), 'Enter a valid booking arranger email address.', 400)
+        check(/^\+?[0-9 ()-]{7,25}$/.test(booker.phone), 'Enter a valid booking arranger contact number.', 400)
       }
       let cleanClientDetails = null
       let verifiedCustomerId = ''
@@ -80,8 +89,8 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
         const phone = String(clientDetails.phone || '').trim()
         check(firstName.length >= 1 && firstName.length <= 100 && lastName.length >= 1 && lastName.length <= 100
           && middleName.length <= 100 && suffix.length <= 20, 'Enter the recipient’s first and last name. Middle name and suffix are optional.', 400)
-        check(email.length <= 254 && (!email || /^\S+@\S+\.\S+$/.test(email)), 'Enter a valid recipient email address or leave it blank.', 400)
-        check(phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone)), 'Enter a valid recipient phone number.', 400)
+        check(email.length <= 254 && /^\S+@\S+\.\S+$/.test(email), 'Enter a valid recipient email address.', 400)
+        check(phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(phone), 'Enter a valid recipient contact number.', 400)
         const name = [firstName, middleName, lastName].filter(Boolean).join(' ')
         cleanClientDetails = { firstName, middleName, lastName, suffix, email, phone, fullName: suffix ? `${name}, ${suffix}` : name }
         if (email) {
@@ -199,10 +208,11 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
             }
           }
         }
+        if (clientContact) data = { ...data, email: clientContact.email, phone: clientContact.phone }
         const email = normalized(data.email)
         const phone = String(data.phone || data.contactNumber || '').trim()
-        check(!email || (email.length <= 254 && /^\S+@\S+\.\S+$/.test(email)), 'The client email address is invalid. Update it or leave it blank.', 400)
-        check(phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone)), 'The client phone number is invalid. Update it or leave it blank.', 400)
+        check(email.length <= 254 && /^\S+@\S+\.\S+$/.test(email), 'The client email address is required and must be valid.', 400)
+        check(phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(phone), 'The client contact number is required and must be valid.', 400)
         const clientId = clientRecordRef.id
         const client = { customerId: accountCustomerId || clientId, clientId, customerName: data.fullName || (String(data.firstName || '') + ' ' + String(data.lastName || '')).trim(), customerEmail: email, customerPhone: phone }
         const arranger = booker || { name: client.customerName, email: client.customerEmail, phone: client.customerPhone }
@@ -330,6 +340,12 @@ export const registerWalkInBookings = (app, { admin, requireAuth, authorizeClini
           createdAt: now,
           updatedAt: now,
         })
+        else tx.set(clientRecordRef, {
+          email,
+          phone,
+          updatedBy: req.user.uid,
+          updatedAt: now,
+        }, { merge: true })
         appointments.forEach((appointment, index) => {
           tx.set(childRefs[index], appointment)
           const count = appointment.treatmentPlan.totalSessions

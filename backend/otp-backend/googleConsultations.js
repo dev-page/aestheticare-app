@@ -53,6 +53,45 @@ export const registerGoogleConsultations = (app, deps) => {
   app.get('/google-meet/account', requireAuth, async (req, res) => {
     res.json({ success: true, data: { manualMeetLinks: true, connected: false } })
   })
+
+  app.get('/consultations/meet-link-logs', requireAuth, async (req, res) => {
+    try {
+      const branchId = String(req.query?.branchId || '').trim()
+      check(/^[A-Za-z0-9_-]{1,150}$/.test(branchId), 'Select a clinic branch.', 400)
+      await authorizeClinicAction(req.user.uid, branchId, 'consultations:view')
+      let query = db.collection('appointmentAudit')
+        .where('branchId', '==', branchId)
+        .where('action', '==', 'meet_link_generated')
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+      const beforeId = String(req.query?.before || '').trim()
+      if (beforeId) {
+        check(/^[A-Za-z0-9_-]{1,150}$/.test(beforeId), 'Invalid consultation log cursor.', 400)
+        const cursor = await db.collection('appointmentAudit').doc(beforeId).get()
+        const cursorData = cursor.data() || {}
+        check(cursor.exists && cursorData.branchId === branchId && cursorData.action === 'meet_link_generated', 'Invalid consultation log cursor.', 400)
+        query = query.startAfter(cursor)
+      }
+      const snapshot = await query.get()
+      const logs = snapshot.docs.map(log => {
+        const data = log.data() || {}
+        const createdAt = data.createdAt?.toDate?.() || data.createdAt
+        return {
+          id: log.id,
+          appointmentId: data.appointmentId || '',
+          actorId: data.actorId || '',
+          actorName: data.actorName || '',
+          customerName: data.customerName || '',
+          serviceName: data.serviceName || '',
+          appointmentDate: data.appointmentDate || '',
+          appointmentTime: data.appointmentTime || '',
+          createdAt: createdAt instanceof Date ? createdAt.toISOString() : String(createdAt || ''),
+        }
+      })
+      res.json({ success: true, data: logs, hasMore: snapshot.docs.length === 100, nextCursor: snapshot.docs.at(-1)?.id || '' })
+    } catch (error) { respondError(res, error) }
+  })
+
   app.post('/google-meet/account/connect', requireAuth, async (req, res) => {
     res.status(410).json({ success: false, error: 'Google account connection is no longer needed. Create a room in Google Meet and add its link to the appointment.' })
   })
@@ -229,6 +268,8 @@ export const registerGoogleConsultations = (app, deps) => {
       const ref = db.collection('appointments').doc(req.params.id)
       const meetingRef = db.collection('appointmentMeetings').doc(req.params.id)
       const customerNotificationRef = db.collection('notifications').doc(`meet-invite-${ref.id}`)
+      const auditRef = db.collection('appointmentAudit').doc()
+      const actorName = String(req.user.name || req.user.email || req.user.uid).trim()
       const result = await db.runTransaction(async tx => {
         const appointment = (await tx.get(ref)).data()
         check(appointment, 'Online consultation not found.', 404)
@@ -239,6 +280,7 @@ export const registerGoogleConsultations = (app, deps) => {
         const window = consultationWindow(appointment)
         const invitedAt = appointment.consultationInviteAt || stamp()
         const previousMeeting = (await tx.get(meetingRef)).data() || {}
+        const isNewMeetLink = previousMeeting.meetLink !== meetLink
         tx.set(meetingRef, {
           meetingProvider: 'google-meet-manual', meetLink, meetCode: meetLink.split('/').pop(),
           meetCreatedBy: req.user.uid, meetCreatedAt: previousMeeting.meetLink === meetLink ? previousMeeting.meetCreatedAt || stamp() : stamp(),
@@ -248,6 +290,18 @@ export const registerGoogleConsultations = (app, deps) => {
           scheduledEndAt: window.end.toISOString(), durationMinutes: window.duration, updatedAt: stamp(),
         }, { merge: true })
         tx.update(ref, { consultationInviteAt: invitedAt, consultationInviteSentBy: req.user.uid, consultationInviteEmailStatus: 'pending', updatedAt: stamp() })
+        if (isNewMeetLink) tx.set(auditRef, {
+          appointmentId: ref.id,
+          branchId: appointment.branchId,
+          actorId: req.user.uid,
+          actorName,
+          action: 'meet_link_generated',
+          customerName: String(appointment.customerName || appointment.clientName || appointment.patientName || 'Customer').trim(),
+          serviceName: String(appointment.service || appointment.serviceName || 'Online consultation').trim(),
+          appointmentDate: String(appointment.date || ''),
+          appointmentTime: String(appointment.time || ''),
+          createdAt: stamp(),
+        })
         tx.set(customerNotificationRef, {
           recipientUserId: appointment.customerId, branchId: appointment.branchId, title: 'Your clinic shared a Google Meet link',
           message: 'Your clinic added a consultation link. Enter your service code in My Appointments to reveal it.',
@@ -259,6 +313,7 @@ export const registerGoogleConsultations = (app, deps) => {
           customerEmail: String(appointment.customerEmail || '').trim(),
           serviceName: String(appointment.service || appointment.serviceName || 'Online consultation').trim(),
           date: String(appointment.date || ''), time: String(appointment.time || ''), branchId: appointment.branchId,
+          linkLogged: isNewMeetLink,
         }
       })
 
@@ -278,7 +333,7 @@ export const registerGoogleConsultations = (app, deps) => {
         } catch { emailSent = false }
       }
       await ref.set({ consultationInviteEmailStatus: emailSent ? 'sent' : 'failed', updatedAt: stamp() }, { merge: true })
-      res.json({ success: true, data: { meetLink: result.meetLink, invitedAt: result.invitedAt, emailSent } })
+      res.json({ success: true, data: { meetLink: result.meetLink, invitedAt: result.invitedAt, emailSent, linkLogged: result.linkLogged } })
     } catch (error) { respondError(res, error) }
   })
 

@@ -26,36 +26,41 @@
             <div class="section-heading"><div><p class="eyebrow">Step 1 of 3</p><h2>Who is receiving care?</h2><p class="muted small">Choose someone already in this branch’s client list, or add their details as part of this booking. A new clinic profile is saved only when the booking succeeds.</p></div></div>
             <ContractAppearanceSelect id="walk-in-client" v-model="selectedClientId" label="Care recipient" :disabled="busy" :options="clientOptions" />
             <div v-if="selectedClientId === NEW_CLIENT_ID" class="new-recipient-form">
-              <p class="muted small">Enter the recipient’s details. They do not need a platform account. Email and phone are optional. Without an email, give them the booking details and service code in person.</p>
+              <p class="muted small">Enter the recipient’s details. They do not need a platform account. Email and contact number are required so the contract, receipt, and service code can be sent.</p>
               <div class="field-grid">
                 <div><label for="walk-in-first-name" class="field-label">First name</label><input id="walk-in-first-name" v-model.trim="newClient.firstName" required maxlength="100" class="desk-input" :disabled="busy" autocomplete="given-name" /></div>
                 <div><label for="walk-in-middle-name" class="field-label">Middle name <span class="muted small">(optional)</span></label><input id="walk-in-middle-name" v-model.trim="newClient.middleName" maxlength="100" class="desk-input" :disabled="busy" autocomplete="additional-name" /></div>
                 <div><label for="walk-in-last-name" class="field-label">Last name</label><input id="walk-in-last-name" v-model.trim="newClient.lastName" required maxlength="100" class="desk-input" :disabled="busy" autocomplete="family-name" /></div>
                 <div><label for="walk-in-suffix" class="field-label">Suffix <span class="muted small">(optional)</span></label><input id="walk-in-suffix" v-model.trim="newClient.suffix" maxlength="20" placeholder="Jr., Sr., III" class="desk-input" :disabled="busy" /></div>
-                <div><label for="walk-in-email" class="field-label">Email address <span class="muted small">(optional)</span></label><input id="walk-in-email" v-model.trim="newClient.email" type="email" maxlength="254" class="desk-input" :disabled="busy" autocomplete="email" /></div>
-                <div><label for="walk-in-phone" class="field-label">Contact number <span class="muted small">(optional)</span></label><input id="walk-in-phone" v-model.trim="newClient.phone" type="tel" inputmode="tel" maxlength="32" placeholder="+63 9XX XXX XXXX" class="desk-input" :disabled="busy" autocomplete="tel" /></div>
+                <div><label for="walk-in-email" class="field-label">Email address *</label><input id="walk-in-email" v-model.trim="newClient.email" required type="email" maxlength="254" class="desk-input" :disabled="busy" autocomplete="email" /></div>
+                <div><label for="walk-in-phone" class="field-label">Contact number *</label><input id="walk-in-phone" v-model.trim="newClient.phone" required type="tel" inputmode="tel" maxlength="32" placeholder="+63 9XX XXX XXXX" class="desk-input" :disabled="busy" autocomplete="tel" /></div>
               </div>
-              <p v-if="selectedClientId === NEW_CLIENT_ID && !clientReady" class="field-error" role="alert">Enter the recipient’s first and last name. Email and phone may be left blank; complete either one only if it is valid.</p>
+              <p v-if="!clientReady" class="field-error" role="alert">Enter the recipient’s first and last name, a valid email address, and a valid contact number.</p>
             </div>
-            <p v-else-if="selectedClientId && !clientReady" class="field-error" role="alert">This client has an invalid saved email or phone number. Correct it or clear it before continuing.</p>
+            <div v-else-if="selectedClientId" class="field-grid">
+              <div><label for="walk-in-existing-email" class="field-label">Recipient email address *</label><input id="walk-in-existing-email" v-model.trim="existingClientContact.email" required type="email" maxlength="254" class="desk-input" :disabled="busy" autocomplete="email" /></div>
+              <div><label for="walk-in-existing-phone" class="field-label">Recipient contact number *</label><input id="walk-in-existing-phone" v-model.trim="existingClientContact.phone" required type="tel" inputmode="tel" maxlength="32" placeholder="+63 9XX XXX XXXX" class="desk-input" :disabled="busy" autocomplete="tel" /></div>
+            </div>
+            <p v-if="selectedClientId && !clientReady && selectedClientId !== NEW_CLIENT_ID" class="field-error" role="alert">Enter a valid recipient email address and contact number to continue. Updated contact details will be saved with this booking.</p>
             <p class="muted small">The appointment and service code are linked to the selected recipient. Booking for someone else? Keep the recipient selected and enter the arranger below.</p>
             <label class="desk-checkbox summary-acknowledgement"><input v-model="bookingForSomeoneElse" type="checkbox" :disabled="busy" /> Booking for someone else</label>
             <div v-if="bookingForSomeoneElse" class="field-grid">
-              <div><label for="booker-name" class="field-label">Booking arranger's name</label><input id="booker-name" v-model.trim="booker.name" class="desk-input" maxlength="150" :disabled="busy" /></div>
-              <div><label for="booker-phone" class="field-label">Booking arranger's contact number</label><input id="booker-phone" v-model.trim="booker.phone" class="desk-input" type="tel" maxlength="25" :disabled="busy" /></div>
-              <div><label for="booker-email" class="field-label">Booking arranger's email (optional)</label><input id="booker-email" v-model.trim="booker.email" class="desk-input" type="email" maxlength="254" :disabled="busy" /></div>
+              <div><label for="booker-name" class="field-label">Booking arranger's name *</label><input id="booker-name" v-model.trim="booker.name" required class="desk-input" maxlength="150" :disabled="busy" autocomplete="name" /></div>
+              <div><label for="booker-phone" class="field-label">Booking arranger's contact number *</label><input id="booker-phone" v-model.trim="booker.phone" required class="desk-input" type="tel" maxlength="25" :disabled="busy" autocomplete="tel" /></div>
+              <div><label for="booker-email" class="field-label">Booking arranger's email *</label><input id="booker-email" v-model.trim="booker.email" required class="desk-input" type="email" maxlength="254" :disabled="busy" autocomplete="email" /></div>
             </div>
+            <p v-if="bookingForSomeoneElse && !bookingArrangerReady" class="field-error" role="alert">Enter the booking arranger’s name, valid email address, and valid contact number.</p>
             <p v-if="bookingForSomeoneElse" class="muted small">Keep the selected client as the person receiving treatment. The arranger and recipient will sign their own agreement in Step 2.</p>
             <div class="walk-in-step-actions">
               <span class="muted small">You can return to this step and edit the recipient before payment starts.</span>
-              <button type="button" class="desk-button primary" :disabled="busy || !clientReady" @click="continueToSchedule">Continue to schedule</button>
+              <button type="button" class="desk-button primary" :disabled="busy || !clientReady || !bookingArrangerReady" @click="continueToSchedule">Continue to schedule</button>
             </div>
           </section>
           <section v-else-if="bookingStep === 2" class="desk-card walk-in-step-panel">
             <div class="section-heading"><div><p class="eyebrow">Step 2 of 3</p><h2>Choose the visit and time</h2><p class="muted small">Schedule one or more appointments for {{ clientFor(selectedClientId)?.fullName || 'the selected client' }}. Each appointment needs its own date and time and is handled by one assigned practitioner.</p></div></div>
             <article class="client-card">
               <div class="client-heading"><h3>{{ clientFor(selectedClientId)?.fullName || 'Selected client' }}</h3></div>
-              <p v-if="clientFor(selectedClientId)" class="client-contact">{{ clientFor(selectedClientId).email || 'Email missing — update this client first' }} <span>·</span> {{ clientFor(selectedClientId).phone || clientFor(selectedClientId).contactNumber || 'No contact number' }}</p>
+              <p v-if="clientFor(selectedClientId)" class="client-contact">{{ recipientContact.email || 'Email required' }} <span>·</span> {{ recipientContact.phone || 'Contact number required' }}</p>
               <section v-for="(visit, visitIndex) in visits" :key="visit.key" class="visit-card">
                 <div class="visit-heading"><h4>Appointment {{ visitIndex + 1 }}</h4><button v-if="visits.length > 1" type="button" class="text-button" :disabled="busy" @click="removeVisit(visit.key)">Remove appointment</button></div>
                 <div class="field-grid"><ContractAppearanceSelect :id="`service-${visit.key}`" v-model="visit.serviceId" label="Service, consultation, or package" :disabled="busy" :options="serviceOptions" @update:model-value="clearSchedule(visit)" /><ContractAppearanceSelect :id="`practitioner-${visit.key}`" v-model="visit.practitionerId" label="Lead practitioner" :disabled="busy" :options="practitionerOptions" @update:model-value="clearSchedule(visit)" /></div>
@@ -89,7 +94,7 @@
             </section>
             <div class="walk-in-step-actions">
               <button type="button" class="desk-button secondary" :disabled="busy" @click="goToBookingStep(1)">Back to client</button>
-              <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !clientReady || !scheduleReady || !flatVisits.length || !policyAcknowledged || !bookingSignature || !treatmentAcknowledged || !(bookingForSomeoneElse ? treatmentSignature : bookingSignature)" @click="continueToPayment">Continue to payment</button>
+              <button type="button" class="desk-button primary" :disabled="busy || !availabilityReady || !clientReady || !bookingArrangerReady || !scheduleReady || !flatVisits.length || !policyAcknowledged || !bookingSignature || !treatmentAcknowledged || !(bookingForSomeoneElse ? treatmentSignature : bookingSignature)" @click="continueToPayment">Continue to payment</button>
             </div>
           </section>
 
@@ -203,7 +208,7 @@ const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', ph
 const createdAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), paymentMethods = ref({})
 const NEW_CLIENT_ID = '__new_client__'
 const emptyClient = () => ({ firstName: '', middleName: '', lastName: '', suffix: '', email: '', phone: '' })
-const newClient = ref(emptyClient()), now = ref(Date.now())
+const newClient = ref(emptyClient()), existingClientContact = ref({ email: '', phone: '' }), now = ref(Date.now())
 const availabilityReady = ref(false)
 let apiBase = OTP_BACKEND_CANDIDATES[0], clockTimer, submissionId = crypto.randomUUID()
 const today = computed(() => manilaDate(now.value))
@@ -236,17 +241,23 @@ const normalizedNewClient = computed(() => {
 const validNewClient = computed(() => {
   const client = normalizedNewClient.value
   return Boolean(client.firstName && client.lastName && client.firstName.length <= 100 && client.middleName.length <= 100 && client.lastName.length <= 100
-    && client.suffix.length <= 20 && (!client.email || (client.email.length <= 254 && /^\S+@\S+\.\S+$/.test(client.email)))
-    && client.phone.length <= 32 && (!client.phone || /^\+?[0-9 ()-]{7,32}$/.test(client.phone)))
+    && client.suffix.length <= 20 && client.email.length <= 254 && /^\S+@\S+\.\S+$/.test(client.email)
+    && client.phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(client.phone))
 })
+const normalizedExistingClientContact = computed(() => ({
+  email: String(existingClientContact.value.email || '').trim().toLowerCase(),
+  phone: String(existingClientContact.value.phone || '').trim(),
+}))
+const recipientContact = computed(() => selectedClientId.value === NEW_CLIENT_ID
+  ? normalizedNewClient.value
+  : normalizedExistingClientContact.value)
 const clientReady = computed(() => selectedClientId.value === NEW_CLIENT_ID
   ? validNewClient.value
   : (() => {
-      const client = clientFor(selectedClientId.value) || {}
-      const email = String(client.email || '').trim()
-      const phone = String(client.phone || client.contactNumber || '').trim()
-      return (!email || (email.length <= 254 && /^\S+@\S+\.\S+$/.test(email)))
-        && phone.length <= 32 && (!phone || /^\+?[0-9 ()-]{7,32}$/.test(phone))
+      if (!selectedClientId.value || !clientFor(selectedClientId.value)) return false
+      const { email, phone } = normalizedExistingClientContact.value
+      return email.length <= 254 && /^\S+@\S+\.\S+$/.test(email)
+        && phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(phone)
     })())
 const bookingClients = computed(() => {
   const byId = new Map()
@@ -286,11 +297,11 @@ const bookingClients = computed(() => {
 const availabilityClients = computed(() => selectedClientId.value === NEW_CLIENT_ID
   ? [...bookingClients.value, { id: NEW_CLIENT_ID, ...normalizedNewClient.value }]
   : bookingClients.value)
-const bookingArrangerReady = computed(() => !bookingForSomeoneElse.value || (
-  booker.value.name.trim().length >= 2
-  && /^\+?[0-9 ()-]{7,25}$/.test(booker.value.phone)
-  && (!booker.value.email || /^\S+@\S+\.\S+$/.test(booker.value.email))
-))
+const bookingArrangerReady = computed(() => bookingForSomeoneElse.value
+  ? booker.value.name.trim().length >= 2 && booker.value.name.trim().length <= 150
+    && booker.value.email.trim().length <= 254 && /^\S+@\S+\.\S+$/.test(booker.value.email.trim())
+    && /^\+?[0-9 ()-]{7,25}$/.test(booker.value.phone.trim())
+  : clientReady.value)
 const serviceFor = id => services.value.find(service => service.id === id)
 const sameDayConsultationFor = service => services.value.find(item => item.id === service?.linkedConsultationId && String(item.postType || '').toLowerCase() === 'consultation') || null
 const supportsOnSite = service => (Array.isArray(service?.consultationModes) && service.consultationModes.length ? service.consultationModes : [service?.consultationMode]).some(mode => ['on-site', 'onsite'].includes(String(mode || '').trim().toLowerCase().replace(/[\s_]+/g, '-')))
@@ -333,7 +344,7 @@ const treatmentContractPreviews = computed(() => appointmentReviewRows.value.map
 }))
 const resetAgreementAcceptance = () => { policyAcknowledged.value = false; treatmentAcknowledged.value = false; bookingSignature.value = ''; treatmentSignature.value = '' }
 watch([bookingForSomeoneElse, booker, policy], resetAgreementAcceptance, { deep: true })
-watch(normalizedNewClient, resetAgreementAcceptance)
+watch([normalizedNewClient, normalizedExistingClientContact], resetAgreementAcceptance)
 const availableSlots = (visit, date = visit.date) => walkInSlots({ row: { ...visit, clientId: selectedClientId.value }, date, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: now.value })
 const scheduleReady = computed(() => Boolean(availabilityReady.value && clientReady.value && flatVisits.value.length
   && flatVisits.value.every(row => row.serviceId && row.practitionerId && row.date && row.time
@@ -364,7 +375,7 @@ const continueToSchedule = () => {
     return
   }
   if (!bookingArrangerReady.value) {
-    error.value = 'Enter the booking arranger’s name and a valid contact number before continuing.'
+    error.value = 'Enter the booking arranger’s name, valid email address, and valid contact number before continuing.'
     return
   }
   if (!visits.value.length) visits.value = [newVisit()]
@@ -375,7 +386,7 @@ const continueToPayment = () => {
   if (!scheduleReady.value) return void (error.value = 'Choose an available offering, practitioner, date, and time for every appointment.')
   if (!policyAcknowledged.value || !bookingSignature.value) return void (error.value = 'The booking arranger must review, accept, and sign the booking terms.')
   if (!treatmentAcknowledged.value || !(bookingForSomeoneElse.value ? treatmentSignature.value : bookingSignature.value)) return void (error.value = 'The care recipient must review, accept, and sign the appointment agreement.')
-  if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name and valid contact details.')
+  if (!bookingArrangerReady.value) return void (error.value = 'Enter the booking arranger name, valid email address, and valid contact number.')
   bookingStep.value = 3
 }
 const goToBookingStep = step => {
@@ -390,6 +401,11 @@ const removeVisit = key => {
   delete cashReceived.value[key]
 }
 watch(selectedClientId, () => {
+  const selectedClient = bookingClients.value.find(client => client.id === selectedClientId.value)
+  existingClientContact.value = {
+    email: String(selectedClient?.email || '').trim(),
+    phone: String(selectedClient?.phone || selectedClient?.contactNumber || '').trim(),
+  }
   bookingStep.value = 1
   policyAcknowledged.value = false
   treatmentAcknowledged.value = false
@@ -494,12 +510,12 @@ async function refreshAvailability() {
 async function createAppointments() {
   error.value = ''
   if (!selectedClientId.value || !flatVisits.value.length || !policyAcknowledged.value) { error.value = 'Choose a client, add services, and confirm the policies.'; return false }
-  if (!clientReady.value) { error.value = 'Check the recipient’s name and any email or phone number you entered.'; return false }
+  if (!clientReady.value) { error.value = 'Enter the recipient’s required name, valid email address, and valid contact number.'; return false }
   if (!scheduleReady.value) { error.value = 'Select an available date and time for every appointment. The same person needs separate dates.'; return false }
   if (!bookingSignature.value) { error.value = 'The booking arranger must sign the booking and payment terms.'; return false }
   const recipientSignature = bookingForSomeoneElse.value ? treatmentSignature.value : bookingSignature.value
   if (!treatmentAcknowledged.value || !recipientSignature) { error.value = 'The care recipient must review, accept, and sign the treatment agreement in Step 2.'; return false }
-  if (!bookingArrangerReady.value) { error.value = 'Enter the booking arranger name and valid contact details.'; return false }
+  if (!bookingArrangerReady.value) { error.value = 'Enter the booking arranger name, valid email address, and valid contact number.'; return false }
   if (flatVisits.value.some(row => !row.serviceId || !row.practitionerId || !row.date || !row.time || !walkInSlots({ row, rows: flatVisits.value, clients: availabilityClients.value, services: services.value, schedules: schedules.value, appointments: existingAppointments.value, leaves: leaves.value, operatingHours: branch.value.operatingHours || {}, legacyOperatingHours: { openDays: branch.value.openDays || [], openTime: branch.value.openTime || '', closeTime: branch.value.closeTime || '' }, now: Date.now() }).some(slot => slot.value === row.time))) { error.value = 'Select an available date and time for every service. The same person needs separate dates.'; return false }
   busy.value = true
   try {
@@ -507,6 +523,7 @@ async function createAppointments() {
       branchId: branchId.value,
       clientId: selectedClientId.value === NEW_CLIENT_ID ? null : selectedClientId.value,
       ...(selectedClientId.value === NEW_CLIENT_ID ? { clientDetails: normalizedNewClient.value } : {}),
+      ...(selectedClientId.value !== NEW_CLIENT_ID ? { clientContact: normalizedExistingClientContact.value } : {}),
       submissionId,
       policyAcknowledged: true,
       appointments: flatVisits.value.map(row => ({ ...row, sourceVisitKey: row.key })),

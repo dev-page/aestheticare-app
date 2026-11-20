@@ -137,6 +137,63 @@
           </table>
         </div>
       </div>
+
+      <section class="mt-6 overflow-hidden rounded-xl border border-slate-700 bg-slate-800" aria-labelledby="meet-link-history-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 px-6 py-4">
+          <div>
+            <h2 id="meet-link-history-title" class="text-lg font-semibold text-white">Meet link history</h2>
+            <p class="mt-1 text-sm text-slate-400">A record is added whenever a new Google Meet link is saved for a consultation.</p>
+          </div>
+          <button type="button" class="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs">
+            {{ meetLinkLogsLoading ? 'Refreshing…' : 'Refresh' }}
+          </button>
+        </div>
+        <p v-if="meetLinkLogsError && meetLinkLogs.length" class="border-b border-rose-900/50 bg-rose-950/30 px-6 py-3 text-sm text-rose-300">
+          {{ meetLinkLogsError }}
+          <button type="button" class="ml-2 underline underline-offset-2" @click="loadMeetLinkLogs">Try again</button>
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[780px]">
+            <thead class="bg-slate-700/70">
+              <tr>
+                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Link saved</th>
+                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Added by</th>
+                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Customer</th>
+                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Service</th>
+                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Appointment</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-700">
+              <tr v-if="meetLinkLogsLoading && meetLinkLogs.length === 0">
+                <td colspan="5" class="px-5 py-6 text-center text-sm text-slate-400">Loading Meet link history…</td>
+              </tr>
+              <tr v-else-if="meetLinkLogsError && meetLinkLogs.length === 0">
+                <td colspan="5" class="px-5 py-6 text-center text-sm text-rose-300">
+                  {{ meetLinkLogsError }}
+                  <button type="button" class="ml-2 underline underline-offset-2" @click="loadMeetLinkLogs">Try again</button>
+                </td>
+              </tr>
+              <tr v-else-if="meetLinkLogs.length === 0">
+                <td colspan="5" class="px-5 py-6 text-center text-sm text-slate-400">No Meet links have been saved for this branch yet.</td>
+              </tr>
+              <template v-else>
+                <tr v-for="log in meetLinkLogs" :key="log.id" class="hover:bg-slate-700/40">
+                  <td class="whitespace-nowrap px-5 py-3 text-sm text-slate-200">{{ formatLogDateTime(log.createdAt) }}</td>
+                  <td class="px-5 py-3 text-sm text-slate-200">{{ log.actorName || log.actorId || 'Unknown practitioner' }}</td>
+                  <td class="px-5 py-3 text-sm text-slate-200">{{ log.customerName || 'Customer' }}</td>
+                  <td class="px-5 py-3 text-sm text-slate-300">{{ log.serviceName || 'Online consultation' }}</td>
+                  <td class="whitespace-nowrap px-5 py-3 text-sm text-slate-300">{{ log.appointmentDate || '—' }} {{ formatClockTime(log.appointmentTime) }}</td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="meetLinkLogsHasMore" class="flex justify-center border-t border-slate-700 px-6 py-4">
+          <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs(true)">
+            {{ meetLinkLogsLoading ? 'Loading…' : 'Load older link records' }}
+          </button>
+        </div>
+      </section>
     </component>
 
     <Modal
@@ -247,6 +304,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const statusFilter = ref('')
     const dateFilter = ref('')
     const appointments = ref([])
+    const meetLinkLogs = ref([])
+    const meetLinkLogsLoading = ref(false)
+    const meetLinkLogsError = ref('')
+    const meetLinkLogsHasMore = ref(false)
+    const meetLinkLogsCursor = ref('')
 
     const startingId = ref('')
     const finishingId = ref('')
@@ -340,6 +402,38 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       appointments.value = sortRecordsNewestFirst(records)
       refreshMeetPresence()
     })
+
+    const formatLogDateTime = value => {
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })
+    }
+
+    const loadMeetLinkLogs = async (append = false) => {
+      if (!currentBranchId.value || meetLinkLogsLoading.value) return
+      meetLinkLogsLoading.value = true
+      if (!append) {
+        meetLinkLogsError.value = ''
+        meetLinkLogsCursor.value = ''
+        meetLinkLogsHasMore.value = false
+      }
+      try {
+        const cursor = append ? meetLinkLogsCursor.value : ''
+        const response = await fetchFromBackend(`/consultations/meet-link-logs?branchId=${encodeURIComponent(currentBranchId.value)}${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`)
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to load Meet link history.')
+        const pageLogs = Array.isArray(payload.data) ? payload.data : []
+        meetLinkLogs.value = append ? [...meetLinkLogs.value, ...pageLogs] : pageLogs
+        meetLinkLogsCursor.value = payload.nextCursor || ''
+        meetLinkLogsHasMore.value = payload.hasMore === true
+        meetLinkLogsError.value = ''
+      } catch (error) {
+        meetLinkLogsError.value = error.message || 'Unable to load Meet link history.'
+        console.error('Failed to load Meet link history:', error)
+        if (!append) meetLinkLogs.value = []
+      } finally {
+        meetLinkLogsLoading.value = false
+      }
+    }
 
     const parseDateTime = (dateValue, timeValue) => {
       const date = String(dateValue || '').trim()
@@ -453,6 +547,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         appointment.meetingProvider = 'google-meet-manual'
         appointment.meetPresenceTrackingEnabled = false
         appointment.consultationInviteAt = payload.data.invitedAt || new Date().toISOString()
+        if (payload.data.linkLogged) await loadMeetLinkLogs()
         meetLinkAppointment.value = null
         meetLinkDraft.value = ''
         if (payload.data.emailSent) toast.success('Meet link added. The customer was notified in the app and by email.')
@@ -652,6 +747,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         if (disposed) return
+        await loadMeetLinkLogs()
         unsubscribeAppointments?.()
         unsubscribeAppointments = pageListener(onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')), snapshot => loadAppointments(snapshot), error => toast.error(error.message || 'Live consultation updates are unavailable.'))
       })
@@ -668,11 +764,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     return {
       pageLoading,
       formatClockTime,
+      formatLogDateTime,
       searchQuery,
       statusFilter,
       dateFilter,
       assignedAppointments,
       filteredAppointments,
+      meetLinkLogs,
+      meetLinkLogsLoading,
+      meetLinkLogsError,
+      meetLinkLogsHasMore,
+      loadMeetLinkLogs,
 
       startingId,
       finishingId,
