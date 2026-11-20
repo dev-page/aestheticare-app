@@ -399,7 +399,7 @@
                       <p class="mt-2 text-sm text-[#e2c7b6]">Turn access on or off, then save the permission set for this role.</p>
                     </div>
                     <span class="permission-count rounded-full border border-[#5a3927] bg-[#24160f] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[#d2b7a6]">
-                      {{ selectedPermissionsCount }}/{{ allPermissionKeys.length }} enabled
+                      {{ selectedPermissionsCount }}/{{ roleControlPermissionKeys.length }} enabled
                     </span>
                   </div>
 
@@ -601,8 +601,10 @@ import {
   permissionFeatureMap,
   permissionGroups,
   permissionLabelMap,
+  roleControlPermissionKeys,
 } from '@/config/clinicPermissionRegistry'
 import { builtInRoleTemplates, getTemplatePermissions, permissionSuggestionRules } from '../../../../../shared/clinicRoleTemplates.js'
+import { inferClinicRolePagePermissions } from '../../../../../shared/clinicRolePermissionControls.js'
 
 const ROLE_COLOR = '#d2a679'
 // These pages are always available to clinic staff as self-service. Request
@@ -623,6 +625,7 @@ const normalizeRole = (docId, data, memberCount = 0) => ({
   description: String(data.description || '').trim(),
   color: ROLE_COLOR,
   permissions: Array.isArray(data.permissions) ? data.permissions.filter(Boolean) : [],
+  permissionModelVersion: Number(data.permissionModelVersion || 1),
   ownerId: String(data.ownerId || '').trim(),
   builtinKey: String(data.builtinKey || '').trim(),
   isBuiltIn: Boolean(data.isBuiltIn || data.builtinKey),
@@ -753,14 +756,25 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!roleName) return []
 
       const selectedPermissions = new Set(selectedRoleDraft.value.permissions || [])
+      const controlsForLegacyPermissions = (permissions = []) => {
+        const granted = new Set(permissions)
+        return roleControlPermissionKeys.filter((key) => {
+          const control = permissionGroups.flatMap((group) => group.sections.flatMap((section) => section.permissions))
+            .find((entry) => entry.key === key)
+          return control?.legacyAny?.some((permission) => granted.has(permission))
+        })
+      }
+      const toVisibleControls = (permissions = []) => [...new Set(permissions.flatMap((permission) => {
+        if (roleControlPermissionKeys.includes(permission)) return [permission]
+        return controlsForLegacyPermissions([permission])
+      }))]
       for (const rule of permissionSuggestionRules) {
         if (rule.match.some((token) => roleName.includes(token))) {
-          return [...new Set(rule.permissions.filter((permission) => allPermissionKeys.includes(permission) && !selectedPermissions.has(permission)))]
+          return toVisibleControls(rule.permissions).filter((permission) => !selectedPermissions.has(permission))
         }
       }
 
-      return ['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import', 'clients:view', 'clients:update', 'appointments:view', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'orders:view', 'orders:update', 'hr:view', 'hr:create', 'hr:update', 'leave:create', 'leave:review', 'payroll:view', 'payroll:update', 'services:view', 'services:create', 'services:update', 'services:disable', 'inbox:view', 'profile:view', 'password:update']
-        .filter((permission) => allPermissionKeys.includes(permission))
+      return toVisibleControls(['staff:view', 'staff:create', 'staff:update', 'staff:disable', 'hr:view', 'hr:create', 'hr:update', 'clients:view', 'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create', 'payments:view', 'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review', 'procurement:view', 'procurement:create', 'procurement:review', 'leave:create', 'leave:review', 'overtime:create', 'overtime:review', 'payroll:view', 'payroll:update', 'payroll:approve', 'services:view', 'services:create', 'services:update', 'services:disable', 'inbox:view', 'profile:view', 'password:update'])
         .filter((permission) => !selectedPermissions.has(permission))
     })
 
@@ -777,13 +791,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
 
+      const currentPermissions = Array.isArray(selectedRole.value.permissions) ? selectedRole.value.permissions : []
+      const visiblePermissions = selectedRole.value.permissionModelVersion >= 2
+        ? currentPermissions.filter((key) => roleControlPermissionKeys.includes(key))
+        : inferClinicRolePagePermissions(currentPermissions)
+
       selectedRoleDraft.value = {
         name: selectedRole.value.name,
         description: selectedRole.value.description,
         color: ROLE_COLOR,
-        permissions: allPermissionKeys.filter(
-          (key) => normalizePermissionSet(selectedRole.value.permissions).has(key) || defaultPermissionKeys.has(key)
-        ),
+        permissions: roleControlPermissionKeys.filter((key) => visiblePermissions.includes(key)),
       }
     }
 
@@ -1271,14 +1288,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const togglePermission = (permissionKey) => {
       if (isDefaultPermission(permissionKey)) return
       if (isPermissionLocked(permissionKey)) return
-      const permissions = new Set(selectedRoleDraft.value.permissions || [])
+      const permissions = new Set((selectedRoleDraft.value.permissions || []).filter((key) => roleControlPermissionKeys.includes(key)))
       if (permissions.has(permissionKey)) {
-        removePermissionDependents(permissions, permissionKey)
+        permissions.delete(permissionKey)
       } else {
         permissions.add(permissionKey)
-        normalizePermissionSet([...permissions]).forEach((permission) => permissions.add(permission))
       }
-      selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => permissions.has(key))
+      selectedRoleDraft.value.permissions = roleControlPermissionKeys.filter((key) => permissions.has(key))
     }
 
     const saveRolePermissions = async () => {
@@ -1286,8 +1302,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       saving.value = true
       try {
-        const normalizedPermissions = normalizePermissionSet(selectedRoleDraft.value.permissions)
-        selectedRoleDraft.value.permissions = allPermissionKeys.filter((key) => normalizedPermissions.has(key))
+        const selectedControls = roleControlPermissionKeys.filter((key) => selectedRoleDraft.value.permissions.includes(key))
+        const normalizedPermissions = normalizePermissionSet(selectedControls)
         const token = await auth.currentUser?.getIdToken()
         if (!token) throw new Error('Sign in again before saving role permissions.')
         const response = await fetch(`${OTP_API_BASE}/clinic-roles/${encodeURIComponent(selectedRole.value.id)}/permissions`, {
@@ -1296,7 +1312,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ permissions: selectedRoleDraft.value.permissions }),
+          body: JSON.stringify({ permissions: [...normalizedPermissions] }),
         })
         const payload = await response.json().catch(() => ({}))
         if (!response.ok || !payload.success) {
@@ -1344,9 +1360,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           name: template.name,
           description: template.description,
           color: ROLE_COLOR,
-          permissions: allPermissionKeys.filter((permissionKey) =>
-            normalizePermissionSet(getTemplatePermissions(template.suggestion)).has(permissionKey)
-          ),
+          permissions: inferClinicRolePagePermissions(getTemplatePermissions(template.suggestion)),
         }
         await updateDoc(doc(db, 'clinicRoles', role.id), {
           name: template.name,
@@ -1412,12 +1426,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const enabledCountForGroup = (group) =>
       group.sections.reduce(
         (total, section) =>
-          total + section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length,
+          total + section.permissions.filter((permission) => isPermissionEnabled(permission.key)).length,
         0
       )
 
     const enabledCountForSection = (section) =>
-      section.permissions.filter((permission) => selectedRoleDraft.value.permissions.includes(permission.key)).length
+      section.permissions.filter((permission) => isPermissionEnabled(permission.key)).length
 
     let unsubscribeAuth = null
 
@@ -1464,6 +1478,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       openDetails,
       openPermissions,
       permissionGroups,
+      roleControlPermissionKeys,
       removeRole,
       resetNewRole,
       resetSelectedDraft,

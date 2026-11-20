@@ -5,16 +5,17 @@ import { db } from '@/config/firebaseConfig'
 import { useAuthStore } from '@/stores/auth'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { allPermissionKeys, defaultClinicRolePermissions } from '@/config/clinicPermissionRegistry'
+import {
+  expandClinicRolePermissions,
+  inferClinicRolePagePermissions,
+} from '../../../shared/clinicRolePermissionControls.js'
 
 export const usePermissionsStore = defineStore('permissions', () => {
   const authStore = useAuthStore()
   const subscriptionStore = useSubscriptionStore()
-  const defaultPermissionKeys = new Set(['notifications:view'])
+  const defaultPermissionKeys = new Set()
   const fullAccessPermissionKey = 'administrator:full_access'
-  const clinicAdminRestrictedPermissions = new Set([
-    'roles:manage', 'branches:view', 'branches:create', 'clinic_profile:update', 'subscription:view', 'backups:view', 'backups:create',
-  ])
-  const clinicAdminPermissions = allPermissionKeys.filter((permission) => !clinicAdminRestrictedPermissions.has(permission))
+  const clinicAdminPermissions = allPermissionKeys
 
   const userPermissions = ref([])
   const rolePermissions = ref([])
@@ -62,10 +63,12 @@ export const usePermissionsStore = defineStore('permissions', () => {
           const roleOwnerId = String(roleData.ownerId || '').trim()
           const belongsToCurrentClinic = !isEmployeeAccount.value
             || Boolean(customRoleOwnerId.value && roleOwnerId === customRoleOwnerId.value)
-          customRolePermissionMap.set(
-            roleId,
-            belongsToCurrentClinic && Array.isArray(roleData.permissions) ? roleData.permissions : []
-          )
+          const rolePermissions = belongsToCurrentClinic && Array.isArray(roleData.permissions)
+            ? roleData.permissions
+            : []
+          customRolePermissionMap.set(roleId, roleData.permissionModelVersion >= 2
+            ? expandClinicRolePermissions(rolePermissions)
+            : [...new Set([...rolePermissions, ...inferClinicRolePagePermissions(rolePermissions)])])
           customRolePermissions.value = [...customRolePermissionMap.values()].flat()
         },
         (error) => {

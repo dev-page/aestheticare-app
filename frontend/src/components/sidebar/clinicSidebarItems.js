@@ -13,9 +13,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:hospital-building',
     tourKey: 'clinic-setup',
     children: [
-      { label: 'Clinic Profile', icon: 'profile', to: '/clinic/profile', permissionsAny: ['clinic_profile:view', 'clinic_profile:update'] },
-      { label: 'Branch Management', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permissionsAny: ['branches:view', 'branches:create'] },
-      { label: 'Policy & Contract Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permissionsAny: ['policies:view', 'policies:update'] }
+      { label: 'Clinic Profile', icon: 'profile', to: '/clinic/profile', permission: 'page:clinic-profile:manage' },
+      { label: 'Branch Management', icon: 'mdi:map-marker-outline', to: '/clinic/branches', permissionsAny: ['page:branches:view', 'page:branches:manage'] },
+      { label: 'Policy & Contract Management', icon: 'mdi:file-document-outline', to: '/clinic/policies', permission: 'page:policies:manage' }
     ]
   },
   {
@@ -25,16 +25,16 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'crm',
     children: [
       { type: 'section', label: 'CLIENT RECORDS' },
-      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permissions: ['clients:view', 'appointments:view'] },
+      { label: 'Client List', icon: 'mdi:account-multiple-outline', to: '/crm/clients', permission: 'page:clients:view' },
       { type: 'section', label: 'FRONT DESK' },
-      { label: 'Walk-In Desk', icon: 'mdi:walk', to: '/crm/walk-in', permissions: ['clients:view', 'appointments:view', 'appointments:create', 'appointments:update'] },
+      { label: 'Walk-In Desk', icon: 'mdi:walk', to: '/crm/walk-in', permission: 'page:walk-in:manage' },
       { type: 'section', label: 'APPOINTMENTS' },
-      { label: 'Appointment Management', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'appointments:review', 'consultations:view'] },
-      { label: 'Prescriptions', icon: 'mdi:prescription', to: '/clinical/prescriptions', feature: 'appointments', permissionsAny: ['appointments:view', 'appointments:update', 'consultations:view'] },
-      { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'appointments:review' },
+      { label: 'Appointment Management', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permission: 'page:appointments:manage' },
+      { label: 'Prescriptions', icon: 'mdi:prescription', to: '/clinical/prescriptions', feature: 'appointments', permission: 'page:prescriptions:manage' },
+      { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'page:appointments:manage' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },
-      { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', feature: 'appointments', permission: 'payments:view' },
-      { label: 'Inbox', icon: 'mdi:email-outline', to: '/crm/inbox', permission: 'inbox:view' }
+      { label: 'Transactions', icon: 'mdi:receipt-text-outline', to: '/crm/transactions', feature: 'appointments', permission: 'page:transactions:view' },
+      { label: 'Inbox', icon: 'mdi:email-outline', to: '/crm/inbox', permission: 'page:inbox:manage' }
     ]
   },
   {
@@ -44,17 +44,17 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'hr',
     children: [
       { type: 'section', label: 'PEOPLE & WORKFORCE' },
-      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'roles:manage' },
-      { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permission: 'staff:view' },
-      { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/hr/employees/new', feature: 'staff_management', permission: 'staff:create' },
-      { label: 'Archived Accounts', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'staff:disable' },
-      { label: 'Add Shift', icon: 'mdi:calendar-clock-outline', to: '/hr/shifts?tab=add', feature: 'hr', permission: 'hr:create' },
-      { label: 'Shift Assignment', icon: 'mdi:calendar-account-outline', to: '/hr/shifts?tab=assignment', feature: 'hr', permission: 'hr:update' },
-      { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'attendance:view' },
+      { label: 'Roles', icon: 'mdi:shield-account-outline', to: '/hr/roles', feature: 'staff_management', permission: 'page:roles:manage' },
+      { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permission: 'page:employees:manage' },
+      { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/hr/employees/new', feature: 'staff_management', permission: 'page:employees:manage' },
+      { label: 'Archived Accounts', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'page:employees:manage' },
+      { label: 'Add Shift', icon: 'mdi:calendar-clock-outline', to: '/hr/shifts?tab=add', feature: 'hr', permission: 'page:employees:manage' },
+      { label: 'Shift Assignment', icon: 'mdi:calendar-account-outline', to: '/hr/shifts?tab=assignment', feature: 'hr', permission: 'page:employees:manage' },
+      { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'page:employees:manage' },
       { type: 'section', label: 'LEAVE & OVERTIME' },
-      { label: 'Leave Management', icon: 'mdi:calendar-clock-outline', to: '/hr/leave-management', feature: 'hr', permission: 'leave:review' },
-      { label: 'Leave Request', icon: 'mdi:calendar-arrow-right', to: '/hr/leave-request', feature: 'hr', permission: 'leave:create' },
-      { label: 'Overtime Request', icon: 'mdi:timer-plus-outline', to: '/hr/overtime', feature: 'hr', permissionsAny: ['overtime:view', 'overtime:create'] },
+      { label: 'Overtime & Leave Management', icon: 'mdi:calendar-clock-outline', to: '/hr/leave-overtime-management', feature: 'hr', permission: 'page:leave-overtime:manage' },
+      { label: 'Leave Request', icon: 'mdi:calendar-arrow-right', to: '/hr/leave-request', feature: 'hr', permission: 'page:leave:request' },
+      { label: 'Overtime Request', icon: 'mdi:timer-plus-outline', to: '/hr/overtime', feature: 'hr', permission: 'page:overtime:request' },
     ]
   },
   {
@@ -64,13 +64,13 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'finance',
     feature: 'reports',
     children: [
-      { label: 'Approve Purchase Orders', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'finance:payables:view' },
-      { label: 'Listing Approvals', icon: 'tag-check', to: '/finance/listing-approvals', permissionsAny: ['services:review', 'finance:reports:view'] },
-      { label: 'Employee Compensation', icon: 'mdi:account-cash-outline', to: '/finance/employee-compensation', feature: 'payroll', permissionsAny: ['payroll:update', 'payroll:view'] },
-      { label: 'Payroll Management', icon: 'mdi:calculator', to: '/finance/payroll-management', feature: 'payroll', permission: 'payroll:update' },
-      { label: 'Payroll Approval', icon: 'mdi:cash-check', to: '/finance/payroll-approval', feature: 'payroll', permission: 'payroll:approve' },
-      { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'finance:payables:view' },
-      { label: 'Other Expenses', icon: 'mdi:cash-minus', to: '/finance/expenses-payments?tab=other', permission: 'finance:payables:view' },
+      { label: 'Approve Purchase Orders', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'page:purchase-orders:approve' },
+      { label: 'Listing Approvals', icon: 'tag-check', to: '/finance/listing-approvals', permission: 'page:listings:approve' },
+      { label: 'Employee Compensation', icon: 'mdi:account-cash-outline', to: '/finance/employee-compensation', feature: 'payroll', permission: 'page:employees:manage' },
+      { label: 'Payroll Management', icon: 'mdi:calculator', to: '/finance/payroll-management', feature: 'payroll', permission: 'page:payroll:manage' },
+      { label: 'Payroll Approval', icon: 'mdi:cash-check', to: '/finance/payroll-approval', feature: 'payroll', permission: 'page:payroll:manage' },
+      { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'page:supplier-invoices:manage' },
+      { label: 'Other Expenses', icon: 'mdi:cash-minus', to: '/finance/expenses-payments?tab=other', permission: 'page:other-expenses:manage' },
     ]
   },
   {
@@ -79,8 +79,8 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     icon: 'mdi:format-list-bulleted',
     moduleKey: 'operations',
     children: [
-      { label: 'Service Listings', icon: 'mdi:format-list-bulleted', to: '/catalog/products-services', permission: 'services:view' },
-      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/catalog/archived', permission: 'services:view' }
+      { label: 'Service Listings', icon: 'mdi:format-list-bulleted', to: '/catalog/products-services', permission: 'page:services:manage' },
+      { label: 'Archived Posts', icon: 'mdi:archive-outline', to: '/catalog/archived', permission: 'page:services:manage' }
     ]
   },
   {
@@ -90,9 +90,9 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     moduleKey: 'inventory',
     feature: 'inventory',
     children: [
-      ...supplyLinks('inventory', 'inventory:view', [['items', 'Inventory & Stock', 'mdi:package-variant-closed'], ['requests', 'Request Supplies', 'mdi:clipboard-plus-outline']]),
-      { label: 'Receive Supplies', icon: 'mdi:clipboard-check-outline', to: '/inventory/receiving', permission: 'inventory:create' },
-      { label: 'Pharmacy', icon: 'mdi:cash-register', to: '/pharmacy/pos', feature: 'inventory', permission: 'pharmacy:view' },
+      ...supplyLinks('inventory', 'page:inventory:manage', [['items', 'Inventory & Stock', 'mdi:package-variant-closed'], ['requests', 'Request Supplies', 'mdi:clipboard-plus-outline']]),
+      { label: 'Receive Supplies', icon: 'mdi:clipboard-check-outline', to: '/inventory/receiving', permission: 'page:inventory:manage' },
+      { label: 'Pharmacy', icon: 'mdi:cash-register', to: '/pharmacy/pos', feature: 'inventory', permission: 'page:pharmacy:manage' },
     ]
   },
   {
@@ -103,9 +103,10 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     feature: 'inventory',
     children: [
       { type: 'section', label: 'PROCUREMENT WORKFLOW' },
-      ...supplyLinks('procurement', 'procurement:view', [['requests', 'Review Supply Requests', 'mdi:clipboard-text-outline'], ['orders', 'Purchase Orders', 'mdi:cart-check']]),
+      ...supplyLinks('procurement', 'page:procurement-orders:manage', [['orders', 'Purchase Orders', 'mdi:cart-check']]),
+      { label: 'Review Supply Requests', icon: 'mdi:clipboard-text-outline', to: '/procurement/requests', permission: 'page:inventory-requests:manage' },
       { type: 'section', label: 'SUPPLIER MANAGEMENT' },
-      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permissionsAny: ['procurement:view', 'suppliers:create', 'suppliers:update'] },
+      { label: 'Supplier Directory', icon: 'mdi:truck-delivery-outline', to: '/procurement/suppliers/directory', permission: 'page:suppliers:manage' },
     ]
   },
   {
@@ -113,16 +114,16 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     label: 'Account Settings',
     icon: 'settings',
     children: [
-      { label: 'Profile', icon: 'profile', to: '/account/profile' },
-      { label: 'Change Password', icon: 'key', to: '/account/change-password' },
-      { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'subscription:view' },
-      { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'backups:view' },
-      { label: 'Activities', icon: 'mdi:clipboard-text-clock-outline', to: '/activities', permission: 'activities:view' },
+      { label: 'Profile', icon: 'profile', to: '/account/profile', permission: 'page:account:manage' },
+      { label: 'Change Password', icon: 'key', to: '/account/change-password', permission: 'page:account:manage' },
+      { label: 'Subscription Plan', icon: 'mdi:card-account-details-star-outline', to: '/account/subscription', permission: 'page:subscription:manage' },
+      { label: 'Backup Database', icon: 'mdi:database-export-outline', to: '/account/backup', permission: 'page:backups:manage' },
+      { label: 'Activities', icon: 'mdi:clipboard-text-clock-outline', to: '/activities', permission: 'page:account:manage' },
       ...(!isEmployee ? [
-        { label: 'Account Access', icon: 'account-off', to: '/account/closure', permission: 'subscription:view' },
+        { label: 'Account Access', icon: 'account-off', to: '/account/closure', permission: 'page:account:manage' },
       ] : []),
-      { label: 'Notifications', icon: 'bell', to: '/notifications' },
-      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report' }
+      { label: 'Notifications', icon: 'bell', to: '/notifications', permission: 'page:account:manage' },
+      { label: 'Report Issue', icon: 'reportIssue', to: '/support/report', permission: 'page:account:manage' }
     ]
   }
 ]

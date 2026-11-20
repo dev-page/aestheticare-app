@@ -1,8 +1,13 @@
 import { defaultClinicRolePermissions } from '../../../shared/clinicRoleDefaults.js'
+import {
+  clinicRolePermissionGroups,
+  clinicRolePermissionGrants,
+  clinicRolePagePermissionKeys,
+} from '../../../shared/clinicRolePermissionControls.js'
 
 export { defaultClinicRolePermissions }
 
-export const permissionGroups = [
+const legacyPermissionGroups = [
   {
     key: 'clinic-setup',
     label: 'Clinic Setup',
@@ -256,13 +261,26 @@ export const permissionGroups = [
       },
     ],
   },
-]
+ ]
 
-export const allPermissionKeys = [...new Set(permissionGroups.flatMap((group) =>
+// The role editor exposes the page-level controls requested by clinic owners.
+// The legacy action catalog remains assignable internally so old roles and
+// backend operation checks can continue to use their existing permission keys.
+export const permissionGroups = clinicRolePermissionGroups
+
+export const legacyActionPermissionKeys = [...new Set(legacyPermissionGroups.flatMap((group) =>
   group.sections.flatMap((section) => section.permissions.map((permission) => permission.key))
 ))]
 
-export const permissionLabelMap = permissionGroups.reduce((labels, group) => {
+export const allPermissionKeys = [...new Set([
+  ...legacyActionPermissionKeys,
+  ...clinicRolePagePermissionKeys,
+  ...clinicRolePermissionGrants,
+])]
+
+export const roleControlPermissionKeys = clinicRolePagePermissionKeys
+
+export const permissionLabelMap = [...legacyPermissionGroups, ...permissionGroups].reduce((labels, group) => {
   group.sections.forEach((section) => {
     section.permissions.forEach((permission) => {
       labels[permission.key] = permission.label
@@ -272,6 +290,9 @@ export const permissionLabelMap = permissionGroups.reduce((labels, group) => {
 }, {})
 
 export const permissionDependencies = {
+  ...Object.fromEntries(clinicRolePermissionGroups.flatMap((group) =>
+    group.sections.flatMap((section) => section.permissions.map((control) => [control.key, control.grants]))
+  )),
   'branches:create': ['branches:view'],
   'clinic_profile:update': ['clinic_profile:view'],
   'staff:update': ['staff:view'],
@@ -304,13 +325,39 @@ export const permissionDependencies = {
   'payroll:approve': ['payroll:view'],
   'finance:payables:approve': ['finance:payables:view'],
   'finance:payables:settle': ['finance:payables:view'],
+  'finance:invoices:manage': ['finance:invoices:view'],
+  'finance:invoices:settle': ['finance:invoices:view'],
   'finance:refunds:manage': ['finance:refunds:view'],
   'procurement:create': ['procurement:view'],
   'procurement:review': ['procurement:view'],
+  'procurement:requests:manage': ['procurement:requests:view'],
+  'procurement:orders:manage': ['procurement:orders:view'],
   'policies:update': ['policies:view'],
 }
 
 export const permissionFeatureMap = {
+  'page:clients:view': 'appointments',
+  'page:walk-in:manage': 'appointments',
+  'page:appointments:manage': 'appointments',
+  'page:prescriptions:manage': 'appointments',
+  'page:transactions:view': 'reports',
+  'page:inbox:manage': 'appointments',
+  'page:roles:manage': 'staff_management',
+  'page:employees:manage': 'staff_management',
+  'page:leave-overtime:manage': 'hr',
+  'page:leave:request': 'hr',
+  'page:overtime:request': 'hr',
+  'page:listings:approve': 'services',
+  'page:purchase-orders:approve': 'reports',
+  'page:payroll:manage': 'payroll',
+  'page:supplier-invoices:manage': 'reports',
+  'page:other-expenses:manage': 'reports',
+  'page:services:manage': 'services',
+  'page:inventory:manage': 'inventory',
+  'page:pharmacy:manage': 'inventory',
+  'page:suppliers:manage': 'inventory',
+  'page:inventory-requests:manage': 'inventory',
+  'page:procurement-orders:manage': 'inventory',
   'staff:view': 'staff_management',
   'staff:create': 'staff_management',
   'staff:update': 'staff_management',
@@ -368,6 +415,9 @@ export const permissionFeatureMap = {
   'finance:payables:view': 'reports',
   'finance:payables:approve': 'reports',
   'finance:payables:settle': 'reports',
+  'finance:invoices:view': 'reports',
+  'finance:invoices:manage': 'reports',
+  'finance:invoices:settle': 'reports',
   'finance:refunds:view': 'reports',
   'finance:refunds:manage': 'reports',
   'finance:sales:view': 'reports',

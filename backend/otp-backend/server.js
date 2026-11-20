@@ -61,6 +61,11 @@ import { createClinicAgreementPdf, clinicAgreementTextHash } from './clinicAgree
 import { CLINIC_PLATFORM_AGREEMENT } from '../../shared/clinicPlatformAgreement.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { defaultClinicRolePermissions } from '../../shared/clinicRoleDefaults.js'
+import {
+  clinicRolePagePermissionKeys,
+  clinicRolePermissionGrants,
+  expandClinicRolePermissions,
+} from '../../shared/clinicRolePermissionControls.js'
 import { compareRegistrationFields } from './registrationComparisons.js'
 
 // firebase-admin v13 can hit a Google auth compatibility edge in some Node/runtime combinations.
@@ -1811,24 +1816,28 @@ const requiresOperationalLoginOtp = (userData = {}) => {
 // Built-in branch administrator permissions mirror the frontend permission
 // store. Clinic owners receive the additional account and role controls below.
 const CLINIC_ADMIN_PERMISSIONS = new Set([
-  'clinic_profile:view',
+  'branches:view', 'branches:create', 'clinic_profile:view', 'clinic_profile:update', 'roles:manage',
   'staff:view', 'staff:create', 'staff:update', 'staff:disable',
   'attendance:view', 'attendance:create', 'attendance:update', 'attendance:import',
   'clients:view', 'clients:update',
   'appointments:view', 'appointments:create', 'appointments:update', 'appointments:review', 'consultations:view', 'consultations:create',
   'payments:view', 'payments:create', 'inbox:view', 'reports:view',
-  'services:view', 'services:create', 'services:update', 'services:disable',
+  'services:view', 'services:create', 'services:update', 'services:disable', 'services:review',
   'inventory:view', 'inventory:create', 'inventory:update', 'inventory:disable', 'inventory:review',
   'suppliers:create', 'suppliers:update', 'orders:view', 'orders:update',
   'pharmacy:view', 'pharmacy:dispense', 'pharmacy:manage',
   'procurement:view', 'procurement:create', 'procurement:review',
+  'procurement:requests:view', 'procurement:requests:manage', 'procurement:orders:view', 'procurement:orders:manage',
   'hr:view', 'hr:create', 'hr:update',
   'leave:create', 'leave:review', 'overtime:view', 'overtime:create', 'overtime:review',
   'payroll:view', 'payroll:update', 'payroll:approve',
   'finance:purchases:view', 'finance:payables:view', 'finance:payables:approve', 'finance:payables:settle',
+  'finance:invoices:view', 'finance:invoices:manage', 'finance:invoices:settle',
   'finance:refunds:view', 'finance:refunds:manage', 'finance:sales:view', 'finance:reports:view',
   'policies:view', 'policies:update', 'activities:view', 'notifications:view',
-  'profile:view', 'password:update',
+  'profile:view', 'password:update', 'subscription:view', 'backups:view', 'backups:create', 'support:report',
+  ...clinicRolePagePermissionKeys,
+  ...clinicRolePermissionGrants,
 ])
 const CLINIC_OWNER_ADDITIONAL_PERMISSIONS = new Set([
   'branches:view', 'branches:create', 'clinic_profile:update', 'roles:manage',
@@ -1837,7 +1846,7 @@ const CLINIC_OWNER_ADDITIONAL_PERMISSIONS = new Set([
 const CLINIC_ROLE_PERMISSION_KEYS = new Set([
   ...CLINIC_ADMIN_PERMISSIONS,
   ...CLINIC_OWNER_ADDITIONAL_PERMISSIONS,
-  'services:review',
+  ...clinicRolePagePermissionKeys,
 ])
 
 const loadUserContext = async (uid) => {
@@ -1888,7 +1897,7 @@ const loadUserContext = async (uid) => {
       const roleData = roleSnap.exists ? roleSnap.data() || {} : {}
       if (isStaffAccount && (!staffOwnerId || String(roleData.ownerId || '').trim() !== staffOwnerId)) return
       if (Array.isArray(roleData.permissions)) {
-        customRolePermissions.push(...roleData.permissions)
+        customRolePermissions.push(...expandClinicRolePermissions(roleData.permissions))
       }
     })
   }
@@ -4658,7 +4667,7 @@ const authorizeClinicActionInTransaction = async (tx, uid, branchId, permission)
     if (!roleSnap.exists) return []
     const roleData = roleSnap.data() || {}
     if (isStaffAccount && (!staffOwnerId || String(roleData.ownerId || '').trim() !== staffOwnerId)) return []
-    return Array.isArray(roleData.permissions) ? roleData.permissions : []
+    return Array.isArray(roleData.permissions) ? expandClinicRolePermissions(roleData.permissions) : []
   })
 
   const userPermissions = [
@@ -9060,7 +9069,7 @@ app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('rol
       return res.status(400).json({ success: false, error: 'Provide a valid clinic role and permission list.' })
     }
 
-    const permissions = [...new Set(requestedPermissions
+    const requestedPermissionSet = [...new Set(requestedPermissions
       .map((permission) => String(permission || '').trim())
       .filter((permission) => permission && CLINIC_ROLE_PERMISSION_KEYS.has(permission)))]
     const invalidPermissions = requestedPermissions
@@ -9069,6 +9078,7 @@ app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('rol
     if (invalidPermissions.length) {
       return res.status(400).json({ success: false, error: 'One or more permissions are not assignable to clinic staff.' })
     }
+    const permissions = [...new Set(expandClinicRolePermissions(requestedPermissionSet))]
 
     const firestore = admin.firestore()
     const roleRef = firestore.collection('clinicRoles').doc(roleId)
@@ -9094,6 +9104,7 @@ app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('rol
 
     await roleRef.update({
       permissions,
+      permissionModelVersion: 2,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 
@@ -9143,7 +9154,7 @@ app.put('/clinic-roles/:roleId/permissions', requireAuth, requirePermission('rol
       const effectivePermissions = [...new Set([
         ...defaultClinicRolePermissions,
         ...(Array.isArray(userData.permissions) ? userData.permissions : []),
-        ...assignedRoleIds.flatMap((id) => rolePermissionCache.get(id) || []),
+        ...assignedRoleIds.flatMap((id) => expandClinicRolePermissions(rolePermissionCache.get(id) || [])),
       ].map((permission) => String(permission || '').trim())
         .filter((permission) => permission && CLINIC_ROLE_PERMISSION_KEYS.has(permission)))]
       staffUpdates.push({ ref: userDoc.ref, effectivePermissions })
@@ -9367,7 +9378,7 @@ app.post('/staff/:userId/profile', requireAuth, requirePermission('staff:create'
     }
     const effectivePermissions = [...new Set([
       ...defaultClinicRolePermissions,
-      ...customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? snap.data().permissions : []),
+      ...customRoleSnaps.flatMap((snap) => Array.isArray(snap.data()?.permissions) ? expandClinicRolePermissions(snap.data().permissions) : []),
     ])]
     const profileBatch = firestore.batch()
     profileBatch.set(targetRef, {

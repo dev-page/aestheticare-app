@@ -1,6 +1,6 @@
 <template>
-  <div class="flex flex-row owner-theme bg-slate-900 min-h-screen">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme bg-slate-900" :class="{ 'min-h-screen': !embedded }">
+    <OwnerSidebar v-if="!embedded" />
 
     <main v-page-loading="{ active: pageLoading, variant: 'table', columns: 9, rows: 5 }" class="flex-1 p-6 md:p-8 text-white">
       <div class="mx-auto max-w-7xl">
@@ -13,6 +13,7 @@
             </p>
           </div>
           <router-link
+            v-if="hasPermission('page:leave:request')"
             to="/hr/leave-request"
             class="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-400"
           >
@@ -202,6 +203,8 @@ import { leaveRequestScopes, subscribeLeaveScopes } from '@/utils/leaveRequestSc
 import { DEFAULT_LEAVE_POLICY, normalizeLeavePolicy } from '../../../../../../shared/leavePolicy.js'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
+const props = defineProps({ embedded: { type: Boolean, default: false } })
+const embedded = props.embedded
 
 const { hasPermission, isClinicAdminOwner } = usePermissions()
 

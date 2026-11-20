@@ -1,6 +1,6 @@
 <template>
-  <div class="flex min-h-screen flex-row owner-theme bg-slate-900">
-    <OwnerSidebar />
+  <div class="flex flex-row owner-theme bg-slate-900" :class="{ 'min-h-screen': !embedded }">
+    <OwnerSidebar v-if="!embedded" />
 
     <main v-page-loading="{ active: pageLoading, blocks: [{ variant: 'form', fields: 4, sections: 1 }, { variant: 'table', columns: 6, rows: 4 }] }" class="min-w-0 flex-1 p-4 text-white sm:p-6 md:p-8">
       <div class="mx-auto max-w-7xl">
@@ -102,6 +102,8 @@ import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { workflowApi } from '@/utils/workflowApi'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
+const props = defineProps({ embedded: { type: Boolean, default: false }, requestOnly: { type: Boolean, default: false } })
+const embedded = props.embedded
 
 const auth = getAuth()
 const { hasPermission, isClinicAdminOwner } = usePermissions()
@@ -126,7 +128,7 @@ const pageError = ref('')
 const attendanceEvidence = ref({})
 const form = ref({ date: todayKey, reason: '' })
 
-const reviewerMode = computed(() => Boolean(isClinicAdminOwner.value || hasPermission('overtime:review')))
+const reviewerMode = computed(() => !props.requestOnly && Boolean(isClinicAdminOwner.value || hasPermission('overtime:review')))
 const canSubmit = computed(() => hasPermission('overtime:create'))
 const isStudentIntern = computed(() => currentEmployeeProfile.value.engagementType === 'student_intern')
 const overtimeCalculation = computed(() => calculatePhilippineOvertime(attendanceEvidence.value, currentEmployeeProfile.value))

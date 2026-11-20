@@ -534,6 +534,11 @@ service cloud.firestore {
           || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields()
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchAdminId']))
+          || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
+            && hasPermission('branches:update') && applicantCannotChangeVerificationFields()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'clinicBranch', 'clinicLocation', 'status', 'isMainBranch', 'branchAdminId', 'branchAdminName', 'updatedAt'
+            ]))
           || (isStaffOfBranch(clinicId) && hasPermission('policies:update')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'cancellationPolicy', 'cancellationPolicyEnabled', 'reschedulePolicy', 'reschedulePolicyEnabled',
@@ -545,6 +550,10 @@ service cloud.firestore {
               'productReturnPolicyEnabled', 'walkInPolicy', 'walkInPolicyEnabled',
               'enforcedPolicyKeys', 'policiesLinkedAt', 'policiesLinkedBy',
               'policiesUpdatedAt', 'updatedAt'
+            ]))
+          || (isStaffOfBranch(clinicId) && hasPermission('branches:policies:link')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'enforcedPolicyKeys', 'policiesLinkedAt', 'policiesLinkedBy', 'updatedAt'
             ])));
       allow delete: if isSignedIn() && isSuperadmin();
     }
@@ -881,21 +890,31 @@ service cloud.firestore {
     match /financialRecords/{recordId} {
       allow read: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+        && ((resource.data.get('kind', '') == 'operatingExpense' && hasPermission('finance:expenses:view'))
+          || (resource.data.get('kind', '') == 'procurementPayable'
+            && (hasPermission('finance:payables:view') || hasPermission('finance:invoices:view') || hasPermission('finance:reports:view')))
+          || (resource.data.get('kind', '') == 'payrollExpense'
+            && (hasPermission('payroll:view') || hasPermission('finance:reports:view')))
+          || (hasPermission('finance:reports:view')
+            && !resource.data.keys().hasAny(['kind'])));
       allow create, update, delete: if false;
     }
 
     match /financeAudit/{auditId} {
       allow read: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view')
+          || (resource.data.get('recordKind', '') == 'procurementPayable' && hasPermission('finance:invoices:view'))
+          || (resource.data.get('recordKind', '') == 'operatingExpense' && hasPermission('finance:expenses:view')));
       allow create, update, delete: if false;
     }
 
     match /financialPayments/{paymentId} {
       allow read: if isSignedIn() && resource.data.branchId != null
         && canAccessBranch(resource.data.branchId)
-        && (hasPermission('finance:payables:view') || hasPermission('finance:reports:view'));
+        && ((hasPermission('finance:payables:view') || hasPermission('finance:reports:view'))
+          || (hasPermission('finance:invoices:view') && (resource.data.keys().hasAny(['invoiceId']) || resource.data.keys().hasAny(['supplyInvoiceId'])))
+          || (hasPermission('finance:expenses:view') && resource.data.keys().hasAny(['expenseId'])));
       allow create, update, delete: if false;
     }
 
@@ -1251,7 +1270,8 @@ service cloud.firestore {
       allow write: if false;
     }
     match /purchasePayments/{id} {
-      allow read: if isSignedIn() && canAccessBranch(resource.data.branchId) && hasPermission('finance:payables:view');
+      allow read: if isSignedIn() && canAccessBranch(resource.data.branchId)
+        && (hasPermission('finance:payables:view') || hasPermission('finance:invoices:view') || hasPermission('finance:reports:view'));
       allow write: if false;
     }
 

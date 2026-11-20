@@ -10,8 +10,8 @@ import { useSubscription } from '@/composables/useSubscription'
 const route = useRoute()
 const { hasPermission } = usePermissions()
 const { hasFeature } = useSubscription()
-const canView = computed(() => hasPermission('branches:view'))
-const canAdd = computed(() => hasPermission('branches:create') && hasFeature('multi_branch'))
+const canView = computed(() => hasPermission('page:branches:view') || hasPermission('page:branches:manage'))
+const canAdd = computed(() => hasPermission('page:branches:manage') && hasFeature('multi_branch'))
 const activeTab = computed(() => route.path.endsWith('/new') || (!canView.value && canAdd.value) ? 'add' : 'information')
 </script>
 
@@ -25,7 +25,7 @@ const activeTab = computed(() => route.path.endsWith('/new') || (!canView.value 
         <router-link v-if="canView" to="/clinic/branches" class="branch-tab" :class="{ 'is-active': activeTab === 'information' }" :aria-current="activeTab === 'information' ? 'page' : undefined">Branch Information</router-link>
         <span v-else class="branch-tab is-disabled" aria-disabled="true">Branch Information</span>
         <router-link v-if="canAdd" to="/clinic/branches/new" class="branch-tab" :class="{ 'is-active': activeTab === 'add' }" :aria-current="activeTab === 'add' ? 'page' : undefined">Add Branch</router-link>
-        <span v-else class="branch-tab is-disabled" aria-disabled="true" :title="hasPermission('branches:create') ? 'Your subscription does not include multiple branches.' : 'You do not have permission to add branches.'">Add Branch</span>
+        <span v-else class="branch-tab is-disabled" aria-disabled="true" :title="hasPermission('page:branches:manage') ? 'Your subscription does not include multiple branches.' : 'You do not have permission to add or edit branches.'">Add Branch</span>
       </nav>
       <BranchInfo v-if="activeTab === 'information' && canView" embedded />
       <AddBranch v-else-if="activeTab === 'add' && canAdd" embedded />

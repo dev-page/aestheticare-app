@@ -19,13 +19,13 @@ const routes = [
   { path: '/procurement/rfqs', redirect: '/procurement/requests' },
   { path: '/inventory/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
   { path: '/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
-  { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
+  { path: '/finance/procurement/requests', component: () => import('@/views/admin/owner/operations/SimplifiedSupplyRequests.vue'), meta: { requiresAuth: true, requiresPermission: 'page:purchase-orders:approve', supplyDepartment: 'finance' } },
   { path: '/finance/procurement/budgets', redirect: '/finance/procurement/requests' },
   { path: '/inventory/onboarding', redirect: '/inventory/receiving' },
   { path: '/logistics/:page?', redirect: '/inventory/receiving' },
-  { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermissionsAny: ['procurement:view', 'suppliers:create', 'suppliers:update'], requiresFeature: 'inventory' } },
+  { path: '/procurement/suppliers/directory', name: 'procurement-supplier-directory', component: () => import('@/views/admin/owner/operations/SupplySuppliers.vue'), meta: { requiresAuth: true, requiresPermission: 'page:suppliers:manage', requiresFeature: 'inventory' } },
   { path: '/:department(inventory|procurement)/:page?', name: 'supply-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresFeature: 'inventory', requiresSupplyAccess: true } },
-  { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'finance' } },
+  { path: '/finance/procurement/:page?', name: 'procurement-finance-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, requiresSupplyAccess: true, supplyDepartment: 'finance' } },
   { path: '/management/supply/:page?', name: 'supply-management-workspace', component: () => import('@/views/admin/owner/operations/SupplyWorkspace.vue'), meta: { requiresAuth: true, supplyDepartment: 'management' } },
 
   ...(isMobileApp
@@ -66,12 +66,12 @@ const routes = [
   //Hidden routes
   { path: "/change-password", name: "change-password", component: () => import("@/views/auth/ChangePassword.vue"), meta: { requiresAuth: true } },
   { path: "/workspace/dashboard", name: "workspace-dashboard", component: () => import("@/views/admin/owner/employee/EmployeeDashboard.vue"), meta: { requiresAuth: true, requiresEmployee: true } },
-  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view", requiresFeature: "payroll" } },
-  { path: "/account/profile", name: "account-profile", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "profile:view" } },
-  { path: "/account/change-password", name: "account-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "password:update" } },
-  { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:create", requiresFeature: "attendance" } },
-  { path: "/support/report", name: "support-report", component: () => import("@/views/common/SupportReport.vue"), meta: { requiresAuth: true } },
-  { path: "/notifications", name: "notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true } },
+  { path: "/hr/my-payslips", name: "hr-my-payslips", component: () => import("@/views/admin/owner/employee/EmployeePayslips.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage", requiresFeature: "payroll" } },
+  { path: "/account/profile", name: "account-profile", component: () => import("@/views/admin/owner/employee/EmployeeProfileSelf.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
+  { path: "/account/change-password", name: "account-change-password", component: () => import("@/views/admin/owner/employee/EmployeeChangePassword.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
+  { path: "/hr/attendance/face-registration", name: "hr-attendance-face-registration", component: () => import("@/views/clinic/attendance/FaceRegistration.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "attendance" } },
+  { path: "/support/report", name: "support-report", component: () => import("@/views/common/SupportReport.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
+  { path: "/notifications", name: "notifications", component: () => import("@/views/common/Notifications.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
   { path: "/hr/attendance/scan", name: "hr-attendance-qr-scan", component: () => import("@/views/clinic/attendance/AttendanceQrScan.vue"), meta: { requiresAuth: true, requiresFeature: "attendance" } },
 
   //{ path: "/customer/home", name: "customer-home", component: () => import("@/views/customer/CustomerHome.vue"), meta: { requiresAuth: true } },
@@ -88,31 +88,33 @@ const routes = [
   { path: "/clinical/clients", name: "clinical-clients", component: () => import("@/views/admin/owner/clinic/PractitionerClients.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
   { path: "/clinical/appointments", name: "clinical-appointments", redirect: { path: "/crm/appointments", query: { tab: "queue" } } },
   { path: "/clinical/treatment-sessions", name: "clinical-treatment-sessions", component: () => import("@/views/admin/owner/clinic/TreatmentSessions.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
-  { path: "/clinical/prescriptions", name: "clinical-prescriptions", component: () => import("@/views/admin/owner/clinic/ClinicPrescriptions.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "consultations:view"], requiresFeature: "appointments" } },
+  { path: "/clinical/prescriptions", name: "clinical-prescriptions", component: () => import("@/views/admin/owner/clinic/ClinicPrescriptions.vue"), meta: { requiresAuth: true, requiresPermission: "page:prescriptions:manage", requiresFeature: "appointments" } },
   { path: "/pharmacy/pos", name: "clinic-pharmacy-pos", component: () => import("@/views/admin/owner/clinic/PharmacyPOS.vue"), meta: { requiresAuth: true, requiresPermission: "pharmacy:view", requiresFeature: "inventory" } },
   { path: "/clinical/consultations/online", name: "clinical-online-consultation", redirect: { path: "/crm/appointments", query: { tab: "queue", mode: "online" } } },
-  { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
+  { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
 
   // HR routes
   { path: "/hr/dashboard", redirect: "/workspace/dashboard" },
   { path: "/hr/sales", redirect: "/hr/reports" },
   //{ path: "/hr/schedule", name: "hr-schedule", component: () => import("@/views/clinic/hr/HRSchedule.vue"), meta: { requiresAuth: true } },
-  { path: "/hr/shifts", name: "hr-shifts", component: () => import("@/views/admin/owner/hr/Shifts.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["hr:create", "hr:update"], requiresFeature: "hr" } },
+  { path: "/hr/shifts", name: "hr-shifts", component: () => import("@/views/admin/owner/hr/Shifts.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "hr" } },
   { path: "/hr/add-shift", name: "hr-add-shift", redirect: { path: "/hr/shifts", query: { tab: "add" } } },
   { path: "/hr/schedule-assignment", name: "hr-schedule-assignment", redirect: { path: "/hr/shifts", query: { tab: "assignment" } } },
-  { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:review", requiresFeature: "booking_availability", allowedPlans: ['basic'] } },
-  { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "leave:create", requiresFeature: "hr" } },
-  { path: "/hr/leave-management", name: "hr-leave-management", component: () => import("@/views/admin/owner/hr/LeaveManagement.vue"), meta: { requiresAuth: true, requiresPermission: "leave:review", requiresFeature: "hr" } },
-  { path: "/hr/overtime", name: "hr-overtime", component: () => import("@/views/admin/owner/hr/Overtime.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["overtime:view", "overtime:create"], requiresFeature: "hr" } },
-  { path: "/hr/employees", name: "hr-employees", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["staff:view", "staff:create"], requiresFeature: "staff_management" } },
-  { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:create", requiresFeature: "staff_management" } },
-  { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "staff:disable", requiresFeature: "staff_management" } },
-  { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
-  { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "roles:manage", requiresFeature: "staff_management" } },
+  { path: "/appointments/booking-availability", name: "booking-availability", component: () => import("@/views/admin/owner/BookingAvailability.vue"), meta: { requiresAuth: true, requiresPermission: "page:appointments:manage", requiresFeature: "booking_availability", allowedPlans: ['basic'] } },
+  { path: "/hr/leave-request", name: "hr-leave-request", component: () => import("@/views/admin/owner/hr/LeaveRequest.vue"), meta: { requiresAuth: true, requiresPermission: "page:leave:request", requiresFeature: "hr" } },
+  { path: "/hr/leave-overtime-management", name: "hr-leave-overtime-management", component: () => import("@/views/admin/owner/hr/LeaveOvertimeManagement.vue"), meta: { requiresAuth: true, requiresPermission: "page:leave-overtime:manage", requiresFeature: "hr" } },
+  { path: "/hr/leave-management", name: "hr-leave-management-legacy", redirect: "/hr/leave-overtime-management" },
+  { path: "/hr/overtime-management", name: "hr-overtime-management-legacy", redirect: "/hr/leave-overtime-management" },
+  { path: "/hr/overtime", name: "hr-overtime", component: () => import("@/views/admin/owner/hr/Overtime.vue"), props: { requestOnly: true }, meta: { requiresAuth: true, requiresPermission: "page:overtime:request", requiresFeature: "hr" } },
+  { path: "/hr/employees", name: "hr-employees", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "staff_management" } },
+  { path: "/hr/employees/new", name: "hr-employees-new", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "staff_management" } },
+  { path: "/hr/employees/archived", name: "hr-employees-archived", component: () => import("@/views/admin/owner/Employees.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "staff_management" } },
+  { path: "/hr/attendance", name: "hr-attendance", component: () => import("@/views/admin/owner/Attendance.vue"), meta: { requiresAuth: true, requiresNonEmployee: true, requiresPermission: "page:employees:manage", requiresFeature: "attendance" } },
+  { path: "/hr/roles", name: "hr-roles", component: () => import("@/views/admin/owner/OwnerRoleManagement.vue"), meta: { requiresAuth: true, requiresPermission: "page:roles:manage", requiresFeature: "staff_management" } },
   { path: "/hr/reports", name: "hr-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/hr/base-pay", name: "hr-base-pay", redirect: { path: "/finance/employee-compensation", query: { tab: "base-pay" } } },
   { path: "/hr/payroll", name: "hr-payroll", redirect: "/finance/payroll-management" },
-  { path: "/finance/payroll-management", name: "finance-payroll-management", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:update", requiresFeature: "payroll" } },
+  { path: "/finance/payroll-management", name: "finance-payroll-management", component: () => import("@/views/admin/owner/hr/Payroll.vue"), meta: { requiresAuth: true, requiresPermission: "page:payroll:manage", requiresFeature: "payroll" } },
   { path: "/hr/payslip-generation", name: "hr-payslip-generation", redirect: "/hr/payroll" },
   //{ path: "/hr/calendar", name: "hr-calendar", component: () => import("@/views/clinic/hr/Calendar.vue"), meta: { requiresAuth: true } },
 
@@ -121,55 +123,55 @@ const routes = [
   { path: "/clinic/dashboard", name: "clinic-dashboard", component: () => import("@/views/admin/owner/OwnerDashboard.vue"), meta: { requiresAuth: true, requiresOwner: true } },
   // Every clinic owner can view their primary branch. Only adding/managing
   // additional branches is a Premium multi-branch feature.
-  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["branches:view", "branches:create"] } },
-  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermission: "branches:create", requiresFeature: "multi_branch" } },
-  { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["clinic_profile:view", "clinic_profile:update"] } },
-  { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "clinic_profile:update" } },
-  { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["policies:view", "policies:update"] } },
+  { path: "/clinic/branches", name: "clinic-branches", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["page:branches:view", "page:branches:manage"] } },
+  { path: "/clinic/branches/new", name: "clinic-branches-new", component: () => import("@/views/admin/owner/Branches.vue"), meta: { requiresAuth: true, requiresPermission: "page:branches:manage", requiresFeature: "multi_branch" } },
+  { path: "/clinic/profile", name: "clinic-profile", component: () => import("@/views/admin/owner/ClinicProfile.vue"), meta: { requiresAuth: true, requiresPermission: "page:clinic-profile:manage" } },
+  { path: "/clinic/page", name: "clinic-page", component: () => import("@/views/admin/owner/ClinicPage.vue"), meta: { requiresAuth: true, requiresPermission: "page:clinic-profile:manage" } },
+  { path: "/clinic/policies", name: "clinic-policies", component: () => import("@/views/admin/owner/OwnerPolicyManagement.vue"), meta: { requiresAuth: true, requiresPermission: "page:policies:manage" } },
   { path: "/management/reports", name: "management-reports", component: () => import("@/views/admin/owner/OwnerReports.vue"), meta: { requiresAuth: true, requiresPermission: "reports:view", requiresFeature: "reports" } },
   { path: "/account/closure", name: "account-closure", component: () => import("@/views/admin/owner/OwnerAccountClosure.vue"), meta: { requiresAuth: true, requiresOwner: true } },
-  { path: "/account/backup", name: "account-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresPermission: "backups:view" } },
-  { path: "/account/subscription", name: "account-subscription", component: () => import("@/views/admin/owner/OwnerSubscription.vue"), meta: { requiresAuth: true, requiresPermission: "subscription:view" } },
+  { path: "/account/backup", name: "account-backup", component: () => import("@/views/admin/owner/OwnerBackup.vue"), meta: { requiresAuth: true, requiresPermission: "page:backups:manage" } },
+  { path: "/account/subscription", name: "account-subscription", component: () => import("@/views/admin/owner/OwnerSubscription.vue"), meta: { requiresAuth: true, requiresPermission: "page:subscription:manage" } },
   { path: "/account/plans", name: "account-plans", component: () => import("@/views/admin/owner/OwnerPlanSelection.vue"), meta: { requiresAuth: true, requiresOwner: true } },
 
   // Operations and catalog module routes
-  { path: "/operations/dashboard", name: "operations-dashboard", component: () => import("@/views/admin/owner/operations/ManagerDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "inventory:view" } },
+  { path: "/operations/dashboard", name: "operations-dashboard", component: () => import("@/views/admin/owner/operations/ManagerDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "page:inventory:manage" } },
   { path: "/operations/team", name: "operations-team", component: () => import("@/views/admin/owner/operations/ManagerStaffs.vue"), meta: { requiresAuth: true, requiresPermission: "staff:view" } },
   { path: "/operations/attendance", name: "operations-attendance", component: () => import("@/views/admin/owner/operations/ManagerAttendance.vue"), meta: { requiresAuth: true, requiresPermission: "attendance:view", requiresFeature: "attendance" } },
-  { path: "/catalog/archived", name: "catalog-archived", component: () => import("@/views/admin/owner/operations/ArchivedPosts.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
-  { path: "/catalog/products-services", name: "catalog-products-services", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "services:view" } },
+  { path: "/catalog/archived", name: "catalog-archived", component: () => import("@/views/admin/owner/operations/ArchivedPosts.vue"), meta: { requiresAuth: true, requiresPermission: "page:services:manage" } },
+  { path: "/catalog/products-services", name: "catalog-products-services", component: () => import("@/views/admin/owner/operations/ProductServiceListing.vue"), meta: { requiresAuth: true, requiresPermission: "page:services:manage" } },
   { path: "/operations/orders", name: "operations-orders", component: () => import("@/views/admin/owner/operations/ManagerOrders.vue"), meta: { requiresAuth: true, requiresPermission: "orders:view" } },
 
   // CRM module routes
-  { path: "/crm/dashboard", name: "crm-dashboard", component: () => import("@/views/admin/owner/crm/ReceptionistDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "clients:view" } },
-  { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view"] } },
-  { path: "/crm/walk-in", name: "crm-walk-in", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["clients:view", "appointments:view", "appointments:create", "appointments:update"] } },
+  { path: "/crm/dashboard", name: "crm-dashboard", component: () => import("@/views/admin/owner/crm/ReceptionistDashboard.vue"), meta: { requiresAuth: true, requiresPermission: "page:clients:view" } },
+  { path: "/crm/clients", name: "crm-clients", component: () => import("@/views/admin/owner/crm/ReceptionistClientList.vue"), meta: { requiresAuth: true, requiresPermission: "page:clients:view" } },
+  { path: "/crm/walk-in", name: "crm-walk-in", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "page:walk-in:manage" } },
   { path: "/crm/clients/new", name: "crm-walk-in-client-legacy", redirect: "/crm/walk-in" },
-  { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/AppointmentManagement.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["appointments:view", "appointments:update", "appointments:review", "consultations:view"], requiresFeature: "appointments" } },
+  { path: "/crm/appointments", name: "crm-appointments", component: () => import("@/views/admin/owner/crm/AppointmentManagement.vue"), meta: { requiresAuth: true, requiresPermission: "page:appointments:manage", requiresFeature: "appointments" } },
   { path: "/crm/appointments/requests", name: "crm-appointment-requests", redirect: { path: "/crm/appointments", query: { tab: "requests" } } },
   { path: "/crm/appointments/new", name: "crm-walk-in-appointment-legacy", redirect: "/crm/walk-in" },
-  { path: "/crm/pos", name: "crm-walk-in-pos", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermissionsAll: ["appointments:view", "payments:create"] } },
-  { path: "/crm/transactions", name: "crm-transactions", component: () => import("@/views/admin/owner/crm/ReceptionistTransactionHistory.vue"), meta: { requiresAuth: true, requiresPermission: "payments:view" } },
-  { path: "/crm/inbox", name: "crm-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "inbox:view" } },
-  { path: "/crm/activity-logs", name: "crm-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "activities:view" } },
+  { path: "/crm/pos", name: "crm-walk-in-pos", component: () => import("@/views/admin/owner/crm/WalkInDesk.vue"), meta: { requiresAuth: true, requiresPermission: "page:walk-in:manage" } },
+  { path: "/crm/transactions", name: "crm-transactions", component: () => import("@/views/admin/owner/crm/ReceptionistTransactionHistory.vue"), meta: { requiresAuth: true, requiresPermission: "page:transactions:view" } },
+  { path: "/crm/inbox", name: "crm-inbox", component: () => import("@/views/admin/owner/crm/ReceptionistInbox.vue"), meta: { requiresAuth: true, requiresPermission: "page:inbox:manage" } },
+  { path: "/crm/activity-logs", name: "crm-activity-logs", component: () => import("@/views/admin/owner/crm/ReceptionistActivityLogs.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
   // Finance routes
-  { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["services:review", "finance:reports:view"] } },
+  { path: "/finance/listing-approvals", name: "finance-listing-approvals", component: () => import("@/views/admin/owner/finance/ListingApprovals.vue"), meta: { requiresAuth: true, requiresPermission: "page:listings:approve" } },
   // Finance reports are plan-aware: Basic users see operational finance only,
   // while Payroll data is added only for plans that include it.
   { path: "/finance/dashboard", redirect: "/finance/reports" },
-  { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "finance:sales:view", requiresFeature: "reports" } },
-  { path: "/finance/expenses-payments", name: "finance-expenses-payments", component: () => import("@/views/admin/owner/finance/FinanceExpenses.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
-  { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "finance:refunds:view", requiresFeature: "reports" } },
+  { path: "/finance/sales", name: "finance-sales", component: () => import("@/views/admin/owner/finance/FinanceSales.vue"), meta: { requiresAuth: true, requiresPermission: "page:transactions:view", requiresFeature: "reports" } },
+  { path: "/finance/expenses-payments", name: "finance-expenses-payments", component: () => import("@/views/admin/owner/finance/FinanceExpenses.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["page:supplier-invoices:manage", "page:other-expenses:manage"], requiresFeature: "reports" } },
+  { path: "/finance/refunds", name: "finance-refunds", component: () => import("@/views/admin/owner/finance/FinanceRefunds.vue"), meta: { requiresAuth: true, requiresPermission: "page:transactions:view", requiresFeature: "reports" } },
   { path: "/finance/reports", name: "finance-reports", component: () => import("@/views/admin/owner/finance/FinanceReports.vue"), meta: { requiresAuth: true, requiresPermission: "finance:reports:view", requiresFeature: "reports" } },
   { path: "/finance/inventory-purchases", redirect: "/procurement/reports" },
   { path: "/finance/accounts-payable", redirect: "/finance/expenses-payments" },
   { path: "/finance/budget", redirect: "/finance/procurement/requests" },
-  { path: "/finance/approvals", name: "finance-approvals", component: () => import("@/views/admin/owner/finance/FinanceRequests.vue"), meta: { requiresAuth: true, requiresPermission: "finance:payables:view", requiresFeature: "reports" } },
+  { path: "/finance/approvals", name: "finance-approvals", component: () => import("@/views/admin/owner/finance/FinanceRequests.vue"), meta: { requiresAuth: true, requiresPermission: "page:purchase-orders:approve", requiresFeature: "reports" } },
   { path: "/finance/requests", redirect: "/finance/approvals" },
-  { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:view", requiresFeature: "payroll" } },
+  { path: "/finance/payroll-summary", name: "finance-payroll-summary", component: () => import("@/views/admin/owner/finance/FinancePayrollSummary.vue"), meta: { requiresAuth: true, requiresPermission: "page:payroll:manage", requiresFeature: "payroll" } },
   { path: "/finance/staff-compensation", name: "finance-staff-compensation", redirect: { path: "/finance/employee-compensation", query: { tab: "service-fees" } } },
-  { path: "/finance/employee-compensation", name: "finance-employee-compensation", component: () => import("@/views/admin/owner/finance/EmployeeCompensation.vue"), meta: { requiresAuth: true, requiresPermissionsAny: ["payroll:update", "payroll:view"], requiresFeature: "payroll" } },
-  { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "payroll:approve", requiresFeature: "payroll" } },
+  { path: "/finance/employee-compensation", name: "finance-employee-compensation", component: () => import("@/views/admin/owner/finance/EmployeeCompensation.vue"), meta: { requiresAuth: true, requiresPermission: "page:employees:manage", requiresFeature: "payroll" } },
+  { path: "/finance/payroll-approval", name: "finance-payroll-approval", component: () => import("@/views/admin/owner/finance/FinancePayrollApproval.vue"), meta: { requiresAuth: true, requiresPermission: "page:payroll:manage", requiresFeature: "payroll" } },
 
   // Compatibility redirects from former role-owned clinic URLs.
   { path: "/owner/change-password", redirect: "/account/change-password" },
@@ -382,14 +384,15 @@ const permissionAlternates = {
 
 const supplyRoutePermissions = (to) => {
   if (!to.meta.requiresSupplyAccess) return { any: [], one: '' }
-  const department = String(to.params.department || '').toLowerCase()
+  const department = String(to.params.department || to.meta.supplyDepartment || '').toLowerCase()
   const page = String(to.params.page || 'dashboard').toLowerCase()
-  if (department === 'inventory' && page === 'requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
-  if (department === 'inventory' && ['onboarding', 'receiving'].includes(page)) return { any: [], one: 'inventory:create' }
-  if (department === 'inventory') return { any: [], one: 'inventory:view' }
-  if (department === 'procurement') return { any: [], one: 'procurement:view' }
-  if (to.path === '/inventory/requests') return { any: ['inventory:create', 'inventory:review'], one: '' }
-  if (to.path === '/procurement/requests') return { any: [], one: 'procurement:view' }
+  if (to.path === '/inventory/requests') return { any: [], one: 'page:inventory:manage' }
+  if (to.path === '/procurement/requests') return { any: [], one: 'page:inventory-requests:manage' }
+  if (department === 'inventory') return { any: [], one: 'page:inventory:manage' }
+  if (department === 'procurement' && page === 'requests') return { any: [], one: 'page:inventory-requests:manage' }
+  if (department === 'procurement') return { any: [], one: 'page:procurement-orders:manage' }
+  if (department === 'finance' && page === 'invoices') return { any: [], one: 'page:supplier-invoices:manage' }
+  if (department === 'finance') return { any: [], one: 'page:purchase-orders:approve' }
   return { any: [], one: '' }
 }
 

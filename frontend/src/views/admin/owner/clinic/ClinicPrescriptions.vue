@@ -7,7 +7,7 @@
           <div>
             <p class="eyebrow">Clinic care</p>
             <h1>Prescriptions</h1>
-            <p class="subtitle">Review prescriptions from completed consultations and prepare available items for in-person pickup.</p>
+            <p class="subtitle">Review prescriptions from completed consultations and check their dispensing status.</p>
           </div>
           <label v-if="branches.length > 1" class="branch-filter">Clinic branch
             <select v-model="branchFilter"><option value="all">All branches</option><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select>
@@ -44,7 +44,8 @@
               <p v-if="record.prescriptionStatus === 'dispensed'">Marked dispensed {{ record.prescriptionDispensedAt ? `· ${formatDate(record.prescriptionDispensedAt)}` : '' }}</p>
               <p v-else-if="record.prescriptionStatus === 'partially_dispensed'">Partially dispensed. Continue the sale in Pharmacy to provide the remaining prescribed quantity.</p>
               <p v-else>Confirm the prescribed items are available and provided at the pharmacy.</p>
-              <router-link v-if="record.prescriptionStatus !== 'dispensed'" class="pos-link" :to="{ path: '/pharmacy/pos', query: { branchId: record.branchId, appointmentId: record.id } }">Process at pharmacy POS</router-link>
+              <router-link v-if="record.prescriptionStatus !== 'dispensed' && hasPermission('page:pharmacy:manage')" class="pos-link" :to="{ path: '/pharmacy/pos', query: { branchId: record.branchId, appointmentId: record.id } }">Process at pharmacy POS</router-link>
+              <span v-else-if="record.prescriptionStatus !== 'dispensed'" class="pharmacy-access-note">Pharmacy access is not assigned to this role.</span>
             </footer>
           </article>
         </section>

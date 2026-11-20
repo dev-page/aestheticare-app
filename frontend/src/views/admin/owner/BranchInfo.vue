@@ -15,6 +15,7 @@ import Swal from 'sweetalert2'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { loadClinicDocsByIds, loadOwnerBranchScope } from '@/utils/ownerBranchScope'
 import { useSubscription } from '@/composables/useSubscription'
+import { usePermissions } from '@/composables/usePermissions'
 import { revenueByBranch } from '@/utils/revenue'
 
 export default {
@@ -27,6 +28,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
     const { hasFeature } = useSubscription()
+    const { hasPermission } = usePermissions()
     const branches = ref([])
     const staffOptions = ref([])
     const showEditModal = ref(false)
@@ -58,7 +60,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     })
     const archivedBranches = computed(() => branches.value.filter((branch) => branch.status === 'Inactive'))
     const activeBranches = computed(() => branches.value.filter((branch) => branch.status !== 'Inactive'))
-    const canManageMultipleBranches = computed(() => hasFeature('multi_branch'))
+    const canManageMultipleBranches = computed(() => hasFeature('multi_branch') && hasPermission('page:branches:manage'))
+    const canEditBranches = computed(() => hasPermission('page:branches:manage'))
     const policyDefinitions = [
       { key: 'paymentPolicy', title: 'Payment Policy', enabledKey: 'servicePaymentPolicyEnabled' },
       { key: 'cancellationPolicy', title: 'Cancellation Policy', enabledKey: 'serviceCancellationPolicyEnabled' },
@@ -198,6 +201,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     onMounted(loadBranches)
 
     const openEditModal = (branch) => {
+      if (!canEditBranches.value) return
       activeMenuBranchId.value = ''
       currentBranch.value = {
         ...branch,
@@ -210,6 +214,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const openPolicyModal = async (branch) => {
+      if (!canEditBranches.value) return
       activeMenuBranchId.value = ''
       try {
         const snapshot = await getDoc(doc(db, 'clinicPolicies', currentOwnerId.value))
@@ -231,7 +236,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const saveLinkedPolicies = async () => {
-      if (!policyBranch.value?.id) return
+      if (!canEditBranches.value || !policyBranch.value?.id) return
       try {
         const validKeys = new Set(enabledPolicies.value.map((policy) => policy.key))
         const enforcedPolicyKeys = linkedPolicyKeys.value.filter((key) => validKeys.has(key))
@@ -253,7 +258,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const archiveBranch = async (branch) => {
       if (!canManageMultipleBranches.value) {
-        toast.info('Archiving branches is available with the multi-branch plan.')
+        toast.info(hasPermission('page:branches:manage') ? 'Branch management is available with the multi-branch plan.' : 'You do not have permission to manage branches.')
         return
       }
       if (!branch?.id) {
@@ -325,6 +330,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
 
     const updateBranch = async () => {
+      if (!canEditBranches.value) return
       if (savingBranch.value) return
       if (!currentBranch.value.clinicBranch || !currentBranch.value.clinicBranch.trim()) {
         toast.error('Branch name is required')
@@ -434,6 +440,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       activeBranches,
       archivedBranches,
       canManageMultipleBranches,
+      canEditBranches,
       showEditModal,
       savingBranch,
       showPolicyModal,
@@ -521,8 +528,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
                   ⋯
                 </button>
                 <div v-if="activeMenuBranchId === branch.id" class="absolute bottom-11 right-3 z-30 w-40 overflow-hidden rounded-lg border border-slate-600 bg-slate-900 py-1 shadow-2xl">
-                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openEditModal(branch)">Edit</button>
-                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700" @click="openPolicyModal(branch)">Link Policy</button>
+                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40" :disabled="!canEditBranches" :title="canEditBranches ? 'Edit branch' : 'You do not have permission to edit branches.'" @click="openEditModal(branch)">Edit</button>
+                  <button type="button" class="block w-full px-4 py-2 text-left text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40" :disabled="!canEditBranches" :title="canEditBranches ? 'Link policies to this branch' : 'You do not have permission to link policies.'" @click="openPolicyModal(branch)">Link Policy</button>
                 </div>
               </td>
             </tr>
