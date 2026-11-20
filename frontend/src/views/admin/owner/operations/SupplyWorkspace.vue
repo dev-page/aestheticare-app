@@ -151,6 +151,55 @@
         </component>
       </section></div>
 
+      <template v-if="formKind === 'receiving'">
+        <div class="inventory-receiving-overlay">
+          <form class="inventory-receiving-form" @submit.prevent="saveForm" :aria-busy="busy">
+            <header class="inventory-receiving-heading">
+              <div><p>DELIVERY RECEIVING</p><h2>Record delivery</h2><span>{{ formTarget?.number }} · {{ supplierName(formTarget?.supplierId) }}</span></div>
+              <button type="button" aria-label="Close" :disabled="busy" @click="formKind = ''">×</button>
+            </header>
+            <p class="inventory-receiving-intro">Enter the quantities that arrived and attach the supplier delivery receipt. Accepted items are added to stock when you submit.</p>
+            <p v-if="formError" class="inventory-receiving-error" role="alert">{{ formError }}</p>
+
+            <section class="inventory-receiving-items" aria-label="Delivered items">
+              <article v-for="line in form.lines" :key="line.itemId" class="inventory-receiving-item">
+                <header><div><h3>{{ line.name || itemName(line.itemId) }}</h3><p>Ordered {{ line.quantity }} {{ line.unit || 'units' }}<span v-if="Number(formTarget?.accepted?.[line.itemId] || 0)"> · Previously received {{ formTarget.accepted[line.itemId] }}</span></p></div></header>
+                <div class="inventory-receiving-quantities">
+                  <label>Delivered<input v-model.number="line.delivered" type="number" min="0" step="1" required /></label>
+                  <label>Accepted into stock<input v-model.number="line.accepted" type="number" min="0" step="1" :max="Number(line.delivered || 0)" required /></label>
+                  <p class="inventory-receiving-rejected">Rejected <strong>{{ rejectedQuantity(line) }} {{ line.unit || 'units' }}</strong></p>
+                </div>
+                <label v-if="rejectedQuantity(line) > 0" class="inventory-receiving-reason">Reason for rejected quantity<input v-model.trim="line.reason" required maxlength="500" placeholder="For example: damaged, expired, or wrong item" /></label>
+                <details class="inventory-receiving-extra">
+                  <summary>Optional item details</summary>
+                  <div class="inventory-receiving-extra-grid">
+                    <label>Batch / lot<input v-model.trim="line.lot" /></label>
+                    <label>Manufacturing date<input v-model="line.manufacturingDate" type="date" /></label>
+                    <label>Expiry date<input v-model="line.expiryDate" type="date" :min="line.manufacturingDate || undefined" /></label>
+                    <label>Serial number<input v-model.trim="line.serialNumber" /></label>
+                    <label>Model<input v-model.trim="line.modelNumber" /></label>
+                    <label>Warranty<input v-model.trim="line.warranty" /></label>
+                    <label>Packaging<input v-model.trim="line.packaging" /></label>
+                  </div>
+                </details>
+              </article>
+            </section>
+
+            <div class="inventory-receiving-meta">
+              <label>Delivery reference<input v-model.trim="form.reference" required maxlength="120" placeholder="Reference printed on the delivery receipt" /></label>
+              <label>Delivery date<input v-model="form.deliveryDate" type="date" required /></label>
+            </div>
+            <label class="inventory-receiving-notes">Inspection notes <span>(optional)</span><textarea v-model.trim="form.notes" rows="2" maxlength="2000" placeholder="Add a note if there is anything Procurement should know."></textarea></label>
+            <label class="inventory-receiving-file">Supplier delivery receipt <b>*</b><input type="file" accept="application/pdf,image/png,image/jpeg" required @change="handleReceivingReceipt" /><small>{{ receivingReceiptFile?.name || 'PDF, PNG, or JPEG · Up to 5 MB' }}</small></label>
+            <footer class="inventory-receiving-actions">
+              <button type="button" :disabled="busy" @click="formKind = ''">Cancel</button>
+              <button type="submit" :disabled="busy || !receivingReceiptFile">{{ busy ? 'Recording delivery…' : 'Record delivery and add accepted stock' }}</button>
+            </footer>
+          </form>
+        </div>
+      </template>
+      <template v-else>
+
       <div v-if="formKind" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-3"><form @submit.prevent="saveForm" :aria-busy="busy" class="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-xl border border-slate-600 bg-slate-900 p-6"><template v-if="formKind === 'budget'"><header class="budget-modal-heading"><div><h2>⊕ Create Budget Allocation</h2><p>Set a purchasing budget for a specific branch and period.</p></div><button type="button" aria-label="Close" @click="formKind = ''">×</button></header><p v-if="formError" class="mb-3 text-red-300" role="alert">{{ formError }}</p><div class="budget-modal-fields"><label>Branch <em>*</em><select v-model="form.branchId" required><option value="">Select branch</option><option v-for="branch in data.branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label><label>Department <em>*</em><select v-model="form.department" required><option>Inventory</option><option>Procurement</option><option>Clinic Operations</option></select><small>Must match the department on the funding request.</small></label><label>Purpose <em>*</em><input v-model.trim="form.category" required maxlength="120" placeholder="e.g. Medical supplies replenishment" /><small>Use a clear purpose that matches the related purchasing request when this budget will fund one.</small></label><label>Budget period <em>*</em><input v-model="form.period" type="month" required /><small>Use the selected budgeting period from the main page.</small></label><label>Allocated amount (PHP) <em>*</em><input v-model.number="form.total" type="number" min="0.01" step="0.01" required placeholder="Enter amount" /></label><label>Notes <span>(optional)</span><textarea v-model.trim="form.notes" rows="3" placeholder="Additional context or allocation notes..."></textarea></label></div><div class="mt-6 flex justify-end gap-3"><button type="button" @click="formKind = ''" :disabled="busy">Cancel</button><button class="bg-amber-800" type="submit" :disabled="busy">{{ busy ? 'Saving…' : 'Create allocation' }}</button></div></template><template v-else><h2 class="mb-4 text-xl font-semibold">{{ formTitle }}</h2><p v-if="formError" class="mb-3 text-red-300" role="alert">{{ formError }}</p><aside v-if="formKind === 'approve' && formTarget?.kind === 'budgetRequest'" class="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/30 p-3 text-sm"><p class="font-semibold text-amber-200">Approve against an allocated budget</p><p class="mt-1 text-slate-300">Choose an active budget with the same department and purpose. Finance can approve only up to its available balance.</p><p v-if="selectedApprovalBudget" class="mt-2 text-emerald-300">Available in selected budget: {{ currency(budgetAvailable(selectedApprovalBudget)) }}</p><p v-else-if="!matchingBudgetOptions.length" class="mt-2 text-red-300">No matching active budget is available. Create a Budget Allocation first.</p></aside>
         <p v-if="formKind === 'ship'" class="mb-4 rounded-lg border border-sky-500/40 bg-sky-950/30 p-3 text-sm text-sky-100">Use this after the order leaves your facility. The dispatch date is required; carrier, tracking/reference, and notes are optional but help the clinic prepare for delivery.</p><div v-if="formKind !== 'request'" class="grid gap-4 sm:grid-cols-2"><template v-for="field in formFields" :key="`${formKind}-${field.key}`"><CategorySelectField v-if="field.type === 'category'" :id="`${formKind}-${field.key}`" :label="field.label" v-model="form[field.key]" :options="field.options" :required="field.required !== false" :disabled="field.readOnly" /><label v-else class="text-sm text-slate-300">{{ field.label }}<select v-if="field.options" v-model="form[field.key]" :multiple="field.multiple" :required="field.required !== false"><option v-if="!field.multiple" value="">Select…</option><option v-for="option in field.options" :key="option.value ?? option" :value="option.value ?? option">{{ option.label ?? option }}</option></select><textarea v-else-if="field.type === 'textarea'" v-model="form[field.key]" :placeholder="field.placeholder" :required="field.required !== false" :readonly="field.readOnly" rows="3"></textarea><input v-else v-model="form[field.key]" :type="field.type || 'text'" :placeholder="field.placeholder" :required="field.required !== false" :disabled="field.readOnly" :min="field.type === 'number' ? 0 : undefined" :step="field.type === 'number' ? 'any' : undefined" /></label></template></div>
         <section v-if="formKind === 'request'" class="mt-2 space-y-5"><p class="-mt-3 text-sm text-slate-400">Describe the item need. Procurement will choose a clinic supplier and record the externally received quotation.</p><div class="grid gap-3 sm:grid-cols-2"><label>Supply or item name <span class="text-red-300">*</span><input v-model.trim="requestDraft.name" required maxlength="200" /></label><CategorySelectField id="request-supply-category" label="Category" v-model="requestDraft.category" :options="supplyCategories" required /><label>Unit<input v-model.trim="requestDraft.unit" maxlength="40" placeholder="units" /></label><label>Quantity <span class="text-red-300">*</span><input v-model.number="requestDraft.quantity" type="number" min="1" step="1" required /></label><label class="sm:col-span-2">Specifications<textarea v-model.trim="requestDraft.specifications" rows="2" maxlength="4000" placeholder="Brand, size, formulation, or other requirements"></textarea></label><button type="button" class="justify-self-start" @click="addRequestLine">Add item to request</button></div><div v-if="form.lines?.length" class="space-y-2"><h3 class="font-semibold">Requested items</h3><article v-for="line in form.lines" :key="line.itemId" class="flex items-start justify-between gap-3 rounded border border-slate-700 p-3"><div><strong>{{ line.name }}</strong><p class="text-sm text-slate-400">{{ line.category }} · {{ line.quantity }} {{ line.unit }}<span v-if="line.specifications"> · {{ line.specifications }}</span></p></div><button type="button" @click="removeRequestLine(line.itemId)">Remove</button></article></div><div class="grid gap-3 border-t border-slate-700 pt-4 sm:grid-cols-2"><label>Priority<select v-model="form.priority"><option v-for="priority in ['Low','Normal','High','Urgent']" :key="priority">{{ priority }}</option></select></label><label>Required date<input v-model="form.requiredDate" type="date" required /></label><label class="sm:col-span-2">Delivery location<input v-model.trim="form.location" maxlength="500" placeholder="Branch or storage room" /></label><label class="sm:col-span-2">Reason for request <span class="text-red-300">*</span><textarea v-model.trim="form.reason" rows="3" required placeholder="Describe the stock need."></textarea></label><label class="sm:col-span-2">Additional notes<textarea v-model.trim="form.notes" rows="2"></textarea></label></div></section>
@@ -176,6 +225,7 @@
         <p v-if="formKind === 'pay'" class="mt-4 text-sm text-amber-200">This records a payment already made through your bank or external provider. It does not transfer money.</p>
         <div class="mt-6 flex justify-end gap-3"><button type="button" @click="formKind = ''" :disabled="busy">Cancel</button><template v-if="formKind === 'request'"><button type="submit" :disabled="busy" @click="requestSubmission = 'draft'">{{ busy ? 'Saving…' : 'Save as draft' }}</button><button class="bg-amber-800" type="submit" :disabled="busy" @click="requestSubmission = 'send'">{{ busy ? 'Sending…' : 'Send to Procurement' }}</button></template><button v-else class="bg-amber-800" type="submit" :disabled="busy || (isQuotePricingForm && !formPricingValid)">{{ busy ? (formKind === 'receiving' ? 'Saving delivery…' : 'Saving…') : formKind === 'receiving' ? 'Save inspection' : formKind === 'prepareFunding' ? 'Submit to Finance' : 'Save and continue' }}</button></div></template>
       </form></div>
+      </template>
     </main>
   </div>
 </template>
@@ -277,7 +327,7 @@ const tabs = computed(() => (tabMap[department.value] || []).map(key => ({ key, 
 const data = ref({ records: [], items: [], suppliers: [], branches: [], movements: [], permissions: [], stockReconciliation: [] }), branchId = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('')
 const selected = ref(null), history = ref({ history: [], documents: [] })
 const search = ref(''), status = ref(''), type = ref(''), departmentFilter = ref(''), supplierFilter = ref(''), categoryFilter = ref(''), fromDate = ref(''), toDate = ref(''), sort = ref('newest'), currentPage = ref(1)
-const formKind = ref(''), form = ref({}), formFields = ref([]), formTarget = ref(null), formError = ref(''), requestSubmission = ref('send')
+const formKind = ref(''), form = ref({}), formFields = ref([]), formTarget = ref(null), formError = ref(''), requestSubmission = ref('send'), receivingReceiptFile = ref(null)
 const pharmacySetupItem = ref(null), pharmacySetup = ref({ enabled: false, dispensingClass: 'unclassified', retailPrice: 0 }), pharmacySetupError = ref('')
 const budgetSearch = ref(''), budgetBranchFilter = ref('all'), budgetPeriod = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7))
 const can = permission => data.value.permissions.includes(permission) || data.value.permissions.includes('administrator:full_access')
@@ -326,7 +376,7 @@ const workflowToastMessage = (action, record = {}) => ({
   issue: 'Purchase order issued to the supplier. Inventory can now record the delivery.',
   confirm: record.kind === 'po' ? 'Supplier confirmation recorded. Inventory has been notified.' : 'Supply workflow updated.',
   message: 'External supplier communication recorded for clinic use.',
-  receiving: 'Delivery inspection saved. Upload the delivery receipt, then add accepted stock.',
+  receiving: 'Delivery recorded. The receipt is saved and accepted supplies were added to Inventory.',
   onboard: 'Delivery receipt recorded and accepted supplies were added to inventory.',
   invoice: 'Supplier invoice submitted to Finance.',
   startVerification: 'Invoice verification started.',
@@ -440,6 +490,7 @@ const deliveryResultFor = (record, line) => {
   const notes = matches.map(item => [item.condition, item.reason].filter(Boolean).join(': ')).filter(Boolean).join(' · ')
   return { summary: `${delivered} / ${accepted} / ${rejected}`, notes: notes || 'No inspection notes' }
 }
+const rejectedQuantity = line => Math.max(0, Number(line?.delivered || 0) - Number(line?.accepted || 0))
 const responsibleDepartment = record => ['budget','budgetRequest','financeApproval','budgetAllocation','invoice','threeWayMatch','payment'].includes(record.kind) ? 'Finance' : ['receiving','inspection','discrepancy'].includes(record.kind) || record.kind === 'po' && ['Supplier Confirmed','Claimed by Logistics','Partially Received','Delivered','Receiving'].includes(record.status) ? 'Inventory' : record.kind === 'request' || record.currentStock !== undefined ? 'Inventory' : record.kind ? 'Procurement' : 'Supplier Directory'
 const currentOwner = record => {
   if (!record.kind && record.currentStock === undefined) return record.contact || record.contactPerson || 'Supplier contact'
@@ -497,7 +548,7 @@ const actions = r => {
   if(r.kind==='request'){add('submitDraft','Send draft to Procurement',can('inventory:create')&&r.createdBy===data.value.uid&&state('Draft'));add('resubmit','Revise & resubmit',can('inventory:create')&&r.createdBy===data.value.uid&&state('Returned'))}
   if(r.kind==='procurement'){add('prepareFunding','Create PO and submit invoice to Finance',can('procurement:requests:manage')&&state('Received'));add('returnInventory','Return to Inventory',can('procurement:requests:manage')&&state('Received'));add('resource','Restart procurement',can('procurement:requests:manage')&&!state('Completed'))}
   if(r.kind==='budgetRequest'){for(const k of ['approve','return','reject'])add(k,label(k),can('finance:payables:approve')&&r.createdBy!==data.value.uid&&state('Submitted'));add('resubmit','Revise & resubmit',can('procurement:orders:manage')&&state('Returned','Rejected'))}
-  if(r.kind==='po'){for(const k of ['approve','reject'])add(k,label(k)+' purchase order',can('finance:payables:approve')&&(r.createdBy!==data.value.uid||data.value.roleKey==='Owner')&&state('For Review'));add('issue','Issue PO to supplier',can('procurement:orders:manage')&&state('Approved'));add('resend','Revise and resubmit',can('procurement:orders:manage')&&state('Rejected'));add('receiving','Record delivery inspection',can('inventory:create')&&state('Receiving')&&!!(r.sentAt||r.confirmedAt)&&r.lines?.some(line=>Number(r.accepted?.[line.itemId]||0)<Number(line.quantity||0)));add('invoice','Submit invoice',can('finance:invoices:manage')&&state('Receiving')&&!r.invoiceId)}
+  if(r.kind==='po'){for(const k of ['approve','reject'])add(k,label(k)+' purchase order',can('finance:payables:approve')&&(r.createdBy!==data.value.uid||data.value.roleKey==='Owner')&&state('For Review'));add('issue','Issue PO to supplier',can('procurement:orders:manage')&&state('Approved'));add('resend','Revise and resubmit',can('procurement:orders:manage')&&state('Rejected'));add('receiving','Receive delivery and add accepted stock',can('inventory:create')&&state('Receiving')&&!!(r.sentAt||r.confirmedAt)&&r.lines?.some(line=>Number(r.accepted?.[line.itemId]||0)<Number(line.quantity||0)));add('invoice','Submit invoice',can('finance:invoices:manage')&&state('Receiving')&&!r.invoiceId)}
   if(r.kind==='receiving')add('onboard','Add accepted stock',can('inventory:create')&&state('Inspected')&&selected.value?.id===r.id&&history.value.documents.length>0)
   if(r.kind==='discrepancy')add('resolve','Resolve discrepancy',can('inventory:create')&&state('Open'))
   if(r.kind==='invoice'){const payment=paymentForInvoice(r);if(r.approvalFlow!=='purchase-order'){add('reviseInvoice','Correct invoice',state('Submitted','Disputed')&&r.mode==='Manual'&&can('finance:invoices:manage'));add('startVerification','Start invoice verification',can('finance:invoices:manage')&&state('Submitted','Disputed'));add('verify','Run three-way match',can('finance:invoices:manage')&&state('Under Verification'));add('approve','Approve for payment',can('finance:invoices:manage')&&r.createdBy!==data.value.uid&&r.verifiedBy!==data.value.uid&&state('Matched'))}add('preparePayment','Prepare payment record',can('finance:invoices:manage')&&state('Approved for Payment')&&!payment)}
@@ -551,7 +602,7 @@ const savePharmacySetup = async () => {
   }catch(error){pharmacySetupError.value=error.message||'Unable to save Pharmacy settings.';toast.error(pharmacySetupError.value)}finally{busy.value=false}
 }
 const openForm = (kind, target=null) => {
-  formKind.value=kind;formTarget.value=target;formError.value='';form.value={};const f=[]
+  formKind.value=kind;formTarget.value=target;formError.value='';form.value={};receivingReceiptFile.value=null;const f=[]
   if(kind==='message'){form.value={supplierId:target.supplierId||target.supplierIds?.[0]||'',channel:'Email'};f.push(selectField('supplierId','Supplier',supplierOptions().filter(s=>target.supplierId===s.value||target.supplierIds?.includes(s.value))));f.push(selectField('channel','Communication channel',['Email','Phone','Physical document','External platform']));f.push(field('message','External communication details','textarea'))}
   if(kind==='editRequest'){form.value={...target,quantity:target.lines[0].quantity,estimatedCost:Number(target.estimatedCost||0)/100,department:'Inventory'};delete form.value.lines;f.push(field('quantity','Requested quantity','number'),field('reason','Reason','textarea'),field('requiredDate','Required date','date'),selectField('priority','Priority',['Low','Normal','High','Urgent']),field('estimatedCost','Estimated cost (PHP)','number'))}
   if(kind==='editRfq'){form.value={...target};delete form.value.lines;f.push(field('deadline','Quotation deadline','date'),field('deliveryDate','Required delivery date','date'),field('deliveryLocation','Delivery location'),field('terms','Terms','textarea'),field('conditions','Conditions','textarea',false),field('contact','Contact'))}
@@ -584,6 +635,18 @@ const openForm = (kind, target=null) => {
   if(kind==='receiving'){form.value={deliveryDate:today(),lines:target.lines.map(l=>({...l,delivered:Math.max(0,l.quantity-Number(target.accepted?.[l.itemId]||0)),accepted:Math.max(0,l.quantity-Number(target.accepted?.[l.itemId]||0)),rejected:0,condition:'Good',reason:'',manufacturingDate:l.manufacturingDate||'',expiryDate:l.expiryDate||''}))};f.push(field('reference','Delivery reference'),field('deliveryDate','Delivery date','date'),field('notes','Inspection notes','textarea',false))}
   if(kind==='pay'){form.value={method:'Manual Payment',paymentDate:today()};f.push(selectField('method','Payment method',['Manual Payment','Digital Transfer']),field('reference','Payment reference'),field('paymentDate','Payment date','date'),selectField('proofId','Uploaded payment evidence',history.value.documents.map(d=>({value:d.id,label:d.name}))))}
   formFields.value=f
+}
+const handleReceivingReceipt = event => {
+  const file = event.target.files?.[0] || null
+  formError.value = ''
+  if (!file) { receivingReceiptFile.value = null; return }
+  if (file.size > 5 * 1024 * 1024 || !['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) {
+    receivingReceiptFile.value = null
+    formError.value = 'Choose a PDF, PNG, or JPEG delivery receipt up to 5 MB.'
+    event.target.value = ''
+    return
+  }
+  receivingReceiptFile.value = file
 }
 const formTitle=computed(()=>formKind.value==='item'?'Inventory item':formKind.value==='returnInventory'?'Return for Revision':label(formKind.value)+' '+(formTarget.value?.number||''))
 const returnReasons=['Incorrect requested quantity','Incorrect product selection','Supplier or product unavailable','Price requires verification','Missing request information','Other']
@@ -622,6 +685,22 @@ const saveForm = async () => {
     toast.error(formError.value)
     return
   }
+  if (formKind.value === 'receiving') {
+    const lines = form.value.lines || []
+    if (!receivingReceiptFile.value) { formError.value = 'Attach the supplier delivery receipt before adding stock.'; return }
+    if (!lines.some(line => Number(line.delivered) > 0)) { formError.value = 'Enter a delivered quantity for at least one item.'; return }
+    for (const line of lines) {
+      const delivered = Number(line.delivered), accepted = Number(line.accepted)
+      if (!Number.isSafeInteger(delivered) || delivered < 0 || !Number.isSafeInteger(accepted) || accepted < 0 || accepted > delivered) {
+        formError.value = `Check the delivered and accepted quantities for ${line.name || itemName(line.itemId)}.`
+        return
+      }
+      if (delivered > accepted && !String(line.reason || '').trim()) {
+        formError.value = `Add a reason for the rejected quantity of ${line.name || itemName(line.itemId)}.`
+        return
+      }
+    }
+  }
   busy.value = true
   formError.value = ''
   try {
@@ -641,27 +720,54 @@ const saveForm = async () => {
       body = { ...form.value, action: ['verifyRequest', 'prepareFunding'].includes(kind) ? 'confirm' : kind === 'returnInventory' ? 'return' : kind }
     }
 
-    const savedRecord = await api(path, body)
-    formKind.value = ''
     if (kind === 'receiving') {
+      const receipt = receivingReceiptFile.value
+      const receivingLines = form.value.lines.map(line => ({
+        ...line,
+        delivered: Number(line.delivered),
+        accepted: Number(line.accepted),
+        rejected: rejectedQuantity(line),
+        condition: 'Good',
+        reason: String(line.reason || '').trim(),
+      }))
+      const savedRecord = await api(path, { ...body, lines: receivingLines })
       if (!savedRecord?.id) {
-        notice.value = 'Delivery inspection was saved. Open the receipt, upload the delivery receipt, then add accepted stock.'
-        toast.error(notice.value)
+        formKind.value = ''
+        receivingReceiptFile.value = null
+        error.value = 'The delivery inspection was saved but could not be opened. Refresh Receive Supplies and continue from the saved delivery.'
+        toast.error(error.value)
         await load(true)
         return
       }
-      notice.value = 'Delivery inspection saved. Upload the delivery receipt as evidence, then choose Add accepted stock.'
+
+      formKind.value = ''
+      receivingReceiptFile.value = null
+      try {
+        await uploadRecordDocument(savedRecord.id, receipt)
+        await api(`/records/${savedRecord.id}/actions`, { action: 'onboard' })
+      } catch (receivingError) {
+        await load(true)
+        const pendingRecord = data.value.records.find(record => record.id === savedRecord.id)
+        if (pendingRecord) await view(pendingRecord)
+        error.value = `The inspection was saved, but accepted stock was not confirmed: ${receivingError.message} Open this saved delivery to retry.`
+        toast.error(error.value)
+        return
+      }
+
+      notice.value = 'Delivery recorded. The receipt is saved and accepted quantities have been added to Inventory.'
       toast.success(notice.value)
       await load(true)
-      const pendingReceipt = data.value.records.find(record => record.id === savedRecord.id)
-      if (pendingReceipt) await view(pendingReceipt)
+      const completedReceiving = data.value.records.find(record => record.id === savedRecord.id)
+      if (completedReceiving) await view(completedReceiving)
       return
-    } else {
-      notice.value = kind === 'request'
-        ? requestSubmission.value === 'draft' ? 'Request saved as a private draft.' : 'Request sent to Procurement.'
-        : workflowToastMessage(kind, target)
-      toast.success(notice.value)
     }
+
+    const savedRecord = await api(path, body)
+    formKind.value = ''
+    notice.value = kind === 'request'
+      ? requestSubmission.value === 'draft' ? 'Request saved as a private draft.' : 'Request sent to Procurement.'
+      : workflowToastMessage(kind, target)
+    toast.success(notice.value)
     await load(true)
     if (selected.value) await view(selected.value)
   } catch (e) {
@@ -671,7 +777,17 @@ const saveForm = async () => {
     busy.value = false
   }
 }
-const upload=async event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>5*1024*1024){error.value='File must be 5 MB or smaller.';return}busy.value=true;try{const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});await api(`/records/${selected.value.id}/documents`,{name:file.name,contentType:file.type,data:base64,visibility:'internal'});await view(selected.value)}catch(e){error.value=e.message}finally{busy.value=false;event.target.value=''}}
+const encodeFileBase64 = file => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result).split(',')[1])
+  reader.onerror = reject
+  reader.readAsDataURL(file)
+})
+const uploadRecordDocument = async (recordId, file) => {
+  const data = await encodeFileBase64(file)
+  return api(`/records/${recordId}/documents`, { name: file.name, contentType: file.type, data, visibility: 'internal' })
+}
+const upload=async event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>5*1024*1024){error.value='File must be 5 MB or smaller.';return}busy.value=true;try{await uploadRecordDocument(selected.value.id,file);await view(selected.value)}catch(e){error.value=e.message}finally{busy.value=false;event.target.value=''}}
 const download=async document=>{try{const result=await api('/documents/'+document.id);window.open(result.url,'_blank','noopener,noreferrer')}catch(e){error.value=e.message}}
 const downloadPurchaseOrderPdf = async record => {
   exporting.value = true
@@ -785,6 +901,41 @@ input:not([type=checkbox]),select,textarea{display:block;width:100%;margin-top:.
 .po-supporting-details > summary:focus-visible, .po-extra-details > summary:focus-visible { outline: 2px solid #b98b60; outline-offset: 4px; }
 .po-extra-details { margin-top: 20px; padding-top: 12px; border-top: 1px solid #efd8c0; }
 .po-extra-details dl { margin-top: 12px; }
+.inventory-receiving-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 12px; background: rgb(45 32 22 / 48%); }
+.inventory-receiving-form { box-sizing: border-box; display: grid; gap: 14px; width: min(100%, 860px); max-height: 92dvh; overflow: auto; margin: 0; padding: clamp(16px, 3vw, 24px); border: 1px solid #ead8c2; border-radius: 16px; background: #fffdfa; color: #503727; box-shadow: 0 16px 44px rgb(55 37 23 / 20%); }
+.inventory-receiving-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid #efdcc7; }
+.inventory-receiving-heading p { margin: 0 0 4px; color: #91643f; font-size: .65rem; font-weight: 800; letter-spacing: .14em; }
+.inventory-receiving-heading h2 { margin: 0; color: #402719; font: 600 1.45rem Georgia, serif; }
+.inventory-receiving-heading span { display: block; margin-top: 5px; color: #806b5a; font-size: .8rem; }
+.inventory-receiving-heading button { display: grid; width: 36px; height: 36px; flex: none; place-items: center; border: 1px solid #dec7aa; border-radius: 9px; background: #fffdfa; color: #68452f; font-size: 1.25rem; }
+.inventory-receiving-intro { margin: 0; color: #806b5a; font-size: .83rem; line-height: 1.5; }
+.inventory-receiving-error { margin: 0; padding: 10px 12px; border: 1px solid #d98f83; border-radius: 9px; background: #fff0ed; color: #9f4035; font-size: .8rem; }
+.inventory-receiving-items { display: grid; gap: 10px; }
+.inventory-receiving-item { display: grid; gap: 11px; padding: 13px; border: 1px solid #ead8c2; border-radius: 12px; background: #fffaf3; }
+.inventory-receiving-item > header h3 { margin: 0; color: #503727; font-size: .92rem; font-weight: 750; }
+.inventory-receiving-item > header p { margin: 3px 0 0; color: #806b5a; font-size: .73rem; }
+.inventory-receiving-quantities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(115px, .7fr); gap: 10px; align-items: end; }
+.inventory-receiving-form label { display: grid; gap: 5px; min-width: 0; color: #684c37; font-size: .76rem; font-weight: 700; }
+.inventory-receiving-form input:not([type="file"]), .inventory-receiving-form textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; margin: 0; padding: 9px 10px; border: 1px solid #dec7aa; border-radius: 8px; background: #fff; color: #3d281d; font: inherit; font-weight: 450; }
+.inventory-receiving-form textarea { min-height: 68px; resize: vertical; }
+.inventory-receiving-rejected { margin: 0; padding: 9px 10px; border: 1px solid #efdcc7; border-radius: 8px; background: #f8f0e6; color: #806b5a; font-size: .76rem; }
+.inventory-receiving-rejected strong { display: block; margin-top: 2px; color: #68452f; }
+.inventory-receiving-reason { max-width: 580px; }
+.inventory-receiving-extra { border-top: 1px solid #efe3d5; padding-top: 8px; }
+.inventory-receiving-extra summary { color: #8d603f; cursor: pointer; font-size: .76rem; font-weight: 700; }
+.inventory-receiving-extra-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.inventory-receiving-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.inventory-receiving-notes span { color: #9a8877; font-weight: 450; }
+.inventory-receiving-file { padding: 12px; border: 1px solid #ead8c2; border-radius: 10px; background: #fffaf3; }
+.inventory-receiving-file b { color: #a34032; }
+.inventory-receiving-file input[type="file"] { box-sizing: border-box; width: 100%; color: #684c37; font-size: .78rem; }
+.inventory-receiving-file small { color: #806b5a; font-size: .72rem; font-weight: 450; }
+.inventory-receiving-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; padding-top: 12px; border-top: 1px solid #efdcc7; }
+.inventory-receiving-actions button { min-height: 42px; padding: 9px 14px; border: 1px solid #dec7aa; border-radius: 9px; background: #fffdfa; color: #68452f; font-size: .8rem; font-weight: 700; }
+.inventory-receiving-actions button[type="submit"] { border-color: #a95108; background: #a95108; color: #fff; }
+.inventory-receiving-actions button[type="submit"]:hover:not(:disabled) { background: #8f4305; }
+.inventory-receiving-actions button:disabled { cursor: not-allowed; opacity: .55; }
+.inventory-receiving-form :is(input, textarea, button, summary):focus-visible { outline: 3px solid rgb(168 111 68 / 35%); outline-offset: 2px; }
 .inventory-page .inventory-item-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -799,5 +950,10 @@ input:not([type=checkbox]),select,textarea{display:block;width:100%;margin-top:.
 .inventory-page .inventory-item-filters > label { display: grid; gap: .3rem; color: var(--ac-text-secondary); font-size: .75rem; font-weight: 700; }
 @media (max-width: 640px) {
   .inventory-page .inventory-item-filters { grid-template-columns: minmax(0, 1fr); }
+  .inventory-receiving-quantities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory-receiving-rejected { grid-column: 1 / -1; }
+  .inventory-receiving-extra-grid, .inventory-receiving-meta { grid-template-columns: minmax(0, 1fr); }
+  .inventory-receiving-actions { flex-direction: column-reverse; }
+  .inventory-receiving-actions button { width: 100%; }
 }
 </style>
