@@ -3,6 +3,13 @@ import { calculatePhilippineOvertime } from '../../shared/philippineOvertime.js'
 import { calculatePayrollLeaveAdjustments } from '../../shared/employeeLeave.js'
 import { DEFAULT_PAYROLL_DEDUCTION_SETTINGS, normalizePayrollDeductionSettings, payrollDeductionsMatch } from '../../shared/payrollDeductions.js'
 const check = (condition, message, status = 409) => { if (!condition) throw Object.assign(new Error(message), { status }) }
+const manilaDateKey = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const value = type => parts.find(part => part.type === type)?.value || ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
 export const validatePayrollStaffEarnings = (entries, earnings, summaryId) => {
   const used = new Set()
   for (const snapshot of entries) {
@@ -99,7 +106,15 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
     const attendanceRows = attendance.docs.map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
     const overtimeRows = overtimeRequests.docs.map(snapshot => ({ id: snapshot.id, ...(snapshot.data() || {}) }))
     const payrollEmployeeIds = new Set(entries.map(entry => entry.data().employeeId))
-    check(!overtimeRows.some(row => payrollEmployeeIds.has(row.requesterId) && row.status === 'Pending' && String(row.date || '').startsWith(`${monthKey}-`)), 'Resolve pending overtime requests before submitting this payroll month.')
+    const today = manilaDateKey()
+    const unresolvedOvertime = overtimeRows.some(row => {
+      if (!payrollEmployeeIds.has(row.requesterId) || !String(row.date || '').startsWith(`${monthKey}-`)) return false
+      if (row.requestType === 'advance') {
+        return String(row.date || '') >= today && ['Pending', 'Approved'].includes(row.status)
+      }
+      return row.status === 'Pending'
+    })
+    check(!unresolvedOvertime, 'Resolve pending overtime requests and finish upcoming approved overtime before submitting this payroll month.')
     const leaveAdjustments = calculatePayrollLeaveAdjustments({
       leaveRequests: leaveRequests.docs.map(snapshot => snapshot.data() || {}),
       attendanceRecords: attendanceRows,
@@ -143,13 +158,22 @@ export const registerPayrollWorkflow = (app, { admin, requireAuth, loadUserConte
       for (const request of approvedOvertime) {
         const record = attendanceRows.find(row => row.id === request.attendanceRecordId)
           || attendanceByDate.get(String(request.date))
+          || attendanceRows.find(row => row.employeeId === data.employeeId && row.date === request.date)
+        if (request.requestType === 'advance'
+          && (!record || record.employeeId !== data.employeeId || record.date !== request.date || !record.timeIn || !record.timeOut)) {
+          continue
+        }
         check(record && record.employeeId === data.employeeId && record.date === request.date, 'An approved overtime request has no matching attendance evidence. Regenerate payroll after HR resolves it.')
         const calculation = calculatePhilippineOvertime({
           ...record,
           shiftStart: record.shiftStart || request.scheduledStart,
           shiftEnd: record.shiftEnd || request.scheduledEnd,
         }, employee || {})
-        check(calculation.overtimeMinutes > 0 && Number(request.calculatedOvertimeMinutes) === calculation.overtimeMinutes, 'An approved overtime amount does not match its attendance evidence. Regenerate payroll after HR reviews it.')
+        if (request.requestType === 'advance') {
+          if (calculation.overtimeMinutes <= 0) continue
+        } else {
+          check(calculation.overtimeMinutes > 0 && Number(request.calculatedOvertimeMinutes) === calculation.overtimeMinutes, 'An approved overtime amount does not match its attendance evidence. Regenerate payroll after HR reviews it.')
+        }
         overtimeMinutes += calculation.overtimeMinutes
         overtimeBasePay += (calculation.overtimeMinutes / 60) * rateBasis.hourlyEquivalent * calculation.multiplier
         nightDifferential += (calculation.nightMinutes / 60) * rateBasis.hourlyEquivalent * 0.1

@@ -11,6 +11,13 @@ const validDate = value => {
   check(parsed && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date, 'Choose valid dates.', 400)
   return date
 }
+const manilaDateKey = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const value = type => parts.find(part => part.type === type)?.value || ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
 
 export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, assertPlanFeature, loadAttendanceSchedule }) => {
   const db = admin.firestore(), now = () => admin.firestore.FieldValue.serverTimestamp()
@@ -101,43 +108,25 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
     const input = req.body || {}, employeeId = req.user.uid
     const branchId = clean(input.branchId), date = validDate(input.date), reason = clean(input.reason)
     check(branchId && reason.length >= 10 && reason.length <= 500, 'Choose a branch and enter an overtime reason of 10 to 500 characters.', 400)
+    check(date >= manilaDateKey(), 'Overtime date cannot be in the past.', 400)
     await requireBranch(context, branchId, 'overtime:create')
     const employeeSnap = await db.collection('users').doc(employeeId).get()
     const employee = employeeSnap.data() || {}
     check(employeeSnap.exists && (employee.branchId === branchId || (employee.branchIds || []).includes(branchId)), 'Your employee account is not assigned to this branch.', 403)
     check(employee.engagementType !== 'student_intern', 'Student interns / OJT do not submit employee overtime requests.')
-    const [attendanceSnap, schedule, clinic] = await Promise.all([
-      db.collection('attendance').where('branchId', '==', branchId).where('employeeId', '==', employeeId).where('date', '==', date).limit(2).get(),
+    const [schedule, clinic] = await Promise.all([
       loadAttendanceSchedule(employeeId, date),
       branchAccess(context, branchId),
     ])
-    check(attendanceSnap.size === 1, 'A unique attendance record is required before you can submit overtime.', 400)
-    const attendanceDoc = attendanceSnap.docs[0], attendance = attendanceDoc.data() || {}
-    check(attendance.timeIn && attendance.timeOut, 'Clock in and clock out must both be recorded before overtime can be requested.', 400)
-    const calculation = calculatePhilippineOvertime({
-      ...attendance,
-      shiftStart: attendance.shiftStart || schedule?.shiftStart,
-      shiftEnd: attendance.shiftEnd || schedule?.shiftEnd,
-      unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? schedule?.unpaidMealBreakMinutes,
-    }, employee)
-    check(calculation.overtimeMinutes > 0, 'The attendance record does not contain overtime under the clinic policy.', 400)
     const id = `ot-${employeeId}-${date}`
     const ref = db.collection('overtimeRequests').doc(id)
     const record = {
       requestId: id, requesterId: employeeId,
       requesterName: clean(employee.fullName) || `${clean(employee.firstName)} ${clean(employee.lastName)}`.trim() || clean(employee.email) || 'Employee',
-      ownerId: clean(clinic?.ownerId), branchId, date,
-      shiftLabel: clean(attendance.shiftLabel || schedule?.shiftLabel),
-      scheduledStart: clean(attendance.shiftStart || schedule?.shiftStart),
-      scheduledEnd: clean(attendance.shiftEnd || schedule?.shiftEnd),
-      actualTimeIn: clean(attendance.timeIn), actualTimeOut: clean(attendance.timeOut),
-      attendanceStatus: clean(attendance.attendanceStatus || attendance.status || 'Complete'),
-      attendanceRecordId: attendanceDoc.id,
-      calculatedOvertimeMinutes: calculation.overtimeMinutes,
-      nightDifferentialMinutes: calculation.nightMinutes,
-      dayClassification: calculation.dayClassification,
-      overtimeRateMultiplier: calculation.multiplier,
-      unpaidMealBreakMinutes: calculation.mealBreakMinutes,
+      ownerId: clean(clinic?.ownerId), branchId, date, requestType: 'advance',
+      shiftLabel: clean(schedule?.shiftLabel),
+      scheduledStart: clean(schedule?.shiftStart),
+      scheduledEnd: clean(schedule?.shiftEnd),
       reason, status: 'Pending', createdAt: now(), updatedAt: now(),
     }
     await db.runTransaction(async tx => {
@@ -145,7 +134,7 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
         tx.get(db.collection('overtimeRequests').where('branchId', '==', branchId).where('requesterId', '==', employeeId).where('date', '==', date)),
         tx.get(ref),
       ])
-      check(!sameDayRequests.docs.some(doc => ['pending', 'approved'].includes(clean(doc.data()?.status).toLowerCase())), 'A pending or approved overtime request already exists for this attendance date.')
+      check(!sameDayRequests.docs.some(doc => ['pending', 'approved'].includes(clean(doc.data()?.status).toLowerCase())), 'A pending or approved overtime request already exists for this date.')
       const previous = prior.data() || {}
       const previousReviews = Array.isArray(previous.previousReviews) ? previous.previousReviews : []
       const reviewHistory = prior.exists && previous.reviewedAt ? [...previousReviews, {
@@ -154,7 +143,7 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
       }] : previousReviews
       tx.set(ref, { ...record, attemptCount: Number(previous.attemptCount || 0) + 1, previousReviews: reviewHistory })
     })
-    return { id, status: record.status, calculatedOvertimeMinutes: record.calculatedOvertimeMinutes }
+    return { id, status: record.status, date: record.date }
   }))
 
   app.post('/hr/overtime-requests/:id/review', requireAuth, response(async (req, context) => {
@@ -167,11 +156,17 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
       check(request.status === 'Pending', 'This overtime request has already been reviewed.')
       const remarks = clean(req.body?.reviewRemarks)
       check(status !== 'Rejected' || (remarks && remarks.length <= 2000), 'A rejection reason is required.', 400)
-      const attendanceRef = db.collection('attendance').doc(clean(request.attendanceRecordId))
-      const attendanceSnap = request.attendanceRecordId ? await tx.get(attendanceRef) : null
+      const isAdvanceRequest = request.requestType === 'advance'
+      if (isAdvanceRequest && status === 'Approved') {
+        check(String(request.date || '') >= manilaDateKey(), 'Advance overtime must be approved on or before its requested date.', 409)
+      }
+      const attendanceRef = !isAdvanceRequest && request.attendanceRecordId
+        ? db.collection('attendance').doc(clean(request.attendanceRecordId))
+        : null
+      const attendanceSnap = attendanceRef ? await tx.get(attendanceRef) : null
       let attendance = attendanceSnap?.data() || null
       let attendanceRecordId = attendanceSnap?.exists ? attendanceSnap.id : ''
-      if (!attendance || attendance.employeeId !== request.requesterId || attendance.branchId !== request.branchId || attendance.date !== request.date) {
+      if (!isAdvanceRequest && (!attendance || attendance.employeeId !== request.requesterId || attendance.branchId !== request.branchId || attendance.date !== request.date)) {
         const matching = await tx.get(db.collection('attendance')
           .where('branchId', '==', request.branchId)
           .where('employeeId', '==', request.requesterId)
@@ -185,16 +180,20 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
         }
       }
       const employee = (await tx.get(db.collection('users').doc(request.requesterId))).data() || {}
-      const schedule = await loadAttendanceSchedule(request.requesterId, request.date)
-      const calculation = attendance ? calculatePhilippineOvertime({
-        ...attendance,
-        shiftStart: attendance.shiftStart || schedule?.shiftStart,
-        shiftEnd: attendance.shiftEnd || schedule?.shiftEnd,
-        unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? schedule?.unpaidMealBreakMinutes,
-      }, employee) : null
+      let calculation = null
+      let schedule = null
+      if (!isAdvanceRequest) {
+        schedule = await loadAttendanceSchedule(request.requesterId, request.date)
+        calculation = attendance ? calculatePhilippineOvertime({
+          ...attendance,
+          shiftStart: attendance.shiftStart || schedule?.shiftStart,
+          shiftEnd: attendance.shiftEnd || schedule?.shiftEnd,
+          unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? schedule?.unpaidMealBreakMinutes,
+        }, employee) : null
+      }
       const hasValidEvidence = Boolean(attendance?.branchId === request.branchId && attendance?.timeIn && attendance?.timeOut && calculation?.overtimeMinutes > 0)
       if (status === 'Approved') check(employee.engagementType !== 'student_intern', 'Student intern / OJT overtime cannot be approved through employee payroll.')
-      if (status === 'Approved') check(hasValidEvidence, 'A complete attendance record with overtime is required to approve this request.')
+      if (status === 'Approved' && !isAdvanceRequest) check(hasValidEvidence, 'A complete attendance record with overtime is required to approve this request.')
       const actor = context.userData || {}
       const reviewedBy = clean(actor.fullName) || `${clean(actor.firstName)} ${clean(actor.lastName)}`.trim() || clean(actor.email) || 'Reviewer'
       tx.update(ref, {
@@ -215,8 +214,10 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
     })
   }))
 
-  const normalizeLeaveInput = (input, previous = {}) => {
+  const normalizeLeaveInput = (input, previous = {}, today = manilaDateKey()) => {
     const startDate = validDate(input.startDate), endDate = validDate(input.endDate)
+    check(startDate >= today, 'Leave start date cannot be in the past.', 400)
+    check(endDate >= today, 'Leave end date cannot be in the past.', 400)
     check(endDate >= startDate, 'End date must be on or after the start date.', 400)
     const paymentType = clean(input.paymentType), leaveType = clean(input.leaveType), reason = clean(input.reason)
     const allowedTypes = ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity Leave', 'Paternity Leave', 'Bereavement Leave', 'Personal Leave']
@@ -247,7 +248,7 @@ export const registerHrWorkflow = (app, { admin, requireAuth, loadUserContext, a
       const policy = normalizeLeavePolicy(policySnap.data() || DEFAULT_LEAVE_POLICY)
       const previous = priorSnap?.data() || {}
       if (existingId) check(priorSnap?.exists && previous.requesterId === employeeId && previous.branchId === branchId && previous.status === 'Pending', 'Only your pending leave request in this branch can be edited.', 403)
-      const normalized = normalizeLeaveInput(input, previous)
+      const normalized = normalizeLeaveInput(input, previous, manilaDateKey())
       const activeRequests = requestsSnap.docs.filter(doc => doc.id !== existingId && ['pending', 'approved'].includes(clean(doc.data()?.status).toLowerCase()))
       check(!activeRequests.some(doc => {
         const row = doc.data() || {}

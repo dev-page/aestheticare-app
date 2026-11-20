@@ -8,7 +8,7 @@
           <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">Leave & Overtime</p>
           <h1 class="mt-3 text-3xl font-bold">Overtime</h1>
           <p class="mt-2 max-w-3xl text-sm text-slate-400">
-            Overtime is based on the employee's scheduled shift and recorded attendance, then reviewed before payroll.
+            Request overtime for today or a future date. A reviewer must approve by that date; payroll calculates payable hours from completed attendance.
           </p>
           <p v-if="pageError" class="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">{{ pageError }}</p>
         </div>
@@ -18,29 +18,23 @@
         </p>
         <section v-if="canSubmit && !isStudentIntern" class="mb-6 rounded-3xl border border-slate-700 bg-slate-800/85 p-5 shadow-lg sm:p-6">
           <h2 class="text-lg font-semibold">Submit Overtime</h2>
-          <p class="mt-1 text-sm text-slate-400">Only completed attendance records with time beyond the scheduled shift can be submitted.</p>
+          <p class="mt-1 text-sm text-slate-400">Submit the request before working overtime. Payroll will verify actual hours from your attendance record.</p>
 
           <div class="mt-5 grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
             <div>
-              <label class="mb-2 block text-sm text-slate-300">Date</label>
-              <input v-model="form.date" type="date" :max="todayKey" class="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white" @change="loadOwnAttendance" />
+              <label class="mb-2 block text-sm text-slate-300">Overtime date</label>
+              <input v-model="form.date" type="date" :min="todayKey" class="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white" />
             </div>
-            <div class="rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-sm">
-              <div class="grid gap-3 sm:grid-cols-4">
-                <div><span class="block text-xs text-slate-500">Scheduled shift</span><strong>{{ attendanceEvidence.shiftLabel || 'Not available' }}</strong></div>
-                <div><span class="block text-xs text-slate-500">Scheduled end</span><strong>{{ attendanceEvidence.shiftEnd || '-' }}</strong></div>
-                <div><span class="block text-xs text-slate-500">Actual time-out</span><strong>{{ attendanceEvidence.timeOut || '-' }}</strong></div>
-                <div><span class="block text-xs text-slate-500">Calculated overtime</span><strong class="text-amber-300">{{ calculatedHours }} hour(s)</strong></div>
-              </div>
-              <p class="mt-3 text-xs text-slate-400">Attendance status: {{ attendanceEvidence.attendanceStatus || 'No record' }} · {{ overtimeCalculation.dayClassification }} · {{ overtimeCalculation.multiplier }}x OT rate{{ overtimeCalculation.nightMinutes ? ` · ${overtimeCalculation.nightMinutes} night-differential minute(s)` : '' }}</p>
+            <div class="flex items-center rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-300">
+              Approval authorizes overtime for that date. Payroll uses completed attendance to calculate payable hours.
             </div>
           </div>
 
           <textarea v-model.trim="form.reason" rows="3" maxlength="500" placeholder="Explain why the overtime was needed..." class="mt-4 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-white placeholder:text-slate-500" />
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
             <p v-if="formError" class="text-sm text-rose-300">{{ formError }}</p>
-            <span v-else class="text-xs text-slate-500">The reviewer will compare this request with attendance and shift records.</span>
-            <button type="button" class="rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50" :disabled="saving || !calculatedOvertimeMinutes" @click="submitRequest">
+            <span v-else class="text-xs text-slate-500">Choose today or a future date. Past dates are not accepted.</span>
+            <button type="button" class="rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50" :disabled="saving" @click="submitRequest">
               {{ saving ? 'Submitting...' : 'Submit Request' }}
             </button>
           </div>
@@ -61,19 +55,17 @@
           <div v-if="loading" class="mt-6 rounded-2xl border border-slate-700 bg-slate-900/60 p-8 text-center text-sm text-slate-400">Loading overtime requests...</div>
           <div v-else-if="!filteredRequests.length" class="mt-6 rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-10 text-center text-sm text-slate-400">No overtime requests found.</div>
           <div v-else class="mt-6 overflow-x-auto">
-            <table class="w-full min-w-[1050px] border-collapse text-left text-sm">
+            <table class="w-full min-w-[900px] border-collapse text-left text-sm">
               <thead><tr class="border-b border-slate-700 text-xs uppercase tracking-[0.16em] text-slate-400">
-                <th class="px-3 py-3">Employee</th><th class="px-3 py-3">Date</th><th class="px-3 py-3">Shift evidence</th><th class="px-3 py-3">Attendance</th><th class="px-3 py-3">OT hours</th><th class="px-3 py-3">Reason</th><th class="px-3 py-3">Status</th><th class="px-3 py-3">Actions</th>
+                <th class="px-3 py-3">Employee</th><th class="px-3 py-3">Date</th><th class="px-3 py-3">Planned shift</th><th class="px-3 py-3">Reason</th><th class="px-3 py-3">Status</th><th class="px-3 py-3">Actions</th>
               </tr></thead>
               <tbody>
                 <tr v-for="request in filteredRequests" :key="request.id" class="border-b border-slate-800 text-slate-200">
                   <td class="px-3 py-4"><strong class="text-white">{{ request.requesterName }}</strong><span class="mt-1 block text-xs text-slate-500">{{ request.branchName || 'No branch' }}</span></td>
                   <td class="px-3 py-4">{{ request.date }}</td>
-                  <td class="px-3 py-4"><span class="block">{{ request.shiftLabel || '-' }}</span><span class="text-xs text-slate-400">End {{ request.scheduledEnd || '-' }} / Out {{ request.actualTimeOut || '-' }}</span></td>
-                  <td class="px-3 py-4">{{ request.attendanceStatus || 'Recorded' }}</td>
-                  <td class="px-3 py-4 font-semibold text-amber-300">{{ formatHours(request.calculatedOvertimeMinutes) }}</td>
+                  <td class="px-3 py-4"><span class="block">{{ request.shiftLabel || 'No recurring shift' }}</span><span v-if="request.scheduledStart || request.scheduledEnd" class="text-xs text-slate-400">{{ request.scheduledStart || '--:--' }}–{{ request.scheduledEnd || '--:--' }}</span></td>
                   <td class="max-w-xs px-3 py-4"><span :title="request.reason" class="block truncate">{{ request.reason }}</span></td>
-                  <td class="px-3 py-4"><span class="rounded-full px-3 py-1 text-xs font-semibold" :class="statusClass(request.status)">{{ request.status }}</span></td>
+                  <td class="px-3 py-4"><span class="rounded-full px-3 py-1 text-xs font-semibold" :class="statusClass(displayedStatus(request))">{{ displayedStatus(request) }}</span></td>
                   <td class="px-3 py-4"><div v-if="canReview(request)" class="flex flex-wrap gap-2"><button type="button" class="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400" @click="reviewRequest(request, 'Approved')">Approve</button><button type="button" class="rounded-lg bg-rose-500 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-400" @click="reviewRequest(request, 'Rejected')">Reject</button></div><span v-else class="text-xs text-slate-500">No action</span></td>
                 </tr>
               </tbody>
@@ -97,7 +89,7 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { db } from '@/config/firebaseConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { logActivity } from '@/utils/activityLogger'
-import { calculatePhilippineOvertime } from '@/utils/philippineOvertime'
+import { manilaDate } from '@/utils/walkInScheduling'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { workflowApi } from '@/utils/workflowApi'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
@@ -107,14 +99,8 @@ const embedded = props.embedded
 
 const auth = getAuth()
 const { hasPermission, isClinicAdminOwner } = usePermissions()
-const statuses = ['Pending', 'Approved', 'Rejected']
-const localDateKey = (date = new Date()) => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-const todayKey = localDateKey()
+const statuses = ['Pending', 'Approved', 'Rejected', 'Expired']
+const todayKey = manilaDate()
 const loading = ref(true)
 const saving = ref(false)
 const requests = ref([])
@@ -125,30 +111,32 @@ const currentBranchId = ref('')
 const currentEmployeeProfile = ref({})
 const formError = ref('')
 const pageError = ref('')
-const attendanceEvidence = ref({})
 const form = ref({ date: todayKey, reason: '' })
 
 const reviewerMode = computed(() => !props.requestOnly && Boolean(isClinicAdminOwner.value || hasPermission('overtime:review')))
 const canSubmit = computed(() => hasPermission('overtime:create'))
 const isStudentIntern = computed(() => currentEmployeeProfile.value.engagementType === 'student_intern')
-const overtimeCalculation = computed(() => calculatePhilippineOvertime(attendanceEvidence.value, currentEmployeeProfile.value))
-const calculatedOvertimeMinutes = computed(() => overtimeCalculation.value.overtimeMinutes)
-const calculatedHours = computed(() => formatHours(calculatedOvertimeMinutes.value))
-const filteredRequests = computed(() => requests.value.filter((request) => !selectedStatus.value || request.status === selectedStatus.value))
+const displayedStatus = (request) => request.requestType === 'advance'
+  && request.status === 'Pending'
+  && String(request.date || '') < todayKey
+  ? 'Expired'
+  : request.status
+const filteredRequests = computed(() => requests.value.filter((request) => !selectedStatus.value || displayedStatus(request) === selectedStatus.value))
+
+function statusClass(status) {
+  if (status === 'Approved') return 'bg-emerald-500/15 text-emerald-300'
+  if (status === 'Rejected') return 'bg-rose-500/15 text-rose-300'
+  if (status === 'Expired') return 'bg-slate-500/15 text-slate-300'
+  return 'bg-amber-500/15 text-amber-300'
+}
 
 function formatHours(minutes) {
   const value = Number(minutes || 0) / 60
   return Number.isFinite(value) ? value.toFixed(2) : '0.00'
 }
 
-function statusClass(status) {
-  if (status === 'Approved') return 'bg-emerald-500/15 text-emerald-300'
-  if (status === 'Rejected') return 'bg-rose-500/15 text-rose-300'
-  return 'bg-amber-500/15 text-amber-300'
-}
-
 function canReview(request) {
-  return reviewerMode.value && request.status === 'Pending' && request.requesterId !== currentUserId.value
+  return reviewerMode.value && request.status === 'Pending' && displayedStatus(request) === 'Pending' && request.requesterId !== currentUserId.value
 }
 
 function nameFromProfile(profile = {}) {
@@ -164,13 +152,6 @@ async function resolveContext() {
   currentEmployeeProfile.value = profile
   currentUserName.value = nameFromProfile(profile)
   currentBranchId.value = String(profile.branchId || '').trim()
-}
-
-async function loadOwnAttendance() {
-  attendanceEvidence.value = {}
-  if (!currentUserId.value || !form.value.date) return
-  const snapshot = await getDocs(query(collection(db, 'attendance'), where('employeeId', '==', currentUserId.value)))
-  attendanceEvidence.value = snapshot.docs.map((entry) => entry.data() || {}).find((entry) => entry.date === form.value.date) || {}
 }
 
 async function loadRequests() {
@@ -193,8 +174,7 @@ async function loadRequests() {
 
 async function submitRequest() {
   formError.value = ''
-  if (!form.value.date || form.value.date > todayKey) return (formError.value = 'Choose a completed date.')
-  if (!calculatedOvertimeMinutes.value) return (formError.value = 'No overtime was calculated from the attendance record.')
+  if (!form.value.date || form.value.date < todayKey) return (formError.value = 'Choose today or a future date.')
   if (String(form.value.reason || '').trim().length < 10) return (formError.value = 'Provide a reason with at least 10 characters.')
   if (requests.value.some((request) => request.requesterId === currentUserId.value && request.date === form.value.date && ['Pending', 'Approved'].includes(request.status))) return (formError.value = 'A pending or approved request already exists for this date.')
 
@@ -223,7 +203,10 @@ async function reviewRequest(request, status) {
     if (!result.isConfirmed) return
     reviewRemarks = String(result.value || '').trim()
   } else {
-    const result = await Swal.fire({ title: 'Approve Overtime Request', text: `Approve ${formatHours(request.calculatedOvertimeMinutes)} overtime hour(s) for ${request.requesterName}?`, icon: 'question', showCancelButton: true, confirmButtonText: 'Approve', cancelButtonText: 'Cancel' })
+    const confirmation = request.requestType === 'advance'
+      ? `Approve the planned overtime date ${request.date} for ${request.requesterName}? Payroll will pay only hours confirmed by attendance.`
+      : `Approve ${formatHours(request.calculatedOvertimeMinutes)} overtime hour(s) for ${request.requesterName}?`
+    const result = await Swal.fire({ title: 'Approve Overtime Request', text: confirmation, icon: 'question', showCancelButton: true, confirmButtonText: 'Approve', cancelButtonText: 'Cancel' })
     if (!result.isConfirmed) return
   }
   try {
@@ -242,10 +225,10 @@ onMounted(trackPageLoad(() => pageListener(onAuthStateChanged, auth, async () =>
     loading.value = true
     pageError.value = ''
     await resolveContext()
-    await Promise.all([loadOwnAttendance(), loadRequests()])
+    await loadRequests()
   } catch (error) {
     console.error('Failed to load overtime page:', error)
-    pageError.value = 'We could not load your overtime and attendance records. Refresh the page or contact your clinic administrator if this continues.'
+    pageError.value = 'We could not load overtime requests. Refresh the page or contact your clinic administrator if this continues.'
   } finally {
     loading.value = false
   }

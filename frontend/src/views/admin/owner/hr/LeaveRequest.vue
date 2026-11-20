@@ -92,6 +92,8 @@
                 <input
                   v-model="form.startDate"
                   type="date"
+                  :min="todayKey"
+                  @change="alignEndDateToStart"
                   required
                   class="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-3 text-white"
                   :class="fieldErrors.startDate ? 'border-rose-400 focus:border-rose-400' : ''"
@@ -103,6 +105,7 @@
                 <input
                   v-model="form.endDate"
                   type="date"
+                  :min="endDateMinimum"
                   required
                   class="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-3 text-white"
                   :class="fieldErrors.endDate ? 'border-rose-400 focus:border-rose-400' : ''"
@@ -177,6 +180,7 @@ import { auth, db, storage } from '@/config/firebaseConfig'
 import { OTP_API_BASE } from '@/utils/runtimeConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { LEAVE_TYPES, PAYMENT_TYPES, isPendingLeaveStatus } from '@/utils/leaveRequests'
+import { manilaDate } from '@/utils/walkInScheduling'
 import { scheduledWorkDates, scheduledWorkDatesForYear } from '../../../../../../shared/employeeLeave.js'
 import { DEFAULT_LEAVE_POLICY, isEligibleForPaidLeave, normalizeLeavePolicy } from '../../../../../../shared/leavePolicy.js'
 import { logActivity } from '@/utils/activityLogger'
@@ -220,6 +224,14 @@ const form = ref({
   endDate: '',
   reason: ''
 })
+
+const todayKey = manilaDate()
+const endDateMinimum = computed(() => form.value.startDate && form.value.startDate > todayKey ? form.value.startDate : todayKey)
+const alignEndDateToStart = () => {
+  if (form.value.endDate && form.value.endDate < endDateMinimum.value) {
+    form.value.endDate = endDateMinimum.value
+  }
+}
 
 const requestYear = computed(() => {
   if (form.value.startDate) return Number(form.value.startDate.slice(0, 4))
@@ -282,15 +294,24 @@ const validateForm = () => {
   if (!startDate) {
     fieldErrors.value.startDate = 'Start date is required.'
     isValid = false
+  } else if (startDate < todayKey) {
+    fieldErrors.value.startDate = 'Start date cannot be in the past.'
+    isValid = false
   }
 
   if (!endDate) {
     fieldErrors.value.endDate = 'End date is required.'
     isValid = false
+  } else if (endDate < todayKey) {
+    fieldErrors.value.endDate = 'End date cannot be in the past.'
+    isValid = false
   }
 
-  if (startDate && endDate && daysRequested.value <= 0) {
+  if (startDate && endDate && endDate < startDate) {
     fieldErrors.value.endDate = 'End date must be on or after the start date.'
+    isValid = false
+  } else if (startDate && endDate && daysRequested.value <= 0) {
+    fieldErrors.value.endDate = 'The selected dates must include a scheduled workday.'
     isValid = false
   }
 

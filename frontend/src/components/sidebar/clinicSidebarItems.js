@@ -48,8 +48,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Employee Profiles', icon: 'mdi:card-account-details-outline', to: '/hr/employees', feature: 'staff_management', permission: 'page:employees:manage' },
       { label: 'Create Account', icon: 'mdi:account-plus-outline', to: '/hr/employees/new', feature: 'staff_management', permission: 'page:employees:manage' },
       { label: 'Archived Accounts', icon: 'mdi:account-off-outline', to: '/hr/employees/archived', feature: 'staff_management', permission: 'page:employees:manage' },
-      { label: 'Add Shift', icon: 'mdi:calendar-clock-outline', to: '/hr/shifts?tab=add', feature: 'hr', permission: 'page:employees:manage' },
-      { label: 'Shift Assignment', icon: 'mdi:calendar-account-outline', to: '/hr/shifts?tab=assignment', feature: 'hr', permission: 'page:employees:manage' },
       { label: 'Attendance', icon: 'mdi:calendar-check-outline', to: '/hr/attendance', feature: 'attendance', permission: 'page:employees:manage' },
       { type: 'section', label: 'LEAVE & OVERTIME' },
       { label: 'Overtime & Leave Management', icon: 'mdi:calendar-clock-outline', to: '/hr/leave-overtime-management', feature: 'hr', permission: 'page:leave-overtime:manage' },
@@ -66,7 +64,6 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
     children: [
       { label: 'Approve Purchase Orders', icon: 'mdi:clipboard-check-outline', to: '/finance/procurement/requests', permission: 'page:purchase-orders:approve' },
       { label: 'Listing Approvals', icon: 'tag-check', to: '/finance/listing-approvals', permission: 'page:listings:approve' },
-      { label: 'Employee Compensation', icon: 'mdi:account-cash-outline', to: '/finance/employee-compensation', feature: 'payroll', permission: 'page:employees:manage' },
       { label: 'Payroll Management', icon: 'mdi:calculator', to: '/finance/payroll-management', feature: 'payroll', permission: 'page:payroll:manage' },
       { label: 'Payroll Approval', icon: 'mdi:cash-check', to: '/finance/payroll-approval', feature: 'payroll', permission: 'page:payroll:manage' },
       { label: 'Invoices & Payments', icon: 'mdi:receipt-text-check-outline', to: '/finance/procurement/invoices', permission: 'page:supplier-invoices:manage' },

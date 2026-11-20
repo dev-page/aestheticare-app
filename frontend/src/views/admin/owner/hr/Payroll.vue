@@ -985,22 +985,35 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         collection(db, 'overtimeRequests'),
         where('branchId', '==', currentBranchId.value)
       ))
+      let attendanceDocs = []
+      try {
+        const attendanceSnapshot = await getDocs(query(
+          collection(db, 'attendance'),
+          where('branchId', '==', currentBranchId.value),
+          where('employeeId', '==', employee.id)
+        ))
+        attendanceDocs = attendanceSnapshot.docs
+      } catch (_error) {
+        const attendanceSnapshot = await getDocs(query(collection(db, 'attendance'), where('branchId', '==', currentBranchId.value)))
+        attendanceDocs = attendanceSnapshot.docs.filter((entry) => String(entry.data()?.employeeId || '') === String(employee.id))
+      }
+      const attendanceByDate = new Map(attendanceDocs.map((entry) => [String(entry.data()?.date || ''), entry.data() || {}]))
 
       return snapshot.docs.reduce((total, overtimeDoc) => {
         const data = overtimeDoc.data() || {}
         if (data.requesterId !== employee.id || data.status !== 'Approved') return total
         if (monthKey && !isDateInMonth(data.date || data.createdAt || data.updatedAt, monthKey)) return total
+        const attendance = attendanceByDate.get(String(data.date || ''))
+        if (!attendance?.timeIn || !attendance?.timeOut) return total
         const calculation = calculatePhilippineOvertimePay({
-          timeIn: data.actualTimeIn,
-          timeOut: data.actualTimeOut,
-          shiftStart: data.scheduledStart,
-          shiftEnd: data.scheduledEnd,
-          unpaidMealBreakMinutes: data.unpaidMealBreakMinutes,
-          dayClassification: data.dayClassification,
+          ...attendance,
+          shiftStart: attendance.shiftStart || data.scheduledStart,
+          shiftEnd: attendance.shiftEnd || data.scheduledEnd,
+          unpaidMealBreakMinutes: attendance.unpaidMealBreakMinutes ?? data.unpaidMealBreakMinutes,
         }, employee, employee.basePay)
-        const minutes = Math.max(0, Number(data.calculatedOvertimeMinutes || calculation.overtimeMinutes))
-        const multiplier = Number(data.overtimeRateMultiplier || calculation.multiplier || 1.25)
-        const nightMinutes = Math.max(0, Number(data.nightDifferentialMinutes ?? calculation.nightMinutes ?? 0))
+        const minutes = Math.max(0, Number(calculation.overtimeMinutes || 0))
+        const multiplier = Number(calculation.multiplier || 1.25)
+        const nightMinutes = Math.max(0, Number(calculation.nightMinutes || 0))
         total.minutes += minutes
         total.pay += (minutes / 60) * Number(employee.basePay || 0) * multiplier
         total.nightDifferential += (nightMinutes / 60) * Number(employee.basePay || 0) * 0.10
