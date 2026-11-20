@@ -1,14 +1,20 @@
 <template>
   <section class="role-section hr-dashboard-section">
-    <header><p class="eyebrow">Human Resources</p><h2>People and attendance</h2><p>Review today’s attendance and recent staff activity.</p></header>
+    <header><p class="eyebrow">Human Resources</p><h2>{{ isPersonalAttendance ? 'My attendance' : 'People and attendance' }}</h2><p>{{ attendanceDescription }}</p></header>
     <div class="metric-grid"><article v-for="metric in metrics" :key="metric.label" class="metric"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong><small>{{ metric.note }}</small></article></div>
-    <div class="panel-grid"><article class="panel"><h3>Attendance calendar · {{ monthLabel }}</h3><div class="calendar"><span v-for="day in weekdays" :key="day" class="weekday">{{ day }}</span><span v-for="cell in calendarCells" :key="cell.key" class="day" :class="{ muted: !cell.inMonth, recorded: cell.count }"><b>{{ cell.day }}</b><small v-if="cell.count">{{ cell.count }} logged</small></span></div></article><article class="panel"><h3>Recent attendance</h3><div v-if="recentAttendance.length" class="table-wrap"><table><thead><tr><th>Employee</th><th>Date</th><th>Check in</th><th>Status</th></tr></thead><tbody><tr v-for="item in recentAttendance" :key="item.id"><td>{{ item.employeeName || item.fullName || item.employeeId || 'Employee' }}</td><td>{{ item.date || item.attendanceDate || '—' }}</td><td>{{ formatTime(item.clockIn || item.checkIn) }}</td><td>{{ item.status || 'Recorded' }}</td></tr></tbody></table></div><p v-else class="empty">No attendance records to display.</p></article></div>
+    <div class="panel-grid"><article class="panel"><h3>{{ isPersonalAttendance ? 'My attendance calendar' : 'Attendance calendar' }} · {{ monthLabel }}</h3><div class="calendar"><span v-for="day in weekdays" :key="day" class="weekday">{{ day }}</span><span v-for="cell in calendarCells" :key="cell.key" class="day" :class="{ muted: !cell.inMonth, recorded: cell.count }"><b>{{ cell.day }}</b><small v-if="cell.count">{{ cell.count }} logged</small></span></div></article><article class="panel"><h3>{{ isPersonalAttendance ? 'My recent attendance' : 'Recent attendance' }}</h3><div v-if="recentAttendance.length" class="table-wrap"><table><thead><tr><th>{{ isPersonalAttendance ? 'You' : 'Employee' }}</th><th>Date</th><th>Check in</th><th>Status</th></tr></thead><tbody><tr v-for="item in recentAttendance" :key="item.id"><td>{{ isPersonalAttendance ? 'You' : (item.employeeName || item.fullName || item.employeeId || 'Employee') }}</td><td>{{ item.date || item.attendanceDate || '—' }}</td><td>{{ formatTime(item.clockIn || item.checkIn) }}</td><td>{{ item.status || 'Recorded' }}</td></tr></tbody></table></div><p v-else class="empty">{{ attendanceScope === 'none' ? 'Attendance records are unavailable for this account.' : 'No attendance records to display.' }}</p></article></div>
   </section>
 </template>
 <script setup>
 import { computed } from 'vue'
 import { formatClockTime } from '@/utils/appointmentDss'
-const props = defineProps({ staff: { type: Array, default: () => [] }, attendance: { type: Array, default: () => [] } })
+const props = defineProps({ staff: { type: Array, default: () => [] }, attendance: { type: Array, default: () => [] }, attendanceScope: { type: String, default: 'none' } })
+const isPersonalAttendance = computed(() => props.attendanceScope === 'self')
+const attendanceDescription = computed(() => isPersonalAttendance.value
+  ? 'Only your own attendance records are available here.'
+  : props.attendanceScope === 'none'
+    ? 'Attendance records are unavailable for this account.'
+    : 'Review today’s attendance and recent staff activity.')
 const today = new Date().toISOString().slice(0, 10)
 const todayAttendance = computed(() => props.attendance.filter(item => String(item.date || item.attendanceDate || '').slice(0, 10) === today))
 const month = new Date()
@@ -16,7 +22,7 @@ const monthLabel = month.toLocaleDateString(undefined, { month: 'long', year: 'n
 const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const calendarCells = computed(() => { const first = new Date(month.getFullYear(), month.getMonth(), 1); const start = new Date(month.getFullYear(), month.getMonth(), 1 - first.getDay()); return Array.from({ length: 35 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const key = dateKey(date); return { key, day: date.getDate(), inMonth: date.getMonth() === month.getMonth(), count: props.attendance.filter(item => String(item.date || item.attendanceDate || '').slice(0, 10) === key).length } }) })
-const metrics = computed(() => [{ label: 'Active employees', value: props.staff.filter(item => !item.archived && item.isActive !== false).length, note: 'Assigned to this branch' }, { label: 'Attendance today', value: todayAttendance.value.length, note: 'Attendance records' }, { label: 'Late arrivals', value: todayAttendance.value.filter(item => /late/i.test(String(item.status || ''))).length, note: 'Based on recorded status' }])
+const metrics = computed(() => [{ label: 'Active employees', value: props.staff.filter(item => !item.archived && item.isActive !== false).length, note: 'Assigned to this branch' }, { label: isPersonalAttendance.value ? 'My attendance today' : 'Attendance today', value: todayAttendance.value.length, note: isPersonalAttendance.value ? 'Your attendance records' : 'Attendance records' }, { label: isPersonalAttendance.value ? 'My late arrival' : 'Late arrivals', value: todayAttendance.value.filter(item => /late/i.test(String(item.status || ''))).length, note: 'Based on recorded status' }])
 const recentAttendance = computed(() => [...props.attendance].sort((a, b) => String(b.date || b.attendanceDate || '').localeCompare(String(a.date || a.attendanceDate || ''))).slice(0, 8))
 const formatTime = value => formatClockTime(value) || value || '—'
 </script>

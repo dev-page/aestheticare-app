@@ -35,7 +35,7 @@
         </section>
 
         <BranchManagerDashboard v-if="hasBranchManagerDashboard" :appointments="dashboardData.appointments" :staff="dashboardData.staff" :inventory="dashboardData.inventory" />
-        <HumanResourceDashboard v-if="hasHumanResourceDashboard" :staff="dashboardData.staff" :attendance="dashboardData.attendance" />
+        <HumanResourceDashboard v-if="hasHumanResourceDashboard" :staff="dashboardData.staff" :attendance="dashboardData.attendance" :attendance-scope="dashboardData.attendanceScope" />
         <FinanceDashboard v-if="hasFinanceDashboard" :transactions="dashboardData.transactions" />
         <InventoryDashboard v-if="hasInventoryDashboard" :items="dashboardData.inventory" />
         <ProcurementDashboard v-if="hasProcurementDashboard" :orders="dashboardData.purchaseOrders" />
@@ -147,7 +147,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const branchLabel = ref('')
     const currentUserId = ref('')
     const practitionerBranchId = ref('')
-    const dashboardData = ref({ appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] })
+    const dashboardData = ref({ appointments: [], transactions: [], staff: [], attendance: [], attendanceScope: 'none', inventory: [], purchaseOrders: [] })
     const todayShiftLabel = ref('Loading...')
     const todayShiftTime = ref('Checking today\'s schedule...')
     let unsubscribeAuth = null
@@ -273,18 +273,53 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
+    const loadDashboardAttendance = async (branchId) => {
+      if (
+        !hasHumanResourceDashboard.value
+        || !branchId
+        || !currentUserId.value
+        || !hasPermission('attendance:view')
+        || !hasFeature('hr')
+      ) return { records: [], scope: 'none' }
+
+      try {
+        const snapshot = await getDocs(query(collection(db, 'attendance'), where('branchId', '==', branchId)))
+        return { records: snapshot.docs.map((item) => ({ id: item.id, ...item.data() })), scope: 'branch' }
+      } catch (error) {
+        // A branch-wide query can be denied when the employee's assigned role
+        // or clinic entitlement does not permit team attendance. The employee
+        // dashboard may still show that employee's own records, which the
+        // attendance rules authorize directly by employeeId.
+        if (error?.code !== 'permission-denied') {
+          console.warn('Unable to load branch attendance for the employee dashboard:', error)
+          return { records: [], scope: 'none' }
+        }
+
+        try {
+          const snapshot = await getDocs(query(
+            collection(db, 'attendance'),
+            where('employeeId', '==', currentUserId.value),
+          ))
+          return { records: snapshot.docs.map((item) => ({ id: item.id, ...item.data() })), scope: 'self' }
+        } catch (fallbackError) {
+          console.error('Unable to load the employee’s own attendance:', fallbackError)
+          return { records: [], scope: 'none' }
+        }
+      }
+    }
+
     let dashboardRequest = 0
     const refreshDashboardData = async (branchId) => {
       const requestId = ++dashboardRequest
       if (!branchId) {
-        dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] }
+        dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], attendanceScope: 'none', inventory: [], purchaseOrders: [] }
         return
       }
       const [appointments, transactions, staff, attendance, inventory, purchaseOrders] = await Promise.all([
         loadDashboardCollection('appointments', 'appointments:view', 'appointments', branchId),
         loadDashboardCollection('transactions', 'payments:view', 'pos_payments', branchId),
         loadDashboardCollection('users', 'staff:view', 'staff_management', branchId, [where('userType', '==', 'Staff')]),
-        loadDashboardCollection('attendance', 'attendance:view', 'hr', branchId),
+        loadDashboardAttendance(branchId),
         (hasPermission('inventory:view') || hasPermission('finance:purchases:view')) && hasFeature('inventory')
           ? loadDashboardCollection('inventoryItems', hasPermission('inventory:view') ? 'inventory:view' : 'finance:purchases:view', 'inventory', branchId)
           : Promise.resolve([]),
@@ -295,7 +330,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         appointments,
         transactions,
         staff: staff.filter(member => !member.archived),
-        attendance,
+        attendance: attendance.records,
+        attendanceScope: attendance.scope,
         inventory,
         purchaseOrders,
       }
@@ -452,7 +488,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           assignedRoleNames.value = []
           currentUserId.value = ''
           practitionerBranchId.value = ''
-          dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], inventory: [], purchaseOrders: [] }
+          dashboardData.value = { appointments: [], transactions: [], staff: [], attendance: [], attendanceScope: 'none', inventory: [], purchaseOrders: [] }
           branchLabel.value = ''
           loading.value = false
           if (unsubscribeProfile) {
