@@ -182,10 +182,7 @@ const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
-const configuredAutoVerificationThreshold = Number(process.env.AUTO_VERIFICATION_THRESHOLD || 0.74)
-const AUTO_VERIFICATION_THRESHOLD = Number.isFinite(configuredAutoVerificationThreshold)
-  ? Math.max(0.74, Math.min(1, configuredAutoVerificationThreshold))
-  : 0.74
+const AUTO_VERIFICATION_THRESHOLD = 0.74
 // A 30-day window gives administrators and registrants advance notice. Only
 // documents with seven or fewer days remaining require replacement before
 // review; already expired documents remain rejected.
@@ -2399,10 +2396,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       expiryWarning: requiresExpiry && expiryValidation.daysRemaining > REGISTRATION_EXPIRY_HOLD_DAYS
         && expiryValidation.daysRemaining <= REGISTRATION_EXPIRY_WARNING_DAYS,
     }
-    // Document-level OCR verification requires all labeled comparisons to
-    // match. The clinic still requires a separate administrator decision.
-    const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
-      && (!requiresExpiry || expiryValid === true)
+    // OCR status follows the score threshold; expiry holds and invalid dates
+    // remain hard blockers. Clinic approval is still a separate admin decision.
     const expiredDocument = requiresExpiry && expiryValidation.expired
     const invalidValidityRange = requiresExpiry && expiryValidation.invalidRange
     const expiryAccountHold = requiresExpiry && expiryValidation.accountHold
@@ -2410,9 +2405,8 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
     result.status = expiredDocument || invalidValidityRange
       ? 'rejected'
       : expiryAccountHold ? 'held_pending'
-      : isAuthorizationDocument ? 'manual_review'
-      : readableText && score.score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
-    result.reason = !readableText
+      : score.score >= AUTO_VERIFICATION_THRESHOLD ? 'verified' : 'manual_review'
+    result.reason = !readableText && result.status !== 'verified'
       ? 'OCR could not read enough text to compare the document. An administrator must inspect the original file.'
       : expiredDocument
         ? `This document expired on ${expiryDate}. Please upload a current document.`
@@ -2421,7 +2415,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
       : expiryAccountHold
         ? `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
       : isAuthorizationDocument
-        ? 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
+        ? 'OCR read the authorization document. The clinic registration still requires administrator approval.'
       : comparisons.some((item) => item.status === 'mismatch')
         ? 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
         : comparisons.some((item) => item.status === 'needs_review')
@@ -2429,7 +2423,7 @@ const processUploadedRegistrationDocument = async ({ uid, docKey, document, appl
           : requiresExpiry && expiryValid !== true
             ? 'OCR completed, but a labelled validity period or expiry date could not be confirmed. This document requires manual review.'
         : result.status === 'verified'
-          ? 'OCR extracted readable text and passed automatic checks.'
+          ? 'OCR score meets the 74% verification threshold.'
           : 'OCR completed, but this document requires manual review.'
   } catch (error) {
     const processingError = String(error?.message || error || 'Unknown OCR processing error.')
@@ -2681,17 +2675,14 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
       }
       result.scoreBreakdown = score.breakdown
       result.confidence = score.score
-      const automaticChecksPassed = comparisons.every((item) => item.status === 'match')
-        && (!expiryApplicable || expiryValid)
       const expiredDocument = expiryApplicable && expiryValidation.expired
       const invalidValidityRange = expiryApplicable && expiryValidation.invalidRange
       const expiryAccountHold = expiryApplicable && expiryValidation.accountHold
       result.status = expiredDocument || invalidValidityRange
         ? 'rejected'
         : expiryAccountHold ? 'held_pending'
-        : isAuthorizationDocument ? 'manual_review'
-        : hasReadableText && score.score >= AUTO_VERIFICATION_THRESHOLD && automaticChecksPassed ? 'verified' : 'manual_review'
-      if (!hasSomeText) {
+        : score.score >= AUTO_VERIFICATION_THRESHOLD ? 'verified' : 'manual_review'
+      if (!hasSomeText && result.status !== 'verified') {
         result.reason = 'OCR returned no readable text. Check that the file is clear, not corrupted, and contains a readable image or text-based PDF.'
       } else if (expiredDocument) {
         result.reason = `This document expired on ${expiryValidation.validTo}. Please upload a current document.`
@@ -2699,8 +2690,10 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'The document has an invalid validity range: its end date is earlier than its start date. Please upload a correct, current document.'
       } else if (expiryAccountHold) {
         result.reason = `This document expires in ${expiryValidation.daysRemaining} day${expiryValidation.daysRemaining === 1 ? '' : 's'}. Your registration requires a replacement document before it can be reviewed.`
+      } else if (!hasReadableText && result.status !== 'verified') {
+        result.reason = 'OCR could not read enough text to compare the document. An administrator must inspect the original file.'
       } else if (isAuthorizationDocument) {
-        result.reason = 'OCR checked the registrant and permit-holder names. An administrator must review the authority granted before approval.'
+        result.reason = 'OCR read the authorization document. The clinic registration still requires administrator approval.'
       } else if (comparisons.some((item) => item.status === 'mismatch')) {
         result.reason = 'OCR found a possible mismatch. Compare the values with the original document before making a decision.'
       } else if (comparisons.some((item) => item.status === 'needs_review')) {
@@ -2713,7 +2706,7 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
         result.reason = 'The document expiry date is invalid or expired.'
       } else {
         result.reason = result.status === 'verified'
-          ? 'OCR, identity, document number, and validity checks passed.'
+          ? 'OCR score meets the 74% verification threshold.'
           : 'The document needs manual review because its weighted score is below the automatic verification threshold.'
       }
     } catch (error) {
@@ -2724,11 +2717,21 @@ const runRegistrationDocumentVerification = async ({ uid, applicantType, process
   }
 
   const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents?.[key]?.path || documents?.[key]?.storagePath))
-  const allVerified = allRequiredDocumentsPresent && requiredKeys.every((key) => results[key]?.status === 'verified')
+  const verificationScores = requiredKeys
+    .map((key) => Number(results[key]?.confidence))
+    .filter((score) => Number.isFinite(score))
+  const overallVerificationScore = verificationScores.length === requiredKeys.length
+    ? verificationScores.reduce((total, score) => total + score, 0) / verificationScores.length
+    : null
   const hasRejectedDocument = requiredKeys.some((key) => results[key]?.status === 'rejected')
   const rejectedDocumentKeys = requiredKeys.filter((key) => results[key]?.status === 'rejected')
   const expiryHoldDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryAccountHold)
   const hasExpiryHold = expiryHoldDocuments.length > 0
+  const allVerified = allRequiredDocumentsPresent
+    && overallVerificationScore !== null
+    && overallVerificationScore >= AUTO_VERIFICATION_THRESHOLD
+    && !hasRejectedDocument
+    && !hasExpiryHold
   const expiryWarningDocuments = requiredKeys.filter((key) => results[key]?.checks?.expiryWarning)
   const hasExpiryWarning = expiryWarningDocuments.length > 0
   const requiresExpiryResubmission = hasExpiryHold && !hasRejectedDocument

@@ -5,7 +5,7 @@ import { getAnalytics } from "firebase/analytics";
 // https://firebase.google.com/docs/web/setup#available-libraries
 
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 // Your web app's Firebase configuration
@@ -29,5 +29,7 @@ if (typeof window !== 'undefined' && location.hostname !== 'localhost') {
 }
 
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+// Use short-lived WebChannel requests for listeners. This avoids persistent
+// streams that can repeatedly fail on networks with unstable QUIC connections.
+export const db = initializeFirestore(app, { experimentalForceLongPolling: true })
 export const storage = getStorage(app)

@@ -331,17 +331,17 @@
             </div>
             <p class="mt-2 text-xs text-slate-400">
               Processed: {{ formatDateValue(selectedRecord.verificationProcessedAt) }}
-              <span v-if="selectedRecord.verificationThreshold != null"> · Automatic threshold: {{ (Number(selectedRecord.verificationThreshold) * 100).toFixed(2) }}%</span>
+              <span> · Automatic threshold: 74%</span>
             </p>
             <p class="mt-1 text-xs leading-relaxed text-slate-400">
-              Per-document OCR-Verified range: {{ (Number(selectedRecord.verificationThreshold || 0.74) * 100).toFixed(2) }}–100% when all applicable checks pass. Manual Review: below the threshold or any unclear or mismatched applicable check, even at a higher score. The total above is an average across documents, not the status cutoff. Authorization letters always need administrator review; documents expiring within 7 days are held, and expired or invalid documents require resubmission.
+              The overall OCR score is averaged across required documents. Scores from 74% to 100% are OCR Verified. Expired or invalid documents still require resubmission; clinic approval remains a separate administrator decision.
             </p>
             <div class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
               <div class="flex items-center justify-between gap-3">
                 <span class="text-sm text-slate-300">Total verification score</span>
                 <strong class="text-lg text-white">{{ getOverallConfidence(selectedRecord.verificationResults) === null ? 'Not available' : `${getOverallConfidence(selectedRecord.verificationResults)}%` }}</strong>
               </div>
-              <p class="mt-1 text-[11px] text-slate-500">Weighted OCR and consistency checks. This does not prove document authenticity.</p>
+              <p class="mt-1 text-[11px] text-slate-500">Weighted OCR and consistency score across the required documents.</p>
               <div v-if="getOverallConfidence(selectedRecord.verificationResults) !== null" class="mt-2 h-2 overflow-hidden rounded-full bg-slate-700">
                 <div
                   class="h-full rounded-full bg-emerald-500 transition-all"
@@ -607,7 +607,9 @@ const mapVerificationResults = (verificationResults = {}) => Object.entries(veri
   })
   .map(([key, result = {}]) => ({
   key,
-  status: String(result.status || 'manual_review').replaceAll('_', ' '),
+  status: result.checks?.expiryAccountHold === true || ['rejected', 'held_pending'].includes(String(result.status || '').toLowerCase())
+    ? String(result.status || 'manual_review').replaceAll('_', ' ')
+    : Number(result.confidence) >= 0.74 ? 'verified' : 'manual review',
   confidence: Number.isFinite(Number(result.confidence)) ? Math.round(Number(result.confidence) * 10000) / 100 : 0,
   ocrConfidence: result.ocrConfidence == null || !Number.isFinite(Number(result.ocrConfidence)) ? null : Math.round(Number(result.ocrConfidence) * 10000) / 100,
   comparisons: Array.isArray(result.comparisons) ? result.comparisons.map((comparison = {}) => ({
@@ -658,6 +660,35 @@ const getOverallConfidence = (results = []) => {
   const scores = results.map((result) => Number(result.confidence)).filter((score) => Number.isFinite(score))
   if (!scores.length) return null
   return Math.round((scores.reduce((total, score) => total + score, 0) / scores.length) * 100) / 100
+}
+
+const scoreBasedVerificationStatus = (clinic, results = []) => {
+  const currentStatus = String(clinic?.verificationStatus || 'Not processed')
+  const normalizedStatus = currentStatus.trim().toLowerCase()
+  if (clinic?.resubmissionRequired === true
+    || clinic?.expiryAccountHold === true
+    || normalizedStatus.includes('expiry hold')
+    || normalizedStatus.includes('resubmission')
+    || results.some((result) => result.checks?.expiryAccountHold === true || ['rejected', 'held pending'].includes(String(result.status || '').toLowerCase()))) {
+    return currentStatus
+  }
+
+  const requiredKeys = [
+    'governmentIdRepresentativeFront',
+    'governmentIdRepresentativeBack',
+    'businessPermit',
+    'dohAccreditation',
+    'birRegistration',
+    'sanitaryCertificate',
+    ...(clinic?.permitHolderIsRegistrant === false ? ['authorizationLetter'] : []),
+  ]
+  const documents = clinic?.submittedDocuments || {}
+  const allRequiredDocumentsPresent = requiredKeys.every((key) => Boolean(documents[key]?.url || documents[key]?.path || documents[key]?.storagePath))
+  const allRequiredScoresPresent = requiredKeys.every((key) => results.some((result) => result.key === key))
+  const overallScore = getOverallConfidence(results)
+  return allRequiredDocumentsPresent && allRequiredScoresPresent && overallScore !== null && overallScore >= 74
+    ? 'OCR Verified'
+    : currentStatus
 }
 
 const getPlanDurationDays = (planKey) => (planKey === 'free-trial' ? 14 : 30)
@@ -1029,6 +1060,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
             const resolvedPlan = forcedPlan?.plan || clinic.subscriptionPlan || user.subscriptionPlan || clinic.plan || user.plan
             const resolvedPayment = forcedPlan?.paymentStatus || clinic.paymentStatus || user.paymentStatus || '-'
+            const verificationResults = mapVerificationResults(clinic.verificationResults)
 
             return {
               id: clinic.id,
@@ -1072,10 +1104,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               permitHolderName: ocrSnapshot.permitHolderName || clinic.permitHolderName || '',
               permitHolderRelationship: ocrSnapshot.permitHolderRelationship || clinic.permitHolderRelationship || '',
               documents: mapDocs(clinic.submittedDocuments || {}, clinic.draftDocuments || {}),
-              verificationStatus: clinic.verificationStatus || 'Not processed',
+              verificationStatus: scoreBasedVerificationStatus(clinic, verificationResults),
               verificationThreshold: clinic.verificationThreshold || null,
               verificationProcessedAt: clinic.verificationProcessedAt || null,
-              verificationResults: mapVerificationResults(clinic.verificationResults),
+              verificationResults,
               verificationJob: clinic.verificationJob || null,
               createdAt: clinic.createdAt || user.createdAt || null,
             }
