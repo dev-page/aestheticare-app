@@ -184,7 +184,7 @@
           </div>
 
           <div v-else class="appointments-table-wrap">
-            <table class="appointments-table">
+            <table class="appointments-table online-consultations-table">
               <thead>
                 <tr>
                   <th>Service</th>
@@ -2901,6 +2901,76 @@ onUnmounted(() => {
   border-radius: 0.5rem;
   background: #fff4e4;
   overflow-wrap: anywhere;
+}
+
+.online-consultations-table.appointments-table {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.online-consultations-table.appointments-table thead {
+  display: none;
+}
+
+.online-consultations-table.appointments-table tbody {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.85rem;
+}
+
+.online-consultations-table.appointments-table tbody tr {
+  display: block;
+  margin: 0;
+  border: 1px solid rgba(230, 193, 150, 0.72);
+  border-radius: 1.1rem;
+  overflow: hidden;
+  background: rgba(255, 251, 244, 0.96);
+  box-shadow: 0 10px 24px rgba(87, 56, 35, 0.06);
+}
+
+.online-consultations-table.appointments-table td {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border-top: 1px solid rgba(230, 193, 150, 0.46);
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.online-consultations-table.appointments-table td::before {
+  content: attr(data-label);
+  color: #8c6d55;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.online-consultations-table.appointments-table td[data-label=""]::before {
+  content: none;
+}
+
+.online-consultations-table.appointments-table td:first-child {
+  border-top: 0;
+}
+
+.online-consultations-table .appointment-service-cell {
+  min-width: 0;
+}
+
+.online-consultations-table .table-actions {
+  justify-content: flex-start;
+}
+
+.online-consultations-table .table-actions .appointment-button {
+  width: 100%;
 }
 
 .appointment-details-overlay {
