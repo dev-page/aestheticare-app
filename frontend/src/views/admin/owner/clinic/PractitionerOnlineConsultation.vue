@@ -5,23 +5,8 @@
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
         <h1 v-if="!embedded" class="text-3xl font-bold text-[#3d281d] mb-2">Online Consultations</h1>
-        <p class="text-[#765d4c]">View booked consultations, generate each assigned practitioner's Meet link, and notify the customer.</p>
+        <p class="text-[#765d4c]">Add a Google Meet link for each online consultation and share it with the customer.</p>
       </div>
-      <section v-if="canCreateMeetLink" class="mb-6 rounded-xl border border-[#ead2b2] bg-white p-5" aria-labelledby="google-account-heading">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 id="google-account-heading" class="font-semibold text-[#3d281d]">Google Meet account</h2>
-            <p v-if="!meetAccount.configured" class="mt-1 text-sm text-[#a13732]">Automatic link generation is not configured. Ask the system administrator to configure Google Meet.</p>
-            <p v-else-if="meetAccount.connected" class="mt-1 text-sm text-[#52715b]">Connected{{ meetAccount.email ? ` as ${meetAccount.email}` : '' }}. New links will be generated under this Google account.</p>
-            <p v-else class="mt-1 text-sm text-[#765d4c]">Connect your Google account once. The assigned practitioner can then generate and send a meeting link from the consultation row.</p>
-            <p v-if="meetAccountError" class="mt-2 text-sm text-[#a13732]" role="alert">{{ meetAccountError }}</p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button v-if="meetAccount.configured && !meetAccount.connected" type="button" class="rounded-lg bg-[#ad4d0b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#913f08] disabled:opacity-50" :disabled="meetAccountLoading || connectingGoogle" @click="connectGoogleAccount">{{ connectingGoogle ? 'Opening Google…' : 'Connect Google account' }}</button>
-            <button v-else-if="meetAccount.connected" type="button" class="rounded-lg border border-[#d9b894] px-4 py-2 text-sm font-semibold text-[#70482e] hover:bg-[#fff5e8] disabled:opacity-50" :disabled="meetAccountLoading" @click="disconnectGoogleAccount">Disconnect</button>
-          </div>
-        </div>
-      </section>
       <div class="rounded-xl border border-[#ead2b2] bg-white p-6 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -60,7 +45,7 @@
       <section class="rounded-xl border border-[#ead2b2] bg-white overflow-hidden" aria-labelledby="online-consultations-table-title">
         <div class="border-b border-[#ead2b2] px-6 py-4">
           <h2 id="online-consultations-table-title" class="text-lg font-semibold text-[#3d281d]">Online consultation appointments</h2>
-          <p class="mt-1 text-sm text-[#765d4c]">Generate a separate Meet link for each appointment. Each generated link is recorded in the history table below.</p>
+          <p class="mt-1 text-sm text-[#765d4c]">Add a Meet link for each appointment. New links are recorded in the history table below.</p>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full">
@@ -85,11 +70,13 @@
                     </span>
                     <button
                       type="button"
-                      class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-[#f8ead4] text-[#70482e] hover:bg-[#f0dfc8] disabled:opacity-60"
+                      class="inline-flex items-center gap-1 rounded-md bg-[#f8ead4] px-2 py-1 text-xs font-semibold text-[#70482e] hover:bg-[#f0dfc8]"
                       @click="copyMeetLink(appointment.meetLink)"
+                      aria-label="Copy meeting link"
                       title="Copy link"
                     >
                       <Icon icon="mdi:content-copy" class="h-4 w-4" />
+                      Copy
                     </button>
                   </div>
                   <span v-else class="text-[#765d4c] text-sm">
@@ -99,10 +86,8 @@
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
 <p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-[#296348]">Customer checked in and is waiting for a Meet link.</p>
-<button v-if="!appointment.meetLink && canGenerateMeetLink(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-[#ad4d0b] text-white text-xs font-semibold hover:bg-[#913f08] disabled:opacity-60" :disabled="generatingId === appointment.id" @click="generateMeetLink(appointment)">{{ generatingId === appointment.id ? 'Generating…' : 'Generate link & notify' }}</button>
-<p v-else-if="!appointment.meetLink && canCreateMeetLink && isAssignedToPractitioner(appointment) && !meetAccount.connected" class="w-full text-xs text-[#805337]">Connect your Google account above to generate this link.</p>
-<p v-else-if="!appointment.meetLink && canCreateMeetLink && !isAssignedToPractitioner(appointment)" class="w-full text-xs text-[#765d4c]">The assigned practitioner generates this link.</p>
-<p v-if="appointment.consultationInviteAt" class="text-sm text-[#765d4c]">Invitation sent to the customer. Join using your Google account.</p>
+<button v-if="canAddMeetLink(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-[#ad4d0b] text-white text-xs font-semibold hover:bg-[#913f08]" @click="openMeetLinkForm(appointment)">{{ appointment.meetLink ? 'Change Meet link' : 'Add Meet link' }}</button>
+<p v-if="appointment.consultationInviteAt" class="text-sm text-[#765d4c]">The customer can access the meeting link in My Appointments.</p>
 <p v-if="appointment.consultationInviteAt && appointment.consultationInviteEmailStatus === 'failed'" class="w-full text-xs text-[#805337]">Email delivery failed. The customer can still reveal the link in My Appointments.</p>
                     <button
                       v-if="appointment.meetLink && appointment.consultationInviteAt && isAssignedToPractitioner(appointment)"
@@ -162,7 +147,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#ead2b2] px-6 py-4">
           <div>
             <h2 id="meet-link-history-title" class="text-lg font-semibold text-[#3d281d]">Meet link history</h2>
-            <p class="mt-1 text-sm text-[#765d4c]">Every new link generated by a practitioner is recorded here.</p>
+            <p class="mt-1 text-sm text-[#765d4c]">Every new link added by the clinic is recorded here.</p>
           </div>
           <button type="button" class="rounded-lg border border-[#d9b894] px-3 py-2 text-sm text-[#70482e] hover:bg-[#fff5e8] disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs">
             {{ meetLinkLogsLoading ? 'Refreshing…' : 'Refresh' }}
@@ -215,6 +200,20 @@
         </div>
       </section>
     </component>
+
+    <Modal :is-open="Boolean(meetLinkAppointment)" title="Add Google Meet link" :close-on-backdrop="false" @close="closeMeetLinkForm">
+      <p class="mb-3 text-sm text-slate-600">Create or open a meeting in Google Meet, then paste its link here for the customer.</p>
+      <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="mb-4 inline-block text-sm font-semibold text-[#8c4c22] underline">Open Google Meet</a>
+      <label for="consultation-meet-link" class="mb-2 block text-sm font-semibold text-slate-700">Google Meet link</label>
+      <input id="consultation-meet-link" v-model.trim="meetLinkInput" type="url" placeholder="https://meet.google.com/abc-defg-hij" class="w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" @keydown.enter.prevent="saveMeetLink" />
+      <p v-if="meetLinkError" role="alert" class="mt-2 text-sm text-rose-600">{{ meetLinkError }}</p>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="savingMeetLink" @click="closeMeetLinkForm">Cancel</button>
+          <button type="button" class="rounded-lg bg-[#ad4d0b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="savingMeetLink || !meetLinkInput" @click="saveMeetLink">{{ savingMeetLink ? 'Saving…' : 'Save and notify customer' }}</button>
+        </div>
+      </template>
+    </Modal>
 
     <Modal
       :is-open="Boolean(startChecklistAppointment)"
@@ -273,7 +272,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
-import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
@@ -294,8 +292,6 @@ export default {
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const { hasPermission } = usePermissions()
-    const route = useRoute()
-    const router = useRouter()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -311,11 +307,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const meetLinkLogsError = ref('')
     const meetLinkLogsHasMore = ref(false)
     const meetLinkLogsCursor = ref('')
-    const meetAccount = ref({ configured: false, connected: false, email: '' })
-    const meetAccountLoading = ref(false)
-    const meetAccountError = ref('')
-    const connectingGoogle = ref(false)
-    const generatingId = ref('')
+    const meetLinkAppointment = ref(null)
+    const meetLinkInput = ref('')
+    const meetLinkError = ref('')
+    const savingMeetLink = ref(false)
 
     const startingId = ref('')
     const finishingId = ref('')
@@ -359,7 +354,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
       }
 
-      throw lastError || new Error(`Failed to reach backend service at ${BACKEND_URL}`)
+      throw lastError || new Error(`Failed to reach backend service at ${OTP_BACKEND_URL}`)
     })
 
     const isAssignedToPractitioner = appointment => String(appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo || '') === currentUserId.value
@@ -517,78 +512,52 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (error) { callWindow?.close(); toast.error(error.message) }
     }
 
-    const canGenerateMeetLink = appointment => Boolean(
-      canCreateMeetLink.value && meetAccount.value.connected && isAssignedToPractitioner(appointment)
-      && !appointment?.meetLink && normalized(appointment?.consultationMode) === 'online'
+    const canAddMeetLink = appointment => Boolean(
+      canCreateMeetLink.value && normalized(appointment?.consultationMode) === 'online'
+      && (appointment?.assignedPractitionerId || appointment?.practitionerId)
+      && !['cancelled', 'rejected', 'completed', 'no-show', 'ongoing', 'awaiting customer confirmation'].includes(normalized(appointment?.status))
     )
 
-    const loadMeetAccount = async () => {
-      if (meetAccountLoading.value) return
-      meetAccountLoading.value = true
-      meetAccountError.value = ''
-      try {
-        const response = await fetchFromBackend('/google-meet/account')
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to check the Google Meet connection.')
-        meetAccount.value = { configured: payload.data?.configured === true, connected: payload.data?.connected === true, email: String(payload.data?.email || '') }
-      } catch (error) {
-        meetAccountError.value = error.message || 'Unable to check the Google Meet connection.'
-      } finally { meetAccountLoading.value = false }
+    const openMeetLinkForm = appointment => {
+      if (!canAddMeetLink(appointment)) return
+      meetLinkAppointment.value = appointment
+      meetLinkInput.value = appointment.meetLink || ''
+      meetLinkError.value = ''
     }
 
-    const connectGoogleAccount = async () => {
-      if (connectingGoogle.value || !currentBranchId.value || !canCreateMeetLink.value) return
-      connectingGoogle.value = true
-      meetAccountError.value = ''
+    const closeMeetLinkForm = () => {
+      if (savingMeetLink.value) return
+      meetLinkAppointment.value = null
+      meetLinkInput.value = ''
+      meetLinkError.value = ''
+    }
+
+    const saveMeetLink = async () => {
+      const appointment = meetLinkAppointment.value
+      if (!appointment?.id || savingMeetLink.value || !canAddMeetLink(appointment)) return
+      savingMeetLink.value = true
+      meetLinkError.value = ''
       try {
-        const response = await fetchFromBackend('/google-meet/account/connect', {
+        const response = await fetchFromBackend('/appointments/' + appointment.id + '/attach-meet-link', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ branchId: currentBranchId.value }),
+          body: JSON.stringify({ meetLink: meetLinkInput.value }),
         })
         const payload = await response.json()
-        if (!response.ok || !payload?.success || !payload.data?.url) throw new Error(payload?.error || 'Unable to connect your Google account.')
-        window.location.assign(payload.data.url)
-      } catch (error) {
-        meetAccountError.value = error.message || 'Unable to connect your Google account.'
-        connectingGoogle.value = false
-      }
-    }
-
-    const disconnectGoogleAccount = async () => {
-      if (meetAccountLoading.value) return
-      meetAccountLoading.value = true
-      meetAccountError.value = ''
-      try {
-        const response = await fetchFromBackend('/google-meet/account/disconnect', { method: 'POST' })
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to disconnect the Google account.')
-        meetAccount.value = { ...meetAccount.value, connected: false, email: '' }
-        toast.success('Google Meet account disconnected.')
-      } catch (error) {
-        meetAccountError.value = error.message || 'Unable to disconnect the Google account.'
-      } finally { meetAccountLoading.value = false }
-    }
-
-    const generateMeetLink = async appointment => {
-      if (!appointment?.id || generatingId.value || !canGenerateMeetLink(appointment)) return
-      generatingId.value = appointment.id
-      try {
-        const response = await fetchFromBackend(`/appointments/${appointment.id}/generate-meet-link`, { method: 'POST' })
-        const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to generate the Google Meet link.')
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to save the Google Meet link.')
         appointment.meetLink = payload.data.meetLink
-        appointment.meetingProvider = 'google-meet-api'
-        appointment.hostVerified = true
+        appointment.meetingProvider = 'google-meet-manual'
+        appointment.hostVerified = false
         appointment.meetPresenceTrackingEnabled = false
         appointment.consultationInviteAt = payload.data.invitedAt || new Date().toISOString()
         appointment.consultationInviteEmailStatus = payload.data.emailSent ? 'sent' : 'failed'
+        meetLinkAppointment.value = null
         await loadMeetLinkLogs()
-        if (payload.data.emailSent) toast.success('Meet link generated. The customer was notified in the app and by email.')
-        else toast.warning('Meet link generated and added to the customer’s app. Email delivery failed; check the customer email or email service.')
+        if (payload.data.emailSent) toast.success('Meet link saved. The customer was notified in the app and by email.')
+        else toast.warning('Meet link saved in My Appointments. Email delivery was unavailable.')
       } catch (error) {
-        toast.error(error.message || 'Unable to generate the Google Meet link.')
-      } finally { generatingId.value = '' }
+        meetLinkError.value = error.message || 'Unable to save the Google Meet link.'
+      } finally { savingMeetLink.value = false }
     }
 
     const canStartConsultation = (appointment) => {
@@ -760,7 +729,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     let disposed = false
     let consultationClock = null
     let meetPresenceClock = null
-    let oauthFeedbackHandled = false
 
     onMounted(trackPageLoad(() => {
       consultationClock = window.setInterval(() => {
@@ -779,17 +747,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         if (disposed) return
-        if (!oauthFeedbackHandled && route.query.googleMeetConnection) {
-          oauthFeedbackHandled = true
-          const result = String(route.query.googleMeetConnection)
-          if (result === 'connected') toast.success('Google Meet account connected.')
-          else if (result === 'cancelled') toast.info('Google account connection was cancelled.')
-          else toast.error('Google Meet account could not connect. Check the Google configuration and try again.')
-          const queryParams = { ...route.query }
-          delete queryParams.googleMeetConnection
-          await router.replace({ path: route.path, query: queryParams, hash: route.hash })
-        }
-        await loadMeetAccount()
         await loadMeetLinkLogs()
         unsubscribeAppointments?.()
         unsubscribeAppointments = pageListener(onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')), snapshot => loadAppointments(snapshot), error => toast.error(error.message || 'Live consultation updates are unavailable.'))
@@ -818,15 +775,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       meetLinkLogsError,
       meetLinkLogsHasMore,
       loadMeetLinkLogs,
-      meetAccount,
-      meetAccountLoading,
-      meetAccountError,
-      connectingGoogle,
-      generatingId,
-      connectGoogleAccount,
-      disconnectGoogleAccount,
-      canGenerateMeetLink,
-      generateMeetLink,
+      meetLinkAppointment,
+      meetLinkInput,
+      meetLinkError,
+      savingMeetLink,
+      canAddMeetLink,
+      openMeetLinkForm,
+      closeMeetLinkForm,
+      saveMeetLink,
 
       startingId,
       finishingId,
