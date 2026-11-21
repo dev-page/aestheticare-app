@@ -1,5 +1,9 @@
 <script setup>
 import { ref, nextTick, onBeforeUnmount } from 'vue'
+const props = defineProps({
+  disabled: { type: Boolean, default: false },
+  disabledReason: { type: String, default: 'Attendance is unavailable without a scheduled shift.' },
+})
 const emit = defineEmits(['capture'])
 const video = ref(null), open = ref(false), error = ref(''), busy = ref(false), cameraReady = ref(false)
 let stream
@@ -13,6 +17,7 @@ function markCameraReady() {
   cameraReady.value = Boolean(video.value?.videoWidth)
 }
 async function start() {
+  if (props.disabled) return
   error.value = ''
   cameraReady.value = false
   try {
@@ -26,7 +31,7 @@ async function start() {
   } catch (e) { close(); error.value = e.message || 'Allow camera access and try again.' }
 }
 async function capture() {
-  if (!video.value?.videoWidth) return
+  if (props.disabled || !video.value?.videoWidth) return
   busy.value = true
   try {
     const canvas = document.createElement('canvas')
@@ -44,7 +49,13 @@ onBeforeUnmount(close)
 </script>
 <template>
   <div class="mt-4">
-    <button type="button" class="attendance-camera-action attendance-camera-secondary rounded-lg px-3 py-2 text-sm" @click="start">Take attendance photo</button>
+    <button
+      type="button"
+      class="attendance-camera-action attendance-camera-secondary rounded-lg px-3 py-2 text-sm"
+      :disabled="disabled"
+      :title="disabled ? disabledReason : undefined"
+      @click="start"
+    >Take attendance photo</button>
     <p v-if="error" role="alert" class="attendance-camera-error mt-2 text-sm">{{ error }}</p>
     <div v-if="open" role="dialog" aria-modal="true" aria-label="Attendance photo" class="attendance-camera-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.esc="close">
       <div class="attendance-camera-panel w-full max-w-lg rounded-2xl p-4 sm:p-5">
@@ -61,7 +72,7 @@ onBeforeUnmount(close)
         </div>
         <div class="mt-4 flex justify-end gap-3">
           <button @click="close" type="button" class="attendance-camera-action attendance-camera-secondary">Cancel</button>
-          <button @click="capture" :disabled="busy || !cameraReady" type="button" class="attendance-camera-action attendance-camera-primary">{{ busy ? 'Capturing…' : cameraReady ? 'Capture photo' : 'Starting camera…' }}</button>
+          <button @click="capture" :disabled="disabled || busy || !cameraReady" type="button" class="attendance-camera-action attendance-camera-primary">{{ busy ? 'Capturing…' : cameraReady ? 'Capture photo' : 'Starting camera…' }}</button>
         </div>
       </div>
     </div>
@@ -146,6 +157,7 @@ onBeforeUnmount(close)
 }
 
 .attendance-camera-secondary:hover { background: var(--ac-surface-muted); }
+.attendance-camera-action:disabled { cursor: not-allowed; opacity: .55; }
 
 .attendance-camera-primary {
   border-color: var(--ac-primary);

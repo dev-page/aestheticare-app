@@ -36,14 +36,23 @@
             <button
               type="button"
               class="attendance-primary-button rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="isScanning || !proofFile"
+              :disabled="!attendanceActionsAvailable || isScanning || isProcessing || !proofFile"
+              :title="!attendanceActionsAvailable ? attendanceAccessReason : undefined"
               @click="startScanner"
             >
               {{ isScanning ? 'Scanner Active' : 'Start Scanner' }}
             </button>
           </div>
 
-          <AttendanceCamera v-if="!isScanning" @capture="selectProof" />
+          <AttendanceCamera
+            v-if="!isScanning"
+            :disabled="!attendanceActionsAvailable"
+            :disabled-reason="attendanceAccessReason"
+            @capture="selectProof"
+          />
+          <p v-if="!attendanceActionsAvailable" role="status" class="mt-3 text-sm text-[#8b4b3f]">
+            {{ attendanceAccessReason || 'Checking your schedule…' }}
+          </p>
           <p class="mt-2 text-xs text-slate-400">{{ proofFileName || 'Take a fresh photo before scanning.' }}</p>
 
           <div class="attendance-scanner-frame relative mt-5 overflow-hidden rounded-2xl border">
@@ -54,7 +63,7 @@
             </div>
           </div>
 
-          <p class="mt-4 text-sm" :class="statusClass">
+          <p v-if="attendanceActionsAvailable" class="mt-4 text-sm" :class="statusClass">
             {{ statusMessage }}
           </p>
         </article>
@@ -148,6 +157,8 @@ export default {
     const employeeShiftEnd = ref('')
     const attendanceRecord = ref({})
     const attendanceHistory = ref([])
+    const attendanceActionsAvailable = ref(false)
+    const attendanceAccessReason = ref('Checking your schedule…')
     const html5QrCode = ref(null)
     const isScanning = ref(false)
     const isProcessing = ref(false)
@@ -321,6 +332,12 @@ export default {
       const previousDate = new Date(Date.parse(`${todayKey.value}T12:00:00+08:00`) - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
       const openOvernight = attendanceHistory.value.find(record => record.date === previousDate && record.timeIn && !record.timeOut && parseClockToMinutes(record.shiftEnd) < parseClockToMinutes(record.shiftStart))
       if (openOvernight) attendanceRecord.value = openOvernight
+      attendanceActionsAvailable.value = attendance.canRecordAttendance === true && !attendanceRecord.value.timeOut
+      attendanceAccessReason.value = attendanceActionsAvailable.value
+        ? ''
+        : attendance.record?.timeOut
+          ? 'Your attendance for today is already complete.'
+          : attendance.accessReason || 'No shift is scheduled for you today. Attendance actions are unavailable.'
     }
 
     const setStatus = (message, tone = 'neutral') => {
@@ -329,6 +346,10 @@ export default {
     }
 
     const processQrPayload = async (decodedText) => {
+      if (!attendanceActionsAvailable.value) {
+        setStatus(attendanceAccessReason.value || 'Attendance actions are unavailable without a scheduled shift.', 'error')
+        return
+      }
       if (isProcessing.value) return
       isProcessing.value = true
 
@@ -397,7 +418,7 @@ export default {
     }
 
     const startScanner = async () => {
-      if (isScanning.value || isProcessing.value || !proofFile.value) return
+      if (!attendanceActionsAvailable.value || isScanning.value || isProcessing.value || !proofFile.value) return
 
       await nextTick()
       try {
@@ -469,6 +490,8 @@ export default {
       branchLabel,
       attendanceRecord,
       attendanceHistory,
+      attendanceActionsAvailable,
+      attendanceAccessReason,
       employeeName,
       employeeRole,
       goBack,

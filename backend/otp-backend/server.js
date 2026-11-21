@@ -8776,7 +8776,33 @@ app.post(ATTENDANCE_MY_RECORDS_PATH, requireAuth, requireAttendanceClockingAcces
       .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
       .slice(0, 7)
     const record = history.find((entry) => entry.date === today) || null
-    return res.json({ success: true, data: { record, history } })
+    const schedule = await loadAttendanceSchedule(req.user.uid, today)
+    const hasScheduledShift = (value) => Boolean(
+      value && !value.onLeave
+      && String(value.shiftLabel || '').trim()
+      && String(value.shiftLabel || '').trim().toLowerCase() !== 'off'
+      && String(value.shiftStart || '').trim()
+      && String(value.shiftEnd || '').trim(),
+    )
+    let canRecordAttendance = hasScheduledShift(schedule)
+    if (!canRecordAttendance) {
+      const previousDate = new Date(Date.parse(`${today}T12:00:00+08:00`) - 86400000)
+        .toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+      const openPreviousRecord = history.find((entry) =>
+        entry.date === previousDate && entry.timeIn && !entry.timeOut,
+      )
+      if (openPreviousRecord) {
+        const previousSchedule = await loadAttendanceSchedule(req.user.uid, previousDate)
+        canRecordAttendance = hasScheduledShift(previousSchedule)
+          && clock(previousSchedule.shiftEnd) < clock(previousSchedule.shiftStart)
+      }
+    }
+    const accessReason = canRecordAttendance
+      ? ''
+      : schedule.onLeave
+        ? `Attendance actions are unavailable during approved ${String(schedule.leaveType || 'leave').toLowerCase()}.`
+        : 'No shift is scheduled for you today. Attendance actions are unavailable.'
+    return res.json({ success: true, data: { record, history, canRecordAttendance, accessReason } })
   } catch (error) {
     return res.status(error?.status || 500).json({ success: false, error: error?.message || 'Unable to load your attendance records.' })
   }
@@ -8856,11 +8882,16 @@ app.post(ATTENDANCE_RECORD_PATH, requireAuth, requireAttendanceClockingAccess, a
         leaveId: schedule.leaveId,
       })
     }
-    if (!String(schedule.shiftLabel || '').trim() || String(schedule.shiftLabel).trim().toLowerCase() === 'off') {
+    if (
+      !String(schedule.shiftLabel || '').trim()
+      || String(schedule.shiftLabel).trim().toLowerCase() === 'off'
+      || !String(schedule.shiftStart || '').trim()
+      || !String(schedule.shiftEnd || '').trim()
+    ) {
       return res.status(409).json({
         success: false,
         code: 'SCHEDULED_DAY_OFF',
-        error: 'Attendance is unavailable because today is your scheduled day off.',
+        error: 'Attendance is unavailable because you have no scheduled shift for this day.',
       })
     }
     const attendanceRef = firestore.collection('attendance').doc(`${req.user.uid}_${attendanceDate}`)
