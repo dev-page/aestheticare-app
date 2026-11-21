@@ -30,6 +30,7 @@ export const buildClinicSidebarItems = ({ dashboardTo = '/clinic/dashboard', isE
       { label: 'Walk-In Desk', icon: 'mdi:walk', to: '/crm/walk-in', permission: 'page:walk-in:manage' },
       { type: 'section', label: 'APPOINTMENTS' },
       { label: 'Appointment Management', icon: 'mdi:calendar-month-outline', to: '/crm/appointments', feature: 'appointments', permission: 'page:appointments:manage' },
+      { label: 'Online Consultations', icon: 'mdi:video-outline', to: '/clinical/consultations/online', feature: 'online_consultations', permission: 'consultations:view' },
       { label: 'Prescriptions', icon: 'mdi:prescription', to: '/clinical/prescriptions', feature: 'appointments', permission: 'page:prescriptions:manage' },
       { label: 'Booking Availability', icon: 'mdi:calendar-clock-outline', to: '/appointments/booking-availability', feature: 'booking_availability', plans: ['basic'], permission: 'page:appointments:manage' },
       { type: 'section', label: 'PAYMENTS & MESSAGES' },

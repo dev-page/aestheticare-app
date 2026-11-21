@@ -6,7 +6,7 @@
       <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 class="mb-2 text-3xl font-bold text-[#4b3324]">Setup Plans</h1>
-          <p class="text-[#8a725f]">Free Trial is fixed at 14 days of Premium access. Configure the Basic and Premium paid plans below.</p>
+          <p class="text-[#8a725f]">Edit plan details below. Free Trial always stays free and provides 14 days of Premium access.</p>
         </div>
 
         <div class="flex flex-wrap gap-2">
@@ -23,19 +23,7 @@
 
       <p v-if="error" role="alert" class="app-alert app-alert--error mb-4 px-3 py-2 text-sm">{{ error }}</p>
 
-      <section class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <article class="min-w-0 rounded-xl border border-[#d9bea1] bg-[#fff5e7] p-4 shadow-sm sm:p-6">
-          <div class="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 class="text-lg font-semibold text-[#4b3324]">Free Trial</h2>
-              <p class="text-xs text-[#8a725f]">Plan ID: free-trial</p>
-            </div>
-            <span class="rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#76563d]">Fixed plan</span>
-          </div>
-          <p class="text-2xl font-bold text-[#4b3324]">PHP 0</p>
-          <p class="mt-1 text-sm font-semibold text-[#76563d]">14 days · Premium access</p>
-          <p class="mt-4 text-sm leading-6 text-[#8a725f]">Available once per clinic after approval. No payment is collected and no automatic charge follows the trial.</p>
-        </article>
+      <section class="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
         <article
           v-for="plan in plans"
           :key="plan.localKey || plan.id"
@@ -46,7 +34,7 @@
           <div class="flex items-start justify-between gap-3 mb-4">
             <div>
               <div class="flex items-center gap-2 flex-wrap">
-                <h2 class="text-lg font-semibold text-[#4b3324]">{{ plan.isDraft ? (plan.label || 'New Plan') : plan.label }}</h2>
+                <h2 class="text-lg font-semibold text-[#4b3324]">{{ plan.isDraft ? (plan.label || 'New Plan') : (plan.name || plan.label) }}</h2>
                 <span
                   v-if="plan.isDraft"
                   class="inline-flex items-center rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#76563d]"
@@ -62,8 +50,8 @@
                   v-model="plan.isActive"
                   type="checkbox"
                   class="accent-[#806044]"
-                  :disabled="!plan.isDraft && plan.isActive !== false"
-                  :title="!plan.isDraft ? 'Basic and Premium are the built-in paid plans.' : undefined"
+                  :disabled="!plan.isDraft && plan.isActive !== false && !isTrialPlan(plan)"
+                  :title="isTrialPlan(plan) ? 'Free Trial must remain available when it is the only active plan.' : undefined"
                   @change="clearPlanFieldError(plan, 'isActive')"
                 />
                 Active
@@ -72,7 +60,7 @@
                 v-if="!plan.isDraft && isBuiltInPlan(plan)"
                 class="rounded-full border border-[#d9bea1] bg-[#f6eadb] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#76563d]"
               >
-                Built-in
+                {{ isTrialPlan(plan) ? 'Built-in trial' : 'Built-in' }}
               </span>
               <button
                 v-if="plan.isDraft || !isBuiltInPlan(plan)"
@@ -130,7 +118,18 @@
               <p v-if="fieldError(plan, 'name')" class="mt-1 text-xs text-[#76563d]">{{ fieldError(plan, 'name') }}</p>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div v-if="isTrialPlan(plan)" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-[#e2cbb0] bg-[#fff5e7] px-3 py-2">
+                <span class="block text-xs text-[#765f4b]">Price</span>
+                <strong class="text-sm text-[#4b3324]">PHP 0 · no payment</strong>
+              </div>
+              <div class="rounded-lg border border-[#e2cbb0] bg-[#fff5e7] px-3 py-2">
+                <span class="block text-xs text-[#765f4b]">Access</span>
+                <strong class="text-sm text-[#4b3324]">14 days · Premium</strong>
+              </div>
+            </div>
+
+            <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="mb-1 block text-xs text-[#765f4b]">Price (PHP)</label>
                 <input
@@ -244,6 +243,17 @@ import SuperAdminSidebar from '@/components/sidebar/SuperAdminSidebar.vue'
 
 const defaultPlans = () => [
   {
+    id: 'free-trial',
+    label: 'Free Trial',
+    name: 'Free Trial',
+    price: 0,
+    billingCycle: 'trial',
+    description: 'Available once per clinic after approval. No payment is collected and no automatic charge follows the trial.',
+    isActive: true,
+    trialDays: 14,
+    features: ['14 days of Premium access'],
+  },
+  {
     id: 'basic',
     label: 'Basic',
     name: 'Basic',
@@ -306,6 +316,7 @@ const normalizePlan = (plan, fallback = {}) => ({
   name: String(plan.name || fallback.name || plan.label || fallback.label || '').trim(),
   price: plan.price ?? fallback.price ?? '',
   billingCycle: String(plan.billingCycle || fallback.billingCycle || '').trim(),
+  trialDays: Number(plan.trialDays ?? fallback.trialDays ?? 0),
   description: String(plan.description || fallback.description || '').trim(),
   isActive: plan.isActive ?? fallback.isActive ?? false,
   features: Array.isArray(plan.features)
@@ -337,6 +348,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const planKey = (plan) => String(plan?.localKey || plan?.id || '').trim()
     const isBuiltInPlan = (plan) => BUILT_IN_PLAN_IDS.has(String(plan?.id || '').trim().toLowerCase())
+    const isTrialPlan = (plan) => String(plan?.id || '').trim().toLowerCase() === 'free-trial'
 
     const showLastActivePlanNotice = async () => {
       await systemAdminSwal.fire({
@@ -479,10 +491,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         errors.price = 'Price must be zero or higher.'
       }
 
-      if (!normalizedBillingCycle) {
-        errors.billingCycle = 'Billing cycle is required.'
-      } else if (!billingCyclePattern.test(normalizedBillingCycle)) {
-        errors.billingCycle = 'Use month, year, or one-time.'
+      if (isTrialPlan(plan)) {
+        if (numericPrice !== 0) errors.price = 'Free Trial must remain free.'
+      } else {
+        if (!normalizedBillingCycle) {
+          errors.billingCycle = 'Billing cycle is required.'
+        } else if (!billingCyclePattern.test(normalizedBillingCycle)) {
+          errors.billingCycle = 'Use month, year, or one-time.'
+        }
       }
 
       if (!normalizedDescription) {
@@ -518,7 +534,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (!plan.isDraft && isBuiltInPlan(plan)) {
         await systemAdminSwal.fire({
           title: 'Built-in plan protected',
-          text: 'Free Trial, Basic, and Premium are built-in plans and cannot be deleted. You can edit the paid plan details below.',
+          text: 'Free Trial, Basic, and Premium are built-in plans and cannot be deleted. Their details can still be edited.',
           icon: 'info',
           confirmButtonText: 'OK',
           confirmButtonColor: '#6b4b34',
@@ -593,6 +609,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ...dbPlan,
         id: basePlan.id,
         label: basePlan.label,
+        price: isTrialPlan(basePlan) ? 0 : dbPlan.price ?? basePlan.price,
+        billingCycle: isTrialPlan(basePlan) ? 'trial' : dbPlan.billingCycle || basePlan.billingCycle,
+        trialDays: isTrialPlan(basePlan) ? 14 : dbPlan.trialDays ?? basePlan.trialDays,
         features: Array.isArray(dbPlan.features) ? dbPlan.features : basePlan.features,
       }, basePlan)
     }
@@ -673,13 +692,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           key: normalizedId,
           label: normalizedLabel,
           name: normalizedName || normalizedLabel,
-          price: toNumber(plan.price),
+          price: isTrialPlan(plan) ? 0 : toNumber(plan.price),
           currency: 'PHP',
           currencyDisplay: 'code',
-          billingCycle: normalizedBillingCycle,
+          billingCycle: isTrialPlan(plan) ? 'trial' : normalizedBillingCycle,
           description: normalizedDescription,
-          trialDays: deleteField(),
-          freeTrialEnabled: deleteField(),
+          trialDays: isTrialPlan(plan) ? 14 : deleteField(),
           isActive: Boolean(plan.isActive),
           isDeleted: false,
           features: cleanFeatures,
@@ -697,6 +715,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         plan.localKey = normalizedId
         plan.label = normalizedLabel
         plan.name = normalizedName || normalizedLabel
+        if (isTrialPlan(plan)) {
+          plan.price = 0
+          plan.billingCycle = 'trial'
+          plan.trialDays = 14
+        }
         delete planErrors.value[key]
 
         await systemAdminSwal.fire({
@@ -731,6 +754,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       addNewPlan: appendPlan,
       deletePlan,
       isBuiltInPlan,
+      isTrialPlan,
       addFeature,
       removeFeature,
       savePlan,

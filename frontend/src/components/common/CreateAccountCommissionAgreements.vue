@@ -11,7 +11,6 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const form = reactive({
-  approvedServiceIds: [...(props.modelValue.approvedServiceIds || [])],
   rates: (props.modelValue.rates || []).map(rate => ({ ...rate })),
 })
 const services = ref([])
@@ -21,17 +20,13 @@ let requestSequence = 0
 
 watch(form, () => {
   emit('update:modelValue', {
-    approvedServiceIds: [...form.approvedServiceIds],
     rates: form.rates.map(rate => ({ ...rate })),
   })
 }, { deep: true })
 
 watch(() => props.modelValue, value => {
-  const nextApprovedServiceIds = [...(value?.approvedServiceIds || [])]
   const nextRates = (value?.rates || []).map(rate => ({ ...rate }))
-  if (JSON.stringify(form.approvedServiceIds) === JSON.stringify(nextApprovedServiceIds)
-    && JSON.stringify(form.rates) === JSON.stringify(nextRates)) return
-  form.approvedServiceIds = nextApprovedServiceIds
+  if (JSON.stringify(form.rates) === JSON.stringify(nextRates)) return
   form.rates = nextRates
 }, { deep: true })
 
@@ -79,7 +74,6 @@ const validationError = computed(() => {
     if (rate.responsibility !== 'lead' || !['percent', 'fixed'].includes(rate.model)) return 'Commission agreements apply to the lead practitioner.'
     if (String(rate.amount ?? '').trim() === '' || !Number.isFinite(amount) || amount < 0 || (rate.model === 'percent' && amount > 100)) return 'Enter a valid commission rate. Percentages must be between 0 and 100.'
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveFrom || '') || (rate.effectiveUntil && (!/^\d{4}-\d{2}-\d{2}$/.test(rate.effectiveUntil) || rate.effectiveUntil < rate.effectiveFrom))) return 'Enter valid commission effective dates.'
-    if (rate.serviceId && !form.approvedServiceIds.includes(rate.serviceId)) return 'Approve each specific service that has a commission rate.'
     for (let otherIndex = index + 1; otherIndex < form.rates.length; otherIndex += 1) {
       const other = form.rates[otherIndex]
       const rateEnd = rate.effectiveUntil || '9999-12-31'
@@ -107,7 +101,7 @@ const addRate = () => form.rates.push({
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h4 class="font-semibold text-[#3d281d]">Service commissions</h4>
-        <p class="mt-1 text-sm text-slate-400">Set the employee’s rate for completed services or consultations. These agreements use the same rules as Employee Compensation.</p>
+        <p class="mt-1 text-sm text-slate-400">Booking availability follows the practitioner's assigned schedule. Set commission rates here if needed; service eligibility follows specialty and credential requirements.</p>
       </div>
       <button type="button" class="rounded-lg border border-[#cf9f78] bg-[#fffdf9] px-3 py-2 text-sm font-semibold text-[#70482e] hover:bg-[#f8ead4] disabled:opacity-50" :disabled="loading || !services.length" @click="addRate">Add commission rate</button>
     </div>
@@ -116,21 +110,10 @@ const addRate = () => form.rates.push({
     <p v-else-if="loadError" class="mt-3 text-sm text-[#805337]" role="status">{{ loadError }} Commission agreements can be added later in Employee Compensation.</p>
     <p v-else-if="!services.length" class="mt-3 text-sm text-[#765d4c]">Create a service or consultation listing first. Commission agreements can be added later.</p>
 
-    <div v-if="services.length" class="mt-4">
-      <h5 class="text-sm font-medium text-[#5d4536]">Services this practitioner may perform</h5>
-      <div class="mt-2 grid gap-2 sm:grid-cols-2">
-        <label v-for="service in services" :key="service.id" class="flex items-start gap-2 rounded-lg border border-[#ead2b2] bg-[#fffdf9] px-3 py-2 text-sm text-[#5d4536]">
-          <input v-model="form.approvedServiceIds" type="checkbox" :value="service.id" class="mt-0.5 accent-amber-600" />
-          <span>{{ service.title || service.serviceName || service.consultationName || 'Untitled service' }}</span>
-        </label>
-      </div>
-      <p class="mt-2 text-xs text-[#765d4c]">A practitioner must be approved for a service before they can be assigned to perform it.</p>
-    </div>
-
     <p v-if="validationError" class="mt-3 text-sm text-[#a13732]" role="alert">{{ validationError }}</p>
 
     <div v-for="(rate, index) in form.rates" :key="index" class="mt-3 grid gap-3 rounded-lg border border-[#ead2b2] bg-[#fffdf9] p-3 sm:grid-cols-2">
-      <ContractAppearanceSelect :id="`new-staff-commission-service-${index}`" v-model="rate.serviceId" label="Service" :options="[{ value: '', label: 'All approved services' }, ...serviceOptions]" />
+      <ContractAppearanceSelect :id="`new-staff-commission-service-${index}`" v-model="rate.serviceId" label="Service" :options="[{ value: '', label: 'All services' }, ...serviceOptions]" />
       <p class="rounded-lg border border-[#ead2b2] bg-[#fffaf3] px-3 py-2 text-sm text-[#5d4536]">Lead practitioner commission</p>
       <ContractAppearanceSelect :id="`new-staff-commission-model-${index}`" v-model="rate.model" label="Commission type" :options="[{ value: 'percent', label: 'Percentage' }, { value: 'fixed', label: 'Fixed fee (PHP)' }]" />
       <label class="block text-sm font-medium text-[#5d4536]">Rate

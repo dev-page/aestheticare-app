@@ -32,8 +32,10 @@ export const registerGoogleConsultations = (app, deps) => {
   const { admin, google, requireAuth, authorizeClinicAction, loadUserContext, config, sendEmail } = deps
   const db = admin.firestore(), stamp = () => admin.firestore.FieldValue.serverTimestamp()
   const connectionRef = uid => db.collection('googlePractitionerConnections').doc(uid)
+  const oauthStateRef = state => db.collection('googleMeetOauthStates').doc(state)
   const meetReadScope = 'https://www.googleapis.com/auth/meetings.space.readonly'
   const meetCreateScope = 'https://www.googleapis.com/auth/meetings.space.created'
+  const identityScopes = ['openid', 'email']
   const configured = () => Boolean(config.clientId && config.clientSecret && config.redirectUri && Buffer.from(config.encryptionKey || '', 'base64').length === 32)
   const oauth = () => {
     check(configured(), 'Google account connections are not configured. Contact the administrator.', 503)
@@ -51,7 +53,108 @@ export const registerGoogleConsultations = (app, deps) => {
   }
 
   app.get('/google-meet/account', requireAuth, async (req, res) => {
-    res.json({ success: true, data: { manualMeetLinks: true, connected: false } })
+    try {
+      const account = (await connectionRef(req.user.uid).get()).data() || {}
+      const connected = Boolean(account.active && account.refreshToken && account.scopes?.includes(meetCreateScope))
+      res.json({
+        success: true,
+        data: {
+          configured: configured(),
+          connected,
+          email: connected ? String(account.email || '') : '',
+          connectedAt: connected ? account.connectedAt?.toDate?.()?.toISOString?.() || '' : '',
+        },
+      })
+    } catch (error) { respondError(res, error) }
+  })
+
+  app.post('/google-meet/account/connect', requireAuth, async (req, res) => {
+    try {
+      check(configured(), 'Google Meet link generation is not configured. Contact the administrator.', 503)
+      const branchId = String(req.body?.branchId || '').trim()
+      check(/^[A-Za-z0-9_-]{1,150}$/.test(branchId), 'Select a clinic branch.', 400)
+      await authorizeClinicAction(req.user.uid, branchId, 'consultations:create')
+      const state = crypto.randomBytes(32).toString('hex')
+      await oauthStateRef(state).set({
+        uid: req.user.uid,
+        branchId,
+        createdAt: admin.firestore.Timestamp.now(),
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      })
+      const client = oauth()
+      const url = client.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        include_granted_scopes: true,
+        scope: [...identityScopes, meetCreateScope],
+        state,
+      })
+      res.json({ success: true, data: { url } })
+    } catch (error) { respondError(res, error) }
+  })
+
+  app.get('/google-meet/oauth/callback', async (req, res) => {
+    let branchId = ''
+    const returnToConsultations = status => {
+      try {
+        const destination = new URL('/crm/appointments', config.frontendUrl || 'https://aestheticare.online')
+        destination.searchParams.set('tab', 'queue')
+        destination.searchParams.set('mode', 'online')
+        if (branchId) destination.searchParams.set('branchId', branchId)
+        destination.searchParams.set('googleMeetConnection', status)
+        res.redirect(destination.toString())
+      } catch {
+        res.status(400).type('text').send('Google Meet account connection could not return to the clinic app.')
+      }
+    }
+
+    try {
+      const state = String(req.query?.state || '').trim()
+      check(/^[a-f0-9]{64}$/.test(state), 'Google Meet connection expired. Start the connection again.', 400)
+      const stateRef = oauthStateRef(state)
+      const connectionState = await db.runTransaction(async tx => {
+        const snapshot = await tx.get(stateRef)
+        const data = snapshot.data() || {}
+        check(snapshot.exists && Number(data.expiresAt) > Date.now(), 'Google Meet connection expired. Start the connection again.', 400)
+        tx.delete(stateRef)
+        return data
+      })
+      branchId = String(connectionState.branchId || '')
+      await authorizeClinicAction(connectionState.uid, branchId, 'consultations:create')
+      if (req.query?.error || !req.query?.code) {
+        returnToConsultations('cancelled')
+        return
+      }
+
+      const client = oauth()
+      const { tokens } = await client.getToken(String(req.query.code))
+      client.setCredentials(tokens)
+      const identity = (await google.oauth2({ version: 'v2', auth: client }).userinfo.get()).data || {}
+      check(identity.id && identity.email && identity.verified_email, 'Google did not provide a verified email for this account.', 400)
+      const scopes = String(tokens.scope || '').split(/\s+/).filter(Boolean)
+      check(scopes.includes(meetCreateScope), 'Google Meet room creation permission was not granted.', 403)
+
+      const existing = (await connectionRef(connectionState.uid).get()).data() || {}
+      let refreshToken = tokens.refresh_token || ''
+      if (!refreshToken && existing.googleSub === identity.id && existing.refreshToken) {
+        refreshToken = googleTokenCipher(config.encryptionKey).decrypt(existing.refreshToken, `${connectionState.uid}:${identity.id}`)
+      }
+      check(refreshToken, 'Google did not provide an offline connection. Disconnect the app in your Google Account settings, then connect again.', 409)
+      const encryptedRefreshToken = googleTokenCipher(config.encryptionKey).encrypt(refreshToken, `${connectionState.uid}:${identity.id}`)
+      const now = admin.firestore.Timestamp.now()
+      await connectionRef(connectionState.uid).set({
+        active: true,
+        googleSub: identity.id,
+        email: String(identity.email).trim().toLowerCase(),
+        scopes,
+        refreshToken: encryptedRefreshToken,
+        connectedAt: existing.googleSub === identity.id ? existing.connectedAt || now : now,
+        updatedAt: now,
+      }, { merge: true })
+      returnToConsultations('connected')
+    } catch (error) {
+      returnToConsultations('failed')
+    }
   })
 
   app.get('/consultations/meet-link-logs', requireAuth, async (req, res) => {
@@ -92,14 +195,11 @@ export const registerGoogleConsultations = (app, deps) => {
     } catch (error) { respondError(res, error) }
   })
 
-  app.post('/google-meet/account/connect', requireAuth, async (req, res) => {
-    res.status(410).json({ success: false, error: 'Google account connection is no longer needed. Create a room in Google Meet and add its link to the appointment.' })
-  })
-  app.get('/google-meet/oauth/callback', async (req, res) => {
-    res.status(410).type('text').send('Google account connection is no longer used for AesthetiCare consultations. Return to the clinic appointment page.')
-  })
   app.post('/google-meet/account/disconnect', requireAuth, async (req, res) => {
-    res.status(410).json({ success: false, error: 'Google account connections are no longer used for online consultations.' })
+    try {
+      await connectionRef(req.user.uid).set({ active: false, refreshToken: null, updatedAt: stamp() }, { merge: true })
+      res.json({ success: true })
+    } catch (error) { respondError(res, error) }
   })
 
   app.post('/appointments/demo-online-consultation', requireAuth, async (req, res) => {
@@ -257,6 +357,122 @@ export const registerGoogleConsultations = (app, deps) => {
       const result = { state: active.length >= 2 ? 'participants_detected' : active.length === 1 ? 'one_participant' : 'waiting', activeParticipantCount: active.length, customerNameMatched, practitionerNameMatched, checkedAt: new Date().toISOString() }
       await meetingRef.set({ meetPresence: result }, { merge: true })
       res.json({ success: true, data: result })
+    } catch (error) { respondError(res, error) }
+  })
+
+  app.post('/appointments/:id/generate-meet-link', requireAuth, async (req, res) => {
+    try {
+      check(/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id), 'Invalid appointment.', 400)
+      check(configured(), 'Google Meet link generation is not configured. Contact the administrator.', 503)
+      const ref = db.collection('appointments').doc(req.params.id)
+      const meetingRef = db.collection('appointmentMeetings').doc(req.params.id)
+      const appointment = (await ref.get()).data()
+      check(appointment, 'Online consultation not found.', 404)
+      await authorizeClinicAction(req.user.uid, appointment.branchId, 'consultations:create')
+      check(normalized(appointment.type) === 'consultation' && normalized(appointment.consultationMode) === 'online', 'Select an online consultation.', 409)
+      const practitionerId = appointment.assignedPractitionerId || appointment.practitionerId
+      check(practitionerId && practitionerId === req.user.uid, 'Only the assigned practitioner can generate this consultation link.', 403)
+      check(!['cancelled', 'rejected', 'completed', 'no-show', 'ongoing', 'awaiting customer confirmation'].includes(normalized(appointment.status)), 'This consultation is no longer waiting to start.', 409)
+      const currentMeeting = (await meetingRef.get()).data() || {}
+      check(!currentMeeting.meetLink, 'A meeting link already exists. Refresh the consultation list.', 409)
+
+      const account = (await connectionRef(practitionerId).get()).data() || {}
+      check(account.active && account.refreshToken && account.scopes?.includes(meetCreateScope), 'Connect your Google account before generating a Meet link.', 409)
+      const client = oauth()
+      const refreshToken = googleTokenCipher(config.encryptionKey).decrypt(account.refreshToken, `${practitionerId}:${account.googleSub}`)
+      client.setCredentials({ refresh_token: refreshToken })
+      const createdSpace = (await client.request({
+        url: 'https://meet.googleapis.com/v2/spaces',
+        method: 'POST',
+        data: { config: { accessType: 'TRUSTED' } },
+      })).data || {}
+      const meetLink = validMeetLink(createdSpace.meetingUri)
+      check(meetLink && /^spaces\/[A-Za-z0-9_-]+$/.test(String(createdSpace.name || '')), 'Google Meet did not return a valid meeting room. Try again.', 503)
+      const window = consultationWindow(appointment)
+      const notificationRef = db.collection('notifications').doc(`meet-invite-${ref.id}`)
+      const auditRef = db.collection('appointmentAudit').doc()
+      const actorName = String(req.user.name || req.user.email || account.email || req.user.uid).trim()
+      const invite = await db.runTransaction(async tx => {
+        const [appointmentSnap, meetingSnap] = await Promise.all([tx.get(ref), tx.get(meetingRef)])
+        const currentAppointment = appointmentSnap.data()
+        const existingMeeting = meetingSnap.data() || {}
+        check(currentAppointment && currentAppointment.branchId === appointment.branchId, 'The appointment changed. Refresh and try again.', 409)
+        check(normalized(currentAppointment.type) === 'consultation' && normalized(currentAppointment.consultationMode) === 'online', 'Select an online consultation.', 409)
+        check((currentAppointment.assignedPractitionerId || currentAppointment.practitionerId) === req.user.uid, 'The assigned practitioner changed. Refresh and try again.', 409)
+        check(!existingMeeting.meetLink, 'A meeting link was already generated. Refresh the consultation list.', 409)
+        check(currentAppointment.date === appointment.date && currentAppointment.time === appointment.time, 'The appointment schedule changed. Refresh and generate a new link.', 409)
+        check(!['cancelled', 'rejected', 'completed', 'no-show', 'ongoing', 'awaiting customer confirmation'].includes(normalized(currentAppointment.status)), 'This consultation is no longer waiting to start.', 409)
+        const invitedAt = currentAppointment.consultationInviteAt || stamp()
+        tx.set(meetingRef, {
+          meetingProvider: 'google-meet-api',
+          meetSpaceName: createdSpace.name,
+          meetLink,
+          meetCode: meetLink.split('/').pop(),
+          meetCreatedBy: req.user.uid,
+          meetCreatedAt: stamp(),
+          hostVerified: true,
+          hostGoogleSub: account.googleSub,
+          hostEmail: account.email || '',
+          customerId: currentAppointment.customerId,
+          practitionerId,
+          branchId: currentAppointment.branchId,
+          consultationQueueEnabled: true,
+          meetPresenceTrackingEnabled: account.scopes.includes(meetReadScope),
+          scheduledStartAt: window.start.toISOString(),
+          scheduledEndAt: window.end.toISOString(),
+          durationMinutes: window.duration,
+          updatedAt: stamp(),
+        })
+        tx.update(ref, { consultationInviteAt: invitedAt, consultationInviteSentBy: req.user.uid, consultationInviteEmailStatus: 'pending', updatedAt: stamp() })
+        tx.set(auditRef, {
+          appointmentId: ref.id,
+          branchId: currentAppointment.branchId,
+          actorId: req.user.uid,
+          actorName,
+          action: 'meet_link_generated',
+          customerName: String(currentAppointment.customerName || currentAppointment.clientName || currentAppointment.patientName || 'Customer').trim(),
+          serviceName: String(currentAppointment.service || currentAppointment.serviceName || 'Online consultation').trim(),
+          appointmentDate: String(currentAppointment.date || ''),
+          appointmentTime: String(currentAppointment.time || ''),
+          createdAt: stamp(),
+        })
+        tx.set(notificationRef, {
+          recipientUserId: currentAppointment.customerId,
+          branchId: currentAppointment.branchId,
+          title: 'Your clinic shared a Google Meet link',
+          message: 'Your clinic prepared a consultation link. Enter your service code in My Appointments to reveal it.',
+          link: '/customer/appointments?tab=online',
+          read: false,
+          deleted: false,
+          createdAt: stamp(),
+        }, { merge: true })
+        return {
+          invitedAt: currentAppointment.consultationInviteAt || null,
+          customerName: String(currentAppointment.customerName || currentAppointment.clientName || currentAppointment.patientName || 'Customer').trim(),
+          customerEmail: String(currentAppointment.customerEmail || '').trim(),
+          serviceName: String(currentAppointment.service || currentAppointment.serviceName || 'Online consultation').trim(),
+          date: String(currentAppointment.date || ''),
+          time: String(currentAppointment.time || ''),
+        }
+      })
+
+      let emailSent = false
+      if (invite.customerEmail && typeof sendEmail === 'function') {
+        try {
+          const name = invite.customerName.replace(/[<>]/g, '')
+          const service = invite.serviceName.replace(/[<>]/g, '')
+          const dateTime = `${invite.date} at ${invite.time} (Philippine time)`
+          const delivery = await sendEmail({
+            to: invite.customerEmail,
+            subject: 'Your online consultation link is ready',
+            text: `Hi ${name},\n\nYour clinic has prepared the Google Meet link for your ${service} on ${dateTime}. Open My Appointments in AesthetiCare and enter your service code to reveal and copy the link.`,
+            html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408"><p>Hi ${name},</p><p>Your clinic has prepared the Google Meet link for your <strong>${service}</strong> on ${dateTime}.</p><p>Open My Appointments in AesthetiCare and enter your service code to reveal and copy the link.</p></div>`,
+          })
+          emailSent = delivery?.statusCode === 200
+        } catch { emailSent = false }
+      }
+      await ref.set({ consultationInviteEmailStatus: emailSent ? 'sent' : 'failed', updatedAt: stamp() }, { merge: true })
+      res.json({ success: true, data: { meetLink, invitedAt: invite.invitedAt, emailSent, linkLogged: true } })
     } catch (error) { respondError(res, error) }
   })
 

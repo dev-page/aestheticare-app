@@ -90,7 +90,7 @@ const routes = [
   { path: "/clinical/treatment-sessions", name: "clinical-treatment-sessions", component: () => import("@/views/admin/owner/clinic/TreatmentSessions.vue"), meta: { requiresAuth: true, requiresPermission: "appointments:update" } },
   { path: "/clinical/prescriptions", name: "clinical-prescriptions", component: () => import("@/views/admin/owner/clinic/ClinicPrescriptions.vue"), meta: { requiresAuth: true, requiresPermission: "page:prescriptions:manage", requiresFeature: "appointments" } },
   { path: "/pharmacy/pos", name: "clinic-pharmacy-pos", component: () => import("@/views/admin/owner/clinic/PharmacyPOS.vue"), meta: { requiresAuth: true, requiresPermission: "pharmacy:view", requiresFeature: "inventory" } },
-  { path: "/clinical/consultations/online", name: "clinical-online-consultation", redirect: { path: "/crm/appointments", query: { tab: "queue", mode: "online" } } },
+  { path: "/clinical/consultations/online", name: "clinical-online-consultation", component: () => import("@/views/admin/owner/clinic/PractitionerOnlineConsultation.vue"), meta: { requiresAuth: true, requiresPermission: "consultations:view" } },
   { path: "/activities", name: "activities", component: () => import("@/views/common/Activities.vue"), meta: { requiresAuth: true, requiresPermission: "page:account:manage" } },
 
   // HR routes

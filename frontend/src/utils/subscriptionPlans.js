@@ -156,8 +156,8 @@ export const normalizeSubscriptionPlan = (plan = {}, fallback = {}) => {
 }
 
 export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) => {
-  // The trial is its own fixed offer. Its feature list follows Premium, while
-  // the stored access tier remains Premium during the trial for permission gates.
+  // Trial presentation can be configured, while its price, duration, and
+  // Premium access tier remain fixed for subscription and permission logic.
   const supportedPlanIds = new Set(['basic', 'premium'])
   basePlans = basePlans.filter((plan) => supportedPlanIds.has(String(plan?.id || '').trim().toLowerCase()))
   const dbPlans = new Map(snapshotDocs.map((docSnap) => [docSnap.id, docSnap.data() || {}]))
@@ -205,18 +205,20 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
     })
 
   const premiumPlan = normalizedBasePlans.find((plan) => plan.id === 'premium')
+  const defaultTrialPlan = createDefaultSubscriptionPlans()[0]
+  const savedTrialPlan = dbPlans.get(FREE_TRIAL_PLAN_ID) || {}
   const trialPlan = normalizeSubscriptionPlan({
+    ...defaultTrialPlan,
+    ...savedTrialPlan,
     id: FREE_TRIAL_PLAN_ID,
-    label: 'Free Trial',
-    name: 'Free Trial',
     price: 0,
     billingCycle: 'trial',
-    description: `Get Premium access for ${FREE_TRIAL_DAYS} days. No payment is collected during the trial.`,
     trialDays: FREE_TRIAL_DAYS,
-    isActive: true,
     recommended: false,
-    features: premiumPlan?.features || [...BASIC_FEATURES, ...PREMIUM_FEATURES.slice(1)],
-  })
+    features: Array.isArray(savedTrialPlan.features)
+      ? savedTrialPlan.features
+      : premiumPlan?.features || defaultTrialPlan.features,
+  }, defaultTrialPlan)
 
   return [trialPlan, ...orderedBasePlans, ...customPlans]
 }

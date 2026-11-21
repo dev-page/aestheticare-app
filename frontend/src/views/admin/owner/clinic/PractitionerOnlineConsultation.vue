@@ -1,28 +1,43 @@
 <template>
-  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'bg-slate-900 min-h-screen'">
+  <div class="flex module-theme min-w-0" :class="embedded ? '' : 'owner-theme min-h-screen'">
     <OwnerSidebar v-if="!embedded" />
 
     <component :is="embedded ? 'div' : 'main'" v-page-loading="{ active: pageLoading, variant: 'table', columns: 5, rows: 5, header: !embedded }" class="flex-1 min-w-0" :class="embedded ? '' : 'p-8'">
       <div class="mb-8">
-        <h1 v-if="!embedded" class="text-3xl font-bold text-white mb-2">Online Consultation</h1>
-        <p class="text-slate-400">Create a Google Meet room and add its link. The customer can reveal it using their service code.</p>
+        <h1 v-if="!embedded" class="text-3xl font-bold text-[#3d281d] mb-2">Online Consultations</h1>
+        <p class="text-[#765d4c]">View booked consultations, generate each assigned practitioner's Meet link, and notify the customer.</p>
       </div>
-      <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+      <section v-if="canCreateMeetLink" class="mb-6 rounded-xl border border-[#ead2b2] bg-white p-5" aria-labelledby="google-account-heading">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 id="google-account-heading" class="font-semibold text-[#3d281d]">Google Meet account</h2>
+            <p v-if="!meetAccount.configured" class="mt-1 text-sm text-[#a13732]">Automatic link generation is not configured. Ask the system administrator to configure Google Meet.</p>
+            <p v-else-if="meetAccount.connected" class="mt-1 text-sm text-[#52715b]">Connected{{ meetAccount.email ? ` as ${meetAccount.email}` : '' }}. New links will be generated under this Google account.</p>
+            <p v-else class="mt-1 text-sm text-[#765d4c]">Connect your Google account once. The assigned practitioner can then generate and send a meeting link from the consultation row.</p>
+            <p v-if="meetAccountError" class="mt-2 text-sm text-[#a13732]" role="alert">{{ meetAccountError }}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button v-if="meetAccount.configured && !meetAccount.connected" type="button" class="rounded-lg bg-[#ad4d0b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#913f08] disabled:opacity-50" :disabled="meetAccountLoading || connectingGoogle" @click="connectGoogleAccount">{{ connectingGoogle ? 'Opening Google…' : 'Connect Google account' }}</button>
+            <button v-else-if="meetAccount.connected" type="button" class="rounded-lg border border-[#d9b894] px-4 py-2 text-sm font-semibold text-[#70482e] hover:bg-[#fff5e8] disabled:opacity-50" :disabled="meetAccountLoading" @click="disconnectGoogleAccount">Disconnect</button>
+          </div>
+        </div>
+      </section>
+      <div class="rounded-xl border border-[#ead2b2] bg-white p-6 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Search</label>
+            <label class="block text-[#765d4c] text-sm mb-2">Search</label>
             <input
               v-model="searchQuery"
               type="text"
               placeholder="Client or service..."
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-sky-500 focus:outline-none"
+              class="w-full bg-[#fffaf4] text-[#3d281d] px-4 py-2 rounded-lg border border-[#d9b894] focus:border-[#ad4d0b] focus:outline-none"
             />
           </div>
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Status</label>
+            <label class="block text-[#765d4c] text-sm mb-2">Status</label>
             <select
               v-model="statusFilter"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-sky-500 focus:outline-none"
+              class="w-full bg-[#fffaf4] text-[#3d281d] px-4 py-2 rounded-lg border border-[#d9b894] focus:border-[#ad4d0b] focus:outline-none"
             >
               <option value="">All</option>
               <option value="Scheduled">Scheduled</option>
@@ -32,58 +47,63 @@
             </select>
           </div>
           <div>
-            <label class="block text-slate-400 text-sm mb-2">Date</label>
+            <label class="block text-[#765d4c] text-sm mb-2">Date</label>
             <input
               v-model="dateFilter"
               type="date"
-              class="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:border-sky-500 focus:outline-none"
+              class="w-full bg-[#fffaf4] text-[#3d281d] px-4 py-2 rounded-lg border border-[#d9b894] focus:border-[#ad4d0b] focus:outline-none"
             />
           </div>
         </div>
       </div>
 
-      <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+      <section class="rounded-xl border border-[#ead2b2] bg-white overflow-hidden" aria-labelledby="online-consultations-table-title">
+        <div class="border-b border-[#ead2b2] px-6 py-4">
+          <h2 id="online-consultations-table-title" class="text-lg font-semibold text-[#3d281d]">Online consultation appointments</h2>
+          <p class="mt-1 text-sm text-[#765d4c]">Generate a separate Meet link for each appointment. Each generated link is recorded in the history table below.</p>
+        </div>
         <div class="overflow-x-auto">
           <table class="w-full">
-            <thead class="bg-slate-700">
+            <thead class="bg-[#f8ead4]">
               <tr>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Client</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Schedule</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Meeting Link</th>
-                <th class="px-6 py-4 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Action</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-[#70482e] uppercase tracking-wider">Client</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-[#70482e] uppercase tracking-wider">Service</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-[#70482e] uppercase tracking-wider">Schedule</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-[#70482e] uppercase tracking-wider">Meeting Link</th>
+                <th class="px-6 py-4 text-left text-xs font-semibold text-[#70482e] uppercase tracking-wider">Action</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-700">
-              <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-slate-700/50 transition-colors">
-                <td class="px-6 py-4 text-white">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Demo</span><span v-if="String(appointment.status || '').toLowerCase() === 'no-show'" class="ml-2 rounded-full bg-rose-700/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-200">No-show · payment retained</span></td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.service || appointment.type || '-' }}</td>
-                <td class="px-6 py-4 text-slate-300">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
+            <tbody class="divide-y divide-[#f0dfc8]">
+              <tr v-for="appointment in filteredAppointments" :key="appointment.id" class="hover:bg-[#fffaf4] transition-colors">
+                <td class="px-6 py-4 text-[#3d281d]">{{ appointment.clientName || appointment.patientName || '-' }} <span v-if="appointment.demoMode" class="ml-2 rounded-full bg-[#fff2cc] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#805337]">Demo</span><span v-if="String(appointment.status || '').toLowerCase() === 'no-show'" class="ml-2 rounded-full bg-[#fde8e5] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#a13732]">No-show · payment retained</span></td>
+                <td class="px-6 py-4 text-[#5d4536]">{{ appointment.service || appointment.type || '-' }}</td>
+                <td class="px-6 py-4 text-[#5d4536]">{{ appointment.date || '-' }} {{ formatClockTime(appointment.time) }}</td>
                 <td class="px-6 py-4">
                   <div v-if="appointment.consultationMode === 'online' && appointment.meetLink && appointment.consultationInviteAt" class="flex items-center gap-2">
-                    <span class="text-sky-300 text-sm break-all">
+                    <span class="text-[#296348] text-sm break-all">
                       {{ appointment.meetLink }}
                     </span>
                     <button
                       type="button"
-                      class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                      class="inline-flex items-center justify-center h-7 w-7 rounded-md bg-[#f8ead4] text-[#70482e] hover:bg-[#f0dfc8] disabled:opacity-60"
                       @click="copyMeetLink(appointment.meetLink)"
                       title="Copy link"
                     >
                       <Icon icon="mdi:content-copy" class="h-4 w-4" />
                     </button>
                   </div>
-                  <span v-else class="text-slate-400 text-sm">
+                  <span v-else class="text-[#765d4c] text-sm">
                     {{ appointment.consultationMode === 'on-site' ? 'On-site consultation' : 'No meeting link added' }}
                   </span>
                 </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-2">
-<p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-emerald-300">Customer checked in and is waiting for a Meet link.</p>
-<a v-if="!appointment.meetLink && canCreateMeetLink" href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">Create room in Google Meet</a>
-<button v-if="!appointment.meetLink && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs hover:bg-sky-500 disabled:opacity-60" @click="openMeetLinkForm(appointment)">Add link & notify</button>
-<p v-if="appointment.consultationInviteAt" class="text-sm text-slate-400">Invitation sent to the customer. Join using your Google account.</p>
-<button v-if="appointment.consultationInviteAt && appointment.consultationInviteEmailStatus === 'failed' && canCreateMeetLink" type="button" class="px-3 py-1.5 rounded-lg border border-amber-500 text-amber-200 text-xs hover:bg-amber-900/30" @click="openMeetLinkForm(appointment)">Retry email</button>
+<p v-if="appointment.consultationCustomerReadyAt && !appointment.consultationInviteAt" class="w-full text-sm text-[#296348]">Customer checked in and is waiting for a Meet link.</p>
+<button v-if="!appointment.meetLink && canGenerateMeetLink(appointment)" type="button" class="px-3 py-1.5 rounded-lg bg-[#ad4d0b] text-white text-xs font-semibold hover:bg-[#913f08] disabled:opacity-60" :disabled="generatingId === appointment.id" @click="generateMeetLink(appointment)">{{ generatingId === appointment.id ? 'Generating…' : 'Generate link & notify' }}</button>
+<p v-else-if="!appointment.meetLink && canCreateMeetLink && isAssignedToPractitioner(appointment) && !meetAccount.connected" class="w-full text-xs text-[#805337]">Connect your Google account above to generate this link.</p>
+<p v-else-if="!appointment.meetLink && canCreateMeetLink && !isAssignedToPractitioner(appointment)" class="w-full text-xs text-[#765d4c]">The assigned practitioner generates this link.</p>
+<p v-if="appointment.consultationInviteAt" class="text-sm text-[#765d4c]">Invitation sent to the customer. Join using your Google account.</p>
+<p v-if="appointment.consultationInviteAt && appointment.consultationInviteEmailStatus === 'failed'" class="w-full text-xs text-[#805337]">Email delivery failed. The customer can still reveal the link in My Appointments.</p>
                     <button
                       v-if="appointment.meetLink && appointment.consultationInviteAt && isAssignedToPractitioner(appointment)"
                       type="button"
@@ -136,34 +156,34 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <section class="mt-6 overflow-hidden rounded-xl border border-slate-700 bg-slate-800" aria-labelledby="meet-link-history-title">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 px-6 py-4">
+      <section class="mt-6 overflow-hidden rounded-xl border border-[#ead2b2] bg-white" aria-labelledby="meet-link-history-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#ead2b2] px-6 py-4">
           <div>
-            <h2 id="meet-link-history-title" class="text-lg font-semibold text-white">Meet link history</h2>
-            <p class="mt-1 text-sm text-slate-400">A record is added whenever a new Google Meet link is saved for a consultation.</p>
+            <h2 id="meet-link-history-title" class="text-lg font-semibold text-[#3d281d]">Meet link history</h2>
+            <p class="mt-1 text-sm text-[#765d4c]">Every new link generated by a practitioner is recorded here.</p>
           </div>
-          <button type="button" class="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs">
+          <button type="button" class="rounded-lg border border-[#d9b894] px-3 py-2 text-sm text-[#70482e] hover:bg-[#fff5e8] disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs">
             {{ meetLinkLogsLoading ? 'Refreshing…' : 'Refresh' }}
           </button>
         </div>
-        <p v-if="meetLinkLogsError && meetLinkLogs.length" class="border-b border-rose-900/50 bg-rose-950/30 px-6 py-3 text-sm text-rose-300">
+        <p v-if="meetLinkLogsError && meetLinkLogs.length" class="border-b border-[#e9b2a9] bg-[#fff0ed] px-6 py-3 text-sm text-[#a13732]">
           {{ meetLinkLogsError }}
           <button type="button" class="ml-2 underline underline-offset-2" @click="loadMeetLinkLogs">Try again</button>
         </p>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[780px]">
-            <thead class="bg-slate-700/70">
+            <thead class="bg-[#f8ead4]">
               <tr>
-                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Link saved</th>
-                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Added by</th>
-                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Customer</th>
-                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Service</th>
-                <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-300">Appointment</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#70482e]">Link generated</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#70482e]">Practitioner</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#70482e]">Customer</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#70482e]">Service</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#70482e]">Appointment</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-700">
+            <tbody class="divide-y divide-[#f0dfc8]">
               <tr v-if="meetLinkLogsLoading && meetLinkLogs.length === 0">
                 <td colspan="5" class="px-5 py-6 text-center text-sm text-slate-400">Loading Meet link history…</td>
               </tr>
@@ -174,46 +194,27 @@
                 </td>
               </tr>
               <tr v-else-if="meetLinkLogs.length === 0">
-                <td colspan="5" class="px-5 py-6 text-center text-sm text-slate-400">No Meet links have been saved for this branch yet.</td>
+                <td colspan="5" class="px-5 py-6 text-center text-sm text-slate-400">No Meet links have been generated for this branch yet.</td>
               </tr>
               <template v-else>
-                <tr v-for="log in meetLinkLogs" :key="log.id" class="hover:bg-slate-700/40">
-                  <td class="whitespace-nowrap px-5 py-3 text-sm text-slate-200">{{ formatLogDateTime(log.createdAt) }}</td>
-                  <td class="px-5 py-3 text-sm text-slate-200">{{ log.actorName || log.actorId || 'Unknown practitioner' }}</td>
-                  <td class="px-5 py-3 text-sm text-slate-200">{{ log.customerName || 'Customer' }}</td>
-                  <td class="px-5 py-3 text-sm text-slate-300">{{ log.serviceName || 'Online consultation' }}</td>
-                  <td class="whitespace-nowrap px-5 py-3 text-sm text-slate-300">{{ log.appointmentDate || '—' }} {{ formatClockTime(log.appointmentTime) }}</td>
+                <tr v-for="log in meetLinkLogs" :key="log.id" class="hover:bg-[#fffaf4]">
+                  <td class="whitespace-nowrap px-5 py-3 text-sm text-[#3d281d]">{{ formatLogDateTime(log.createdAt) }}</td>
+                  <td class="px-5 py-3 text-sm text-[#3d281d]">{{ log.actorName || log.actorId || 'Unknown practitioner' }}</td>
+                  <td class="px-5 py-3 text-sm text-[#3d281d]">{{ log.customerName || 'Customer' }}</td>
+                  <td class="px-5 py-3 text-sm text-[#5d4536]">{{ log.serviceName || 'Online consultation' }}</td>
+                  <td class="whitespace-nowrap px-5 py-3 text-sm text-[#5d4536]">{{ log.appointmentDate || '—' }} {{ formatClockTime(log.appointmentTime) }}</td>
                 </tr>
               </template>
             </tbody>
           </table>
         </div>
-        <div v-if="meetLinkLogsHasMore" class="flex justify-center border-t border-slate-700 px-6 py-4">
-          <button type="button" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs(true)">
+        <div v-if="meetLinkLogsHasMore" class="flex justify-center border-t border-[#ead2b2] px-6 py-4">
+          <button type="button" class="rounded-lg border border-[#d9b894] px-4 py-2 text-sm text-[#70482e] hover:bg-[#fff5e8] disabled:opacity-50" :disabled="meetLinkLogsLoading" @click="loadMeetLinkLogs(true)">
             {{ meetLinkLogsLoading ? 'Loading…' : 'Load older link records' }}
           </button>
         </div>
       </section>
     </component>
-
-    <Modal
-      :is-open="Boolean(meetLinkAppointment)"
-      title="Add Google Meet link"
-      :close-on-backdrop="false"
-      @close="closeMeetLinkForm"
-    >
-      <p class="mb-4 text-sm text-slate-600">Create a room in Google Meet, copy its link, and paste it below. The customer can reveal it with their service code.</p>
-      <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" class="mb-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Create room in Google Meet</a>
-      <label for="consultation-meet-link" class="mb-2 block text-sm font-semibold text-slate-700">Google Meet link</label>
-      <input id="consultation-meet-link" v-model="meetLinkDraft" type="url" inputmode="url" autocomplete="url" placeholder="https://meet.google.com/abc-defg-hij" class="w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" />
-      <p v-if="meetLinkError" role="alert" class="mt-2 text-sm text-rose-600">{{ meetLinkError }}</p>
-      <template #footer>
-        <div class="flex justify-end gap-2">
-          <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="invitingId === meetLinkAppointment?.id" @click="closeMeetLinkForm">Cancel</button>
-          <button type="button" class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="!meetLinkDraft.trim() || invitingId === meetLinkAppointment?.id" @click="attachMeetLink(meetLinkAppointment)">{{ invitingId === meetLinkAppointment?.id ? 'Sending…' : 'Save link & notify' }}</button>
-        </div>
-      </template>
-    </Modal>
 
     <Modal
       :is-open="Boolean(startChecklistAppointment)"
@@ -274,6 +275,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getFirestore, collection, getDocs, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { getApp } from 'firebase/app'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import OnlineConsultationControls from '@/components/common/OnlineConsultationControls.vue'
@@ -294,6 +296,8 @@ export default {
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const { hasPermission } = usePermissions()
+    const route = useRoute()
+    const router = useRouter()
 
     const db = getFirestore(getApp())
     const auth = getAuth(getApp())
@@ -309,10 +313,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const meetLinkLogsError = ref('')
     const meetLinkLogsHasMore = ref(false)
     const meetLinkLogsCursor = ref('')
+    const meetAccount = ref({ configured: false, connected: false, email: '' })
+    const meetAccountLoading = ref(false)
+    const meetAccountError = ref('')
+    const connectingGoogle = ref(false)
+    const generatingId = ref('')
 
     const startingId = ref('')
     const finishingId = ref('')
-    const invitingId = ref('')
     const startChecklistAppointment = ref(null)
     const startIdentityVerified = ref(false)
     const startReadyToBegin = ref(false)
@@ -321,9 +329,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const completionPrescriptionsText = ref('')
     const completionError = ref('')
     const meetEndedConfirmed = ref(false)
-    const meetLinkAppointment = ref(null)
-    const meetLinkDraft = ref('')
-    const meetLinkError = ref('')
     const clockNow = ref(Date.now())
     const isSeedingDemo = ref(false)
     const lastDemoAppointmentId = ref('')
@@ -369,7 +374,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }))
 
     const assignedAppointments = computed(() =>
-      sortRecordsNewestFirst(appointments.value).sort((a, b) => {
+      sortRecordsNewestFirst(appointments.value.filter(item => normalized(item.consultationMode) === 'online')).sort((a, b) => {
         const aWaiting = a.consultationCustomerReadyAt && !a.consultationInviteAt ? 1 : 0
         const bWaiting = b.consultationCustomerReadyAt && !b.consultationInviteAt ? 1 : 0
         return bWaiting - aWaiting
@@ -379,7 +384,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const filteredAppointments = computed(() =>
       assignedAppointments.value.filter((item) => {
         if (props.existingOnly && !initialPaymentReceived(item)) return false
-        if (String(item.consultationMode || '').trim().toLowerCase() !== 'online' && !item.meetLink) return false
+        if (normalized(item.consultationMode) !== 'online') return false
         const queryText = searchQuery.value.trim().toLowerCase()
         const clientName = (item.clientName || item.patientName || '').toLowerCase()
         const service = (item.service || item.type || '').toLowerCase()
@@ -513,48 +518,78 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       } catch (error) { callWindow?.close(); toast.error(error.message) }
     }
 
-    const openMeetLinkForm = appointment => {
-      if (!appointment?.id || !canCreateMeetLink.value) return
-      meetLinkAppointment.value = appointment
-      meetLinkDraft.value = String(appointment.meetLink || '')
-      meetLinkError.value = ''
-    }
+    const canGenerateMeetLink = appointment => Boolean(
+      canCreateMeetLink.value && meetAccount.value.connected && isAssignedToPractitioner(appointment)
+      && !appointment?.meetLink && normalized(appointment?.consultationMode) === 'online'
+    )
 
-    const closeMeetLinkForm = () => {
-      if (invitingId.value) return
-      meetLinkAppointment.value = null
-      meetLinkDraft.value = ''
-      meetLinkError.value = ''
-    }
-
-    const attachMeetLink = async (appointment) => {
-      if (!appointment?.id || invitingId.value || !canCreateMeetLink.value) return
-      let normalizedLink = ''
+    const loadMeetAccount = async () => {
+      if (meetAccountLoading.value) return
+      meetAccountLoading.value = true
+      meetAccountError.value = ''
       try {
-        const parsed = new URL(meetLinkDraft.value.trim())
-        if (parsed.protocol === 'https:' && parsed.hostname === 'meet.google.com' && /^\/[a-z0-9-]{6,40}\/?$/i.test(parsed.pathname)) normalizedLink = `https://meet.google.com/${parsed.pathname.split('/').filter(Boolean)[0]}`
-      } catch { /* the validation message below guides the user */ }
-      if (!normalizedLink) {
-        meetLinkError.value = 'Enter a valid link from meet.google.com.'
-        return
-      }
-      invitingId.value = appointment.id
-      try {
-        const response = await fetchFromBackend(`/appointments/${appointment.id}/attach-meet-link`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ meetLink: normalizedLink }) })
+        const response = await fetchFromBackend('/google-meet/account')
         const payload = await response.json()
-        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to save the Google Meet link.')
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to check the Google Meet connection.')
+        meetAccount.value = { configured: payload.data?.configured === true, connected: payload.data?.connected === true, email: String(payload.data?.email || '') }
+      } catch (error) {
+        meetAccountError.value = error.message || 'Unable to check the Google Meet connection.'
+      } finally { meetAccountLoading.value = false }
+    }
+
+    const connectGoogleAccount = async () => {
+      if (connectingGoogle.value || !currentBranchId.value || !canCreateMeetLink.value) return
+      connectingGoogle.value = true
+      meetAccountError.value = ''
+      try {
+        const response = await fetchFromBackend('/google-meet/account/connect', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ branchId: currentBranchId.value }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success || !payload.data?.url) throw new Error(payload?.error || 'Unable to connect your Google account.')
+        window.location.assign(payload.data.url)
+      } catch (error) {
+        meetAccountError.value = error.message || 'Unable to connect your Google account.'
+        connectingGoogle.value = false
+      }
+    }
+
+    const disconnectGoogleAccount = async () => {
+      if (meetAccountLoading.value) return
+      meetAccountLoading.value = true
+      meetAccountError.value = ''
+      try {
+        const response = await fetchFromBackend('/google-meet/account/disconnect', { method: 'POST' })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to disconnect the Google account.')
+        meetAccount.value = { ...meetAccount.value, connected: false, email: '' }
+        toast.success('Google Meet account disconnected.')
+      } catch (error) {
+        meetAccountError.value = error.message || 'Unable to disconnect the Google account.'
+      } finally { meetAccountLoading.value = false }
+    }
+
+    const generateMeetLink = async appointment => {
+      if (!appointment?.id || generatingId.value || !canGenerateMeetLink(appointment)) return
+      generatingId.value = appointment.id
+      try {
+        const response = await fetchFromBackend(`/appointments/${appointment.id}/generate-meet-link`, { method: 'POST' })
+        const payload = await response.json()
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to generate the Google Meet link.')
         appointment.meetLink = payload.data.meetLink
-        appointment.meetingProvider = 'google-meet-manual'
+        appointment.meetingProvider = 'google-meet-api'
+        appointment.hostVerified = true
         appointment.meetPresenceTrackingEnabled = false
         appointment.consultationInviteAt = payload.data.invitedAt || new Date().toISOString()
-        if (payload.data.linkLogged) await loadMeetLinkLogs()
-        meetLinkAppointment.value = null
-        meetLinkDraft.value = ''
-        if (payload.data.emailSent) toast.success('Meet link added. The customer was notified in the app and by email.')
-        else toast.warning('Meet link added and the customer was notified in the app, but the email could not be sent. Check the customer email and email service.')
+        appointment.consultationInviteEmailStatus = payload.data.emailSent ? 'sent' : 'failed'
+        await loadMeetLinkLogs()
+        if (payload.data.emailSent) toast.success('Meet link generated. The customer was notified in the app and by email.')
+        else toast.warning('Meet link generated and added to the customer’s app. Email delivery failed; check the customer email or email service.')
       } catch (error) {
-        meetLinkError.value = error.message || 'Unable to save the Google Meet link.'
-      } finally { invitingId.value = '' }
+        toast.error(error.message || 'Unable to generate the Google Meet link.')
+      } finally { generatingId.value = '' }
     }
 
     const canStartConsultation = (appointment) => {
@@ -729,6 +764,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     let disposed = false
     let consultationClock = null
     let meetPresenceClock = null
+    let oauthFeedbackHandled = false
 
     onMounted(trackPageLoad(() => {
       consultationClock = window.setInterval(() => {
@@ -747,6 +783,17 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
 
         if (disposed) return
+        if (!oauthFeedbackHandled && route.query.googleMeetConnection) {
+          oauthFeedbackHandled = true
+          const result = String(route.query.googleMeetConnection)
+          if (result === 'connected') toast.success('Google Meet account connected.')
+          else if (result === 'cancelled') toast.info('Google account connection was cancelled.')
+          else toast.error('Google Meet account could not connect. Check the Google configuration and try again.')
+          const queryParams = { ...route.query }
+          delete queryParams.googleMeetConnection
+          await router.replace({ path: route.path, query: queryParams, hash: route.hash })
+        }
+        await loadMeetAccount()
         await loadMeetLinkLogs()
         unsubscribeAppointments?.()
         unsubscribeAppointments = pageListener(onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value), where('type', '==', 'Consultation')), snapshot => loadAppointments(snapshot), error => toast.error(error.message || 'Live consultation updates are unavailable.'))
@@ -775,6 +822,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       meetLinkLogsError,
       meetLinkLogsHasMore,
       loadMeetLinkLogs,
+      meetAccount,
+      meetAccountLoading,
+      meetAccountError,
+      connectingGoogle,
+      generatingId,
+      connectGoogleAccount,
+      disconnectGoogleAccount,
+      canGenerateMeetLink,
+      generateMeetLink,
 
       startingId,
       finishingId,
@@ -786,9 +842,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       completionPrescriptionsText,
       completionError,
       meetEndedConfirmed,
-      meetLinkAppointment,
-      meetLinkDraft,
-      meetLinkError,
       currentBranchId,
       currentUserId,
       isSeedingDemo,
@@ -796,13 +849,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       activeDemoAppointment,
 
       meetLinkGateReason,
-      invitingId,
       canCreateMeetLink,
       isAssignedToPractitioner,
       joinCall,
-      openMeetLinkForm,
-      closeMeetLinkForm,
-      attachMeetLink,
       canStartConsultation,
       openStartChecklist,
       startConsultation,
@@ -820,3 +869,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   },
 }
 </script>
+
+<style scoped>
+.module-theme td.text-white { color: #3d281d; }
+.module-theme .text-slate-400 { color: #765d4c; }
+.module-theme .text-emerald-300 { color: #296348; }
+.module-theme .text-amber-300 { color: #805337; }
+.module-theme .text-rose-300 { color: #a13732; }
+</style>

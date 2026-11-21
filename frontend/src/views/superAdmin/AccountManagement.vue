@@ -134,16 +134,21 @@ const normalizeRoleKey = (value) => {
   if (!compact) return ''
   if (compact === 'superadmin' || compact === 'systemadmin' || compact === 'sysadmin') return 'Superadmin'
   if (compact === 'hr') return 'HR'
+  if (compact === 'clinicowner') return 'Clinic Owner'
   if (compact === 'clinicadmin' || compact === 'clinicadministrator') return 'Clinic Admin'
   return `${compact.charAt(0).toUpperCase()}${compact.slice(1)}`
 }
 
 const displayUserType = (user) => {
   const explicitType = String(user?.userType || user?.accountType || '').trim()
+  const explicitTypeKey = normalizeRoleKey(explicitType)
+  if (['Clinic', 'Clinic Owner', 'Clinic Admin', 'Owner'].includes(explicitTypeKey)) return 'Owner'
+  if (explicitTypeKey === 'Customer') return 'Customer'
+  if (explicitTypeKey === 'Staff') return 'Staff'
   if (explicitType) return explicitType
 
   const role = normalizeRoleKey(user?.role)
-  if (role === 'Clinic Admin' || role === 'Owner') return 'Clinic'
+  if (role === 'Clinic Admin' || role === 'Clinic Owner' || role === 'Owner') return 'Owner'
   if (role === 'Customer') return 'Customer'
   if (role === 'Supplier') return 'Supplier'
   if (role === 'HR' || role === 'Finance' || role === 'Manager' || role === 'Receptionist' || role === 'Practitioner') return 'Staff'
@@ -258,7 +263,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       })
     })
 
-    const userTypeOptions = computed(() => [...new Set(accounts.value.map((account) => account.userType).filter(Boolean))].sort())
+    const userTypeOptions = ['Owner', 'Staff', 'Customer']
     const paginatedAccounts = computed(() => {
       const start = (currentPage.value - 1) * pageSize.value
       return filteredAccounts.value.slice(start, start + pageSize.value)

@@ -172,11 +172,12 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   check(practitioner, 'Select an eligible practitioner for this appointment.', 400)
   const staffingRequirements = normalizeStaffing(services[0].staffingRequirements)
   const profile = (await tx.get(db.collection('practitionerProfiles').doc(workerId))).data()
+  const practitionerType = String(profile?.type || workerData.practitionerType || '')
   const requiredServices = packageComponents.length ? packageComponents : services
   for (const requiredService of requiredServices) {
     const requirements = normalizeStaffing(requiredService.staffingRequirements)
     const lead = requirements.find(row => row.responsibility === 'lead')
-    if (lead) check(profile?.type === lead.type && profile.approvedServiceIds?.includes(requiredService.id) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'Choose one credentialed lead practitioner approved for every service in this package.')
+    if (lead) check(practitionerType === lead.type && (!['Doctor', 'Registered Nurse'].includes(lead.type) || profile?.credentialsVerified === true), 'Choose one qualified lead practitioner for every service in this package.')
   }
   const schedules = await tx.get(db.collection('users').doc(workerId).collection('schedules'))
   const calendarDay = new Date(day + 'T00:00:00Z')

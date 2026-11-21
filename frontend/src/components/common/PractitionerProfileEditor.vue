@@ -6,7 +6,7 @@ import { compensationApi } from '@/utils/compensationApi'
 import ContractAppearanceSelect from './ContractAppearanceSelect.vue'
 import { practitionerTypes } from '../../../../shared/practitionerTeam.js'
 const props = defineProps({ employeeId: { type: String, required: true }, branchId: String })
-const form = reactive({ type: 'Aesthetician', credentialNumber: '', credentialsVerified: false, approvedServiceIds: [], rates: [] })
+const form = reactive({ type: 'Aesthetician', credentialNumber: '', credentialsVerified: false, rates: [] })
 const services = ref([]), busy = ref(false), error = ref(''), notice = ref(''), allowed = ref(false)
 const api = async (method, body) => {
   return compensationApi('/practitioner-profiles/' + encodeURIComponent(props.employeeId), method, body)
@@ -15,7 +15,12 @@ watch(() => props.employeeId, async () => {
   error.value = ''; notice.value = ''; allowed.value = false; busy.value = true
   try {
     const profile = await api('GET') || {}
-    Object.assign(form, { type: 'Aesthetician', credentialNumber: '', credentialsVerified: false, approvedServiceIds: [], rates: [] }, { ...profile, rates: (profile.rates || []).filter(rate => rate.responsibility === 'lead') })
+    Object.assign(form, {
+      type: profile.type || 'Aesthetician',
+      credentialNumber: profile.credentialNumber || '',
+      credentialsVerified: profile.credentialsVerified === true,
+      rates: (profile.rates || []).filter(rate => rate.responsibility === 'lead'),
+    })
     const employee = (await getDoc(doc(db, 'users', props.employeeId))).data() || {}
     const ids = [...new Set([employee.branchId, ...(employee.branchIds || []), props.branchId].filter(Boolean))]
     const listings = await Promise.all(ids.map(id => getDocs(query(collection(db, 'productServicePosts'), where('branchId', '==', id)))))
@@ -33,7 +38,7 @@ const save = async () => {
 <template>
   <section class="practitioner-editor">
     <h3>Practitioner specialty &amp; compensation</h3>
-    <p>System roles control access. This profile controls clinical eligibility and individual service earnings.</p>
+    <p>Assigned shifts control bookable dates and times. Specialty and required credential checks determine clinical eligibility.</p>
     <p v-if="busy" role="status">Loading or saving profile...</p>
     <p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
     <fieldset v-if="allowed" :disabled="busy">
@@ -41,19 +46,17 @@ const save = async () => {
       <label>Credential / license number<input v-model="form.credentialNumber" maxlength="100" /></label>
       <label class="check"><input v-model="form.credentialsVerified" type="checkbox" /> Credentials reviewed by clinic owner</label>
       <p>Verification records the clinic’s review; it does not verify a license automatically.</p>
-      <h4>Approved services</h4>
-      <label v-for="service in services" :key="service.id" class="check"><input type="checkbox" v-model="form.approvedServiceIds" :value="service.id" /> {{ service.title || service.serviceName || service.consultationName }}</label>
-      <p v-if="!services.length">Create a service listing first, then approve it here.</p>
       <h4>Service earnings agreements</h4>
       <p>This employee is the single lead practitioner assigned to a service. Percentages use the session price. Base pay and platform fees are separate.</p>
       <div v-for="(rate, index) in form.rates" :key="index" class="rate-grid">
-        <ContractAppearanceSelect :id="'rate-service-' + employeeId + index" label="Service" v-model="rate.serviceId" :options="[{ value: '', label: 'All approved services' }, ...services.map(item => ({ value: item.id, label: item.title || item.serviceName || item.consultationName }))]" />
+        <ContractAppearanceSelect :id="'rate-service-' + employeeId + index" label="Service" v-model="rate.serviceId" :options="[{ value: '', label: 'All services' }, ...services.map(item => ({ value: item.id, label: item.title || item.serviceName || item.consultationName }))]" />
         <p class="rate-responsibility">Lead practitioner</p>
         <ContractAppearanceSelect :id="'rate-model-' + employeeId + index" label="Model" v-model="rate.model" :options="[{ value: 'percent', label: 'Percentage' }, { value: 'fixed', label: 'Fixed fee (PHP)' }]" />
         <label>Rate<input v-model.number="rate.amount" type="number" min="0" :max="rate.model === 'percent' ? 100 : undefined" step="0.01" /></label>
         <label>Effective from<input v-model="rate.effectiveFrom" type="date" /></label><label>Effective until (optional)<input v-model="rate.effectiveUntil" type="date" /></label>
         <button type="button" @click="form.rates.splice(index, 1)">Remove agreement</button>
       </div>
+      <p v-if="!services.length">Create a service listing to set service-specific commission agreements.</p>
       <div class="buttons"><button type="button" @click="addRate">Add agreement</button><button type="button" @click="save" :disabled="busy">Save practitioner profile</button></div>
     </fieldset>
   </section>

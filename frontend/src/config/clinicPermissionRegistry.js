@@ -87,7 +87,7 @@ const legacyPermissionGroups = [
           { key: 'appointments:update', label: 'Update Appointments', description: 'Record permitted practitioner updates, follow-ups, and appointment changes.', icon: 'mdi:calendar-edit-outline' },
           { key: 'appointments:review', label: 'Review Appointment Changes', description: 'Review customer cancellation and reschedule requests.', icon: 'mdi:calendar-check-outline' },
           { key: 'consultations:view', label: 'View Online Consultations', description: 'Access online consultation screens.', icon: 'mdi:video-outline' },
-          { key: 'consultations:create', label: 'Add Consultation Links', description: 'Add a Google Meet link to an appointment and notify its customer.', icon: 'mdi:video-plus-outline' },
+          { key: 'consultations:create', label: 'Generate Consultation Links', description: 'Generate a Google Meet link for an appointment and notify its customer.', icon: 'mdi:video-plus-outline' },
         ],
       },
       {

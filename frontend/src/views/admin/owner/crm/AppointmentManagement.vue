@@ -80,44 +80,44 @@ const reviewActive = computed(() => activeTab.value === 'appointments' && appoin
   <div class="flex owner-theme min-h-screen">
     <OwnerSidebar />
     <main class="flex-1 min-w-0 p-4 md:p-8">
-      <h1 class="text-2xl md:text-3xl font-bold text-white">Appointment Management</h1>
-      <p class="mt-2 text-sm text-slate-400">Manage appointments, customer change requests, the clinic queue, and online consultations.</p>
+      <h1 class="text-2xl md:text-3xl font-bold text-[#3d281d]">Appointment Management</h1>
+      <p class="mt-2 text-sm text-[#765d4c]">Manage appointments, customer change requests, the clinic queue, and online consultations.</p>
       <nav class="appointment-tabs" aria-label="Appointment management tabs">
         <router-link v-if="canView" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments' }) }" class="appointment-tab" :class="{ 'is-active': allAppointmentsActive }" :aria-current="allAppointmentsActive ? 'page' : undefined">Appointments</router-link>
         <router-link v-if="canReview" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'appointments', view: 'review' }) }" class="appointment-tab" :class="{ 'is-active': reviewActive }" :aria-current="reviewActive ? 'page' : undefined">Change requests <span v-if="requestPendingCount !== null" class="tab-count">{{ requestPendingCount }}</span></router-link>
         <router-link v-if="canClinicQueue" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'queue' }) }" class="appointment-tab" :class="{ 'is-active': activeTab === 'queue' && !onlineMode }" :aria-current="activeTab === 'queue' && !onlineMode ? 'page' : undefined">Service queue</router-link>
-        <router-link v-if="canOnline" :to="{ path: '/crm/appointments', query: navigationQuery({ tab: 'queue', mode: 'online' }) }" class="appointment-tab" :class="{ 'is-active': activeTab === 'queue' && onlineMode }" :aria-current="activeTab === 'queue' && onlineMode ? 'page' : undefined">Online consultations</router-link>
+        <router-link v-if="canOnline" to="/clinical/consultations/online" class="appointment-tab">Online consultations</router-link>
       </nav>
-      <p v-if="!canAppointments && !canQueue" class="text-sm text-slate-400">You do not have permission to access appointment management.</p>
+      <p v-if="!canAppointments && !canQueue" class="text-sm text-[#765d4c]">You do not have permission to access appointment management.</p>
 
       <template v-if="activeTab === 'appointments' && canAppointments">
         <div v-if="appointmentView === 'review'" class="mb-5">
-          <h2 class="text-lg font-semibold text-white">Customer change requests</h2>
-          <p class="mt-1 text-sm text-slate-400">Review customer cancellation and reschedule requests. New bookings are scheduled automatically when the requested slot passes availability checks.</p>
+          <h2 class="text-lg font-semibold text-[#3d281d]">Customer change requests</h2>
+          <p class="mt-1 text-sm text-[#765d4c]">Review customer cancellation and reschedule requests. New bookings are scheduled automatically when the requested slot passes availability checks.</p>
         </div>
         <div v-if="needsBranch && branches.length > 1" class="mb-5">
-          <label for="appointment-branch" class="text-sm text-slate-400">Clinic branch</label>
-          <select id="appointment-branch" v-model="branchId" @change="syncSelectedBranch" class="mt-2 block w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.clinicName || branch.id }}</option></select>
+          <label for="appointment-branch" class="text-sm text-[#765d4c]">Clinic branch</label>
+          <select id="appointment-branch" v-model="branchId" @change="syncSelectedBranch" class="mt-2 block w-full max-w-sm rounded-lg border border-[#d9b894] bg-white px-3 py-2 text-[#3d281d]"><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.clinicName || branch.id }}</option></select>
         </div>
         <AppointmentRecords v-if="appointmentView === 'all' && canView" />
         <AppointmentRequestApprovals v-if="canReview && scopeReady && branchId" v-show="appointmentView === 'review'" :key="`requests-${branchId}`" :branch-id="branchId" embedded @pending-count="requestPendingCount = $event" />
       </template>
 
       <section v-if="activeTab === 'queue' && canQueue">
-        <p v-if="!scopeReady" class="text-sm text-slate-400" role="status">Loading clinic branches…</p>
+        <p v-if="!scopeReady" class="text-sm text-[#765d4c]" role="status">Loading clinic branches…</p>
         <div v-if="branches.length > 1" class="mb-5">
-          <label for="appointment-branch" class="text-sm text-slate-400">Clinic branch</label>
-          <select id="appointment-branch" v-model="branchId" @change="syncSelectedBranch" class="mt-2 block w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-white"><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.clinicName || branch.id }}</option></select>
+          <label for="appointment-branch" class="text-sm text-[#765d4c]">Clinic branch</label>
+          <select id="appointment-branch" v-model="branchId" @change="syncSelectedBranch" class="mt-2 block w-full max-w-sm rounded-lg border border-[#d9b894] bg-white px-3 py-2 text-[#3d281d]"><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.clinicBranch || branch.clinicName || branch.id }}</option></select>
         </div>
-        <div v-if="scopeReady && !branchId" class="text-sm text-slate-400">{{ branchError || 'No clinic branch is linked to your account.' }}</div>
+        <div v-if="scopeReady && !branchId" class="text-sm text-[#765d4c]">{{ branchError || 'No clinic branch is linked to your account.' }}</div>
         <template v-else-if="scopeReady && branchId">
           <PractitionerOnlineConsultation v-if="onlineMode && canOnline" :key="`online-${branchId}`" :branch-id="branchId" :existing-only="!hasFeature('online_consultations')" embedded />
           <PractitionerAppointments v-else-if="!onlineMode && canView" :key="`queue-${branchId}`" :branch-id="branchId" embedded />
-          <p v-else class="text-sm text-slate-400">You do not have access to online consultations.</p>
+          <p v-else class="text-sm text-[#765d4c]">You do not have access to online consultations.</p>
         </template>
       </section>
-      <p v-else-if="needsBranch && !scopeReady" class="text-sm text-slate-400" role="status">Loading clinic branches…</p>
-      <p v-else-if="needsBranch && !branchId" class="text-sm text-slate-400">{{ branchError || 'No clinic branch is linked to your account.' }}</p>
+      <p v-else-if="needsBranch && !scopeReady" class="text-sm text-[#765d4c]" role="status">Loading clinic branches…</p>
+      <p v-else-if="needsBranch && !branchId" class="text-sm text-[#765d4c]">{{ branchError || 'No clinic branch is linked to your account.' }}</p>
     </main>
   </div>
 </template>

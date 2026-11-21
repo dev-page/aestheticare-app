@@ -1,20 +1,42 @@
 # Google Meet for online consultations
 
-AesthetiCare uses manually created Google Meet rooms. It does not connect to a Google account, call the Meet API, or create Calendar events. Clinic staff still sign in to Google directly at `meet.google.com`; the Google unverified-app consent screen is not part of this workflow.
+AesthetiCare generates a separate Google Meet room for each online appointment
+through the Google Meet REST API. The assigned practitioner connects their own
+Google account once, then generates the link from the appointment row. Calendar
+events are not created.
 
 ## Clinic workflow
 
-1. The customer signs the consultation agreement and pays the required amount.
-2. Within 30 minutes of the appointment, the customer enters their six-digit service key in **My Appointments**. This verifies check-in and places them in the virtual waiting room. The key is not a Google credential.
-3. A clinic employee with branch access and the `consultations:create` permission opens **Appointment Management > Service queue > Online Consultations**. They select **Create room in Google Meet**, sign in to the Google account that should host the call, and create a room.
-4. The employee copies the URL from Google Meet, returns to the appointment, and selects **Add link & notify**. AesthetiCare validates and saves the link, posts an in-app notification, and emails the customer's appointment email. If the email cannot be sent, the link remains available in the app and the clinic sees a warning.
-5. The customer and clinic open the same link from their appointment. The assigned practitioner confirms the customer's identity and starts the consultation timer in AesthetiCare.
-6. At the end, the Meet host selects **End meeting for everyone** in Google Meet. The assigned practitioner confirms that in AesthetiCare and saves the clinical notes.
+1. The customer books an online consultation, signs the agreement, and pays the
+   required amount.
+2. The assigned practitioner opens **Online Consultations**, connects their
+   Google account if needed, and selects **Generate link & notify** for the
+   appointment.
+3. AesthetiCare creates a meeting space under that practitioner's Google
+   account, stores the link for the appointment, writes a Meet link history
+   record, and notifies the customer in the app and by email.
+4. The customer enters their six-digit service key in **My Appointments** to
+   reveal the link. The service key is not a Google credential.
+5. The practitioner and customer join the same room. The practitioner checks
+   the customer's identity, admits them if prompted by Google Meet, and starts
+   the consultation timer in AesthetiCare.
+6. At the end, the Meet host ends the call in Google Meet. The assigned
+   practitioner confirms this in AesthetiCare and saves the clinical notes.
 
-For the assigned practitioner to have host controls, create the room while signed into that practitioner's Google account. If another employee creates it, that employee is the host and must end the call or make the practitioner a co-host in Google Meet.
+The history table is below the online consultation appointment table. It records
+the practitioner, customer, service, appointment time, and when each new link
+was generated. It does not expose the link itself.
 
-## Setup and account keys
+## Google configuration
 
-No Google OAuth client, Calendar permission, Meet API scope, or Google service-account key is needed for this workflow. Email delivery uses the backend's existing email-provider configuration. AesthetiCare's six-digit service key remains the customer's appointment check-in code; it is not used to create or authenticate a Google room.
+The backend needs `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, a
+registered callback URL (`GOOGLE_OAUTH_REDIRECT_URI` outside production), and a
+32-byte base64 `GOOGLE_TOKEN_ENCRYPTION_KEY`. Production uses
+`https://aestheticare.online/api/google-meet/oauth/callback` as its callback.
+Register the matching redirect URI in the Google OAuth client.
 
-Google OAuth credentials that were used by the older automatic-room workflow can remain in deployment settings while legacy consultation records still need them. New consultations do not use those credentials. Do not put a Firebase Admin service-account JSON key in the browser or use it as a Google Meet credential.
+Each practitioner authorizes AesthetiCare with the Google Meet
+`meetings.space.created` scope. The backend stores only an encrypted refresh
+token and the account identity. No Calendar permission or Firebase service
+account key is used as a Google Meet credential. Do not put Google OAuth
+secrets or tokens in the frontend.

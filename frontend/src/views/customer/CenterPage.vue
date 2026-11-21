@@ -801,12 +801,11 @@ const bookingAvailabilityHint = computed(() => {
     const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
     return !lead || (
       practitioner.practitionerType === lead.type
-      && practitioner.approvedServiceIds?.map(String).includes(String(service.id))
       && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified)
     )
   }))
   if (!eligiblePractitioners.length) {
-    return 'No available dates: no practitioner is approved for this service. In Employee Profiles, approve the service for a qualified practitioner and verify required credentials.'
+    return 'No available dates: no practitioner with the required specialty and verified credentials is available for this service.'
   }
 
   let scheduledDays = 0
@@ -848,7 +847,7 @@ const bookingAvailabilityHint = computed(() => {
   }
 
   if (!scheduledDays) {
-    return 'No available dates: practitioners approved for this service do not have an effective shift assigned. Assign recurring shifts in HR → Shift Assignment.'
+    return 'No available dates: matching practitioners do not have an effective shift assigned. Assign recurring shifts in HR → Shift Assignment.'
   }
   if (!clinicOverlapDays) {
     return 'No available dates: practitioner shifts do not overlap the clinic’s opening hours. Check Clinic Setup hours and the assigned shifts.'
@@ -859,7 +858,7 @@ const bookingAvailabilityHint = computed(() => {
   if (!durationFitDays) {
     return `No available dates: the matching shifts do not have a continuous ${duration}-minute opening for this appointment.`
   }
-  return 'No available dates were generated. Check the practitioner’s effective shift, clinic opening hours, service approval, and leave dates.'
+  return 'No available dates were generated. Check the practitioner’s specialty, verified credentials, effective shift, clinic opening hours, and leave dates.'
 })
 const selectedServiceTotal = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.price || 0), 0)
@@ -1774,7 +1773,7 @@ const bookingSlots = computed(() => {
       const eligibleServices = selected?.type === 'Package' ? selected.packageComponents || [] : [selected].filter(Boolean)
       if (!eligibleServices.every(service => {
         const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
-        return !lead || (practitioner.practitionerType === lead.type && practitioner.approvedServiceIds?.includes(service.id) && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
+        return !lead || (practitioner.practitionerType === lead.type && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
       })) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)
@@ -1957,7 +1956,7 @@ const buildBookingSlotsForPractitioners = (practitionerList = []) => {
       const eligibleServices = selected?.type === 'Package' ? selected.packageComponents || [] : [selected].filter(Boolean)
       if (!eligibleServices.every(service => {
         const lead = service?.staffingRequirements?.find(row => row.responsibility === 'lead')
-        return !lead || (practitioner.practitionerType === lead.type && practitioner.approvedServiceIds?.includes(service.id) && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
+        return !lead || (practitioner.practitionerType === lead.type && (!['Doctor', 'Registered Nurse'].includes(lead.type) || practitioner.credentialsVerified))
       })) return
       if (isPractitionerOnApprovedLeave(practitioner.id, dateKey)) return
       const scheduleWindow = getScheduleDayWindow(practitionerSchedules.value?.[practitioner.id] || {}, weekKey, dayName)

@@ -6983,12 +6983,13 @@ app.get('/public/clinics/:branchId/practitioners', requireAuth, async (req, res)
         fullName: String(staff.fullName || '').trim()
           || `${String(staff.firstName || '').trim()} ${String(staff.lastName || '').trim()}`.trim()
           || 'Unnamed Practitioner',
+        practitionerType: String(staff.practitionerType || '').trim(),
       }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName))
 
     await Promise.all(practitioners.map(async practitioner => {
       const profile = (await firestore.collection('practitionerProfiles').doc(practitioner.id).get()).data()
-      Object.assign(practitioner, { practitionerType: profile?.type || '', approvedServiceIds: profile?.approvedServiceIds || [], credentialsVerified: profile?.credentialsVerified === true })
+      Object.assign(practitioner, { practitionerType: profile?.type || practitioner.practitionerType || '', credentialsVerified: profile?.credentialsVerified === true })
     }))
     const availabilityEntries = await Promise.all(practitioners.map(async (practitioner) => {
       const [schedulesSnap, leavesSnap] = await Promise.all([

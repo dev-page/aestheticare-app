@@ -14,8 +14,10 @@ export const prepareTeamStart = async (tx, db, appointment, id) => {
     const user = (await tx.get(db.collection('users').doc(member.employeeId))).data()
     const profile = (await tx.get(db.collection('practitionerProfiles').doc(member.employeeId))).data()
     check(user && !user.archived && String(user.status).toLowerCase() === 'active' && [user.branchId, ...(user.branchIds || [])].includes(appointment.branchId), 'A team member is inactive or no longer assigned to this branch.')
-    if (requirements.length) check(profile && profile.approvedServiceIds.includes(serviceIdFor(appointment)) && (!['Doctor', 'Registered Nurse'].includes(profile.type) || profile.credentialsVerified), 'Configure verified credentials and approved services for every required team member.')
-    const entry = { employeeId: member.employeeId, name: nameFor(user), type: profile?.type || 'Other', responsibility: 'lead', participationConfirmed: true }
+    const practitionerType = profile?.type || user.practitionerType || 'Other'
+    const leadRequirement = requirements.find(requirement => requirement.responsibility === 'lead')
+    if (leadRequirement) check(practitionerType === leadRequirement.type && (!['Doctor', 'Registered Nurse'].includes(leadRequirement.type) || profile?.credentialsVerified === true), 'Confirm that the assigned practitioner has the required specialty and verified credentials.')
+    const entry = { employeeId: member.employeeId, name: nameFor(user), type: practitionerType, responsibility: 'lead', participationConfirmed: true }
     members.push(entry)
     const rateSnapshot = rateFor(profile, serviceIdFor(appointment), member.responsibility, appointment.date)
     if (profile || requirements.length) check(rateSnapshot, 'Configure an effective compensation agreement for the lead practitioner before treatment starts.')

@@ -64,7 +64,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     }
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: blankAssignments(), assignmentLabels: {} })
     const originalScheduleDraft = ref(null)
-    const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
+    const commissionDraft = ref({ rates: [] })
     const originalCommissionDraft = ref(null)
     const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 })
     const staffList = ref([])
@@ -292,7 +292,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         basePay: staff.basePay == null ? '' : Number(staff.basePay),
         monthlyBaseHours: Number(staff.monthlyBaseHours || 176),
       }
-      commissionDraft.value = { approvedServiceIds: [], rates: [] }
+      commissionDraft.value = { rates: [] }
       originalCommissionDraft.value = null
       scheduleDraft.value = {
         branchId: staff.branchId || staff.branchIds?.[0] || '',
@@ -343,7 +343,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
         originalScheduleDraft.value = JSON.stringify(scheduleDraft.value)
         commissionDraft.value = {
-          approvedServiceIds: Array.isArray(practitionerProfile?.approvedServiceIds) ? [...practitionerProfile.approvedServiceIds] : [],
           rates: Array.isArray(practitionerProfile?.rates) ? practitionerProfile.rates.map(rate => ({ ...rate })) : [],
         }
         originalCommissionDraft.value = JSON.stringify(commissionDraft.value)
@@ -635,7 +634,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               type: currentStaff.value.practitionerType || originalSpecialty.value.type,
               credentialNumber: currentStaff.value.credentialNumber || originalSpecialty.value.credentialNumber,
               credentialsVerified: practitionerDetailsChanged ? false : practitionerCredentialsVerified.value,
-              approvedServiceIds: commissionDraft.value.approvedServiceIds,
+              approvedServiceIds: [],
               rates: commissionDraft.value.rates,
             })
             practitionerCredentialsVerified.value = practitionerDetailsChanged ? false : practitionerCredentialsVerified.value
@@ -919,7 +918,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               <h3>Service Commissions</h3>
               <p v-if="commissionLoadError" class="employee-edit-error" role="alert">{{ commissionLoadError }}</p>
               <CreateAccountCommissionAgreements v-else-if="showPractitionerFields && canManageCommissions" ref="commissionEditorRef" v-model="commissionDraft" :branch-ids="currentStaff.branchIds" />
-              <p v-else-if="showPractitionerFields" class="employee-edit-caption">The clinic owner can update this practitioner's service approvals and commission agreements.</p>
+              <p v-else-if="showPractitionerFields" class="employee-edit-caption">The clinic owner can update this practitioner's commission agreements.</p>
               <p v-else class="employee-edit-caption">Service commissions are available for Practitioner roles and roles with consultation permissions.</p>
             </section>
           </div>

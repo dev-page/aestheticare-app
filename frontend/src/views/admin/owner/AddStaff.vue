@@ -105,7 +105,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const commissionEditorRef = ref(null)
     const scheduleDraft = ref({ branchId: '', effectiveFrom: '', weeklyHoursCap: 0, assignments: {} })
     const basePay = ref({ basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 })
-    const commissionDraft = ref({ approvedServiceIds: [], rates: [] })
+    const commissionDraft = ref({ rates: [] })
     const canUseHr = computed(() => hasFeature('hr'))
     const canViewShifts = computed(() => canUseHr.value && hasPermission('hr:view'))
     const canCreateShifts = computed(() => canUseHr.value && hasPermission('hr:create'))
@@ -292,7 +292,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       activeStep.value = 1
       scheduleDraft.value = { branchId: '', effectiveFrom: '', weeklyHoursCap: 40, assignments: {} }
       basePay.value = { basePayModel: 'hourly', basePay: '', monthlyBaseHours: 176 }
-      commissionDraft.value = { approvedServiceIds: [], rates: [] }
+      commissionDraft.value = { rates: [] }
       practitionerIdFile.value = null
       practitionerOcrSequence += 1
       practitionerOcrBusy.value = false
@@ -613,7 +613,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       if (practitionerLicenseInput.value) practitionerLicenseInput.value.value = ''
     })
     watch(() => currentStaff.value.practitionerType, () => {
-      commissionDraft.value = { approvedServiceIds: [], rates: [] }
+      commissionDraft.value = { rates: [] }
     })
     watch(
       () => [currentStaff.value.firstName, currentStaff.value.middleName, currentStaff.value.lastName, currentStaff.value.suffix].map(value => String(value || '').trim()).join('|'),
@@ -876,13 +876,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
           profileCreated = true
 
-          if (isPractitionerRole.value && canManageCommissions.value && (commissionDraft.value.approvedServiceIds.length || commissionDraft.value.rates.length)) {
+          if (isPractitionerRole.value && canManageCommissions.value && commissionDraft.value.rates.length) {
             try {
               await compensationApi(`/practitioner-profiles/${encodeURIComponent(uid)}`, 'POST', {
                 type: currentStaff.value.practitionerType,
                 credentialNumber: practitionerOcrResult.value?.licenseNumber || '',
                 credentialsVerified: false,
-                approvedServiceIds: commissionDraft.value.approvedServiceIds,
+                approvedServiceIds: [],
                 rates: commissionDraft.value.rates,
               })
             } catch (commissionError) {
