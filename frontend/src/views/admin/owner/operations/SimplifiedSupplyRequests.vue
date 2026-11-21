@@ -215,7 +215,7 @@ const branchAddress = computed(() => String(activeBranch.value.address || active
 const suppliers = computed(() => data.value.suppliers.filter(supplier => supplier.status === 'Active' && supplier.associationStatus === 'Active'))
 const inventoryCategories = computed(() => buildSupplyCategoryOptions([
   ...data.value.records.filter(record => ['request', 'procurement', 'po', 'receiving'].includes(record.kind)).flatMap(record => [record.category, ...(record.lines || []).map(line => line.category)]),
-  ...data.value.suppliers.map(supplier => supplier.category),
+  ...data.value.suppliers.flatMap(supplier => [...(supplier.categories || []), supplier.category].filter(Boolean)),
 ]))
 const records = computed(() => data.value.records.filter(record => mode.value === 'inventory' ? record.kind === 'request' : mode.value === 'procurement' ? ['procurement', 'po'].includes(record.kind) : record.kind === 'po'))
 const procurementRecords = computed(() => records.value.filter(record => record.kind === 'procurement').sort((first, second) => createdTimestamp(second.createdAt) - createdTimestamp(first.createdAt)))

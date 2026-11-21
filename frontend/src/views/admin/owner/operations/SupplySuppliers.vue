@@ -45,7 +45,7 @@
           <div class="card-heading">
             <div>
               <h2>{{ supplier.businessName }}</h2>
-              <p>{{ supplier.category || 'Uncategorized supplier' }}</p>
+              <p>{{ supplierCategoryLabel(supplier) || 'Uncategorized supplier' }}</p>
             </div>
             <span class="status-pill" :class="statusClass(supplier.associationStatus)">{{ supplier.associationStatus }}</span>
           </div>
@@ -87,7 +87,32 @@
             <label>Business name <span aria-hidden="true">*</span>
               <input v-model.trim="form.businessName" required :disabled="editing && !editing.canEditBusiness" autocomplete="organization" />
             </label>
-            <CategorySelectField id="supplier-category" label="Category" v-model="form.category" :options="supplierCategoryOptions" :disabled="editing && !editing.canEditBusiness" />
+            <div class="supplier-category-field">
+              <label for="supplier-category-options">Categories</label>
+              <details class="supplier-category-picker" :class="{ 'is-disabled': editing && !editing.canEditBusiness }">
+                <summary
+                  id="supplier-category-options"
+                  :aria-disabled="Boolean(editing && !editing.canEditBusiness)"
+                  :tabindex="editing && !editing.canEditBusiness ? -1 : 0"
+                  @click="preventDisabledCategoryPicker"
+                >
+                  <span v-if="form.categories.length" :title="form.categories.join(', ')">{{ form.categories.join(', ') }}</span>
+                  <span v-else class="category-placeholder">Select one or more categories</span>
+                </summary>
+                <div class="supplier-category-options" role="group" aria-label="Supplier categories">
+                  <label v-for="category in supplierCategoryOptions" :key="category" class="supplier-category-option">
+                    <input
+                      type="checkbox"
+                      :value="category"
+                      :checked="form.categories.includes(category)"
+                      :disabled="editing && !editing.canEditBusiness"
+                      @change="toggleSupplierCategory(category, $event.target.checked)"
+                    />
+                    <span>{{ category }}</span>
+                  </label>
+                </div>
+              </details>
+            </div>
             <label>Contact person
               <input v-model.trim="form.contactPerson" :disabled="editing && !editing.canEditBusiness" autocomplete="name" />
             </label>
@@ -200,7 +225,6 @@ import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { onAuthStateChanged } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import SupplyFlowGuide from '@/components/common/SupplyFlowGuide.vue'
-import CategorySelectField from '@/components/common/CategorySelectField.vue'
 import { supplyCategoryOptions as buildSupplyCategoryOptions } from '@/utils/supplyCategories'
 import { auth, db, storage } from '@/config/firebaseConfig'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
@@ -229,7 +253,7 @@ const contactNumberError = ref('')
 const scope = ref({ branchId: '', ownerId: '' })
 
 const blank = () => ({
-  businessName: '', category: '', contactPerson: '', email: '', contactNumber: '', address: '',
+  businessName: '', categories: [], contactPerson: '', email: '', contactNumber: '', address: '',
   associationStatus: 'Active', ltoNumber: '', ltoDocument: null, ltoExpiryDate: '',
   ltoBusinessName: '', ltoStatus: 'not_uploaded', ltoOcrReason: '', ltoOcrProcessedAt: '',
 })
@@ -276,15 +300,31 @@ const visible = computed(() => {
     const id = supplier.supplierId || supplier.id
     if (seen.has(id)) return false
     seen.add(id)
-    const text = [supplier.businessName, supplier.contactPerson, supplier.email, supplier.category].join(' ').toLowerCase()
+    const text = [supplier.businessName, supplier.contactPerson, supplier.email, ...supplierCategories(supplier)].join(' ').toLowerCase()
     return (!search.value || text.includes(search.value.toLowerCase()))
       && (!status.value || supplier.associationStatus === status.value)
   })
 })
 const supplierCategoryOptions = computed(() => buildSupplyCategoryOptions([
-  ...associations.value.map(supplier => supplier.category),
-  form.value.category,
-]))
+  ...associations.value.flatMap(supplier => supplierCategories(supplier)),
+  ...form.value.categories,
+]).filter(category => category.trim().toLowerCase() !== 'other'))
+
+const supplierCategories = supplier => {
+  const values = Array.isArray(supplier?.categories) ? supplier.categories : [supplier?.category]
+  return [...new Set(values.map(value => String(value || '').trim().replace(/\s+/gu, ' ')).filter(Boolean))]
+}
+const supplierCategoryLabel = supplier => supplierCategories(supplier).join(', ')
+function toggleSupplierCategory(category, checked) {
+  if (editing.value && !editing.value.canEditBusiness) return
+  const current = supplierCategories({ categories: form.value.categories })
+  form.value.categories = checked
+    ? [...new Set([...current, category])]
+    : current.filter(value => value !== category)
+}
+function preventDisabledCategoryPicker(event) {
+  if (editing.value && !editing.value.canEditBusiness) event.preventDefault()
+}
 
 const ltoStatusLabel = value => {
   if (!value || value === 'not_uploaded') return 'Not uploaded'
@@ -376,6 +416,7 @@ const errorMessage = error => {
 }
 const view = (supplier, link = {}) => ({
   ...supplier,
+  categories: supplierCategories(supplier),
   supplierId: supplier.id,
   key: link.id || supplier.id,
   associationId: link.id || '',
@@ -426,7 +467,7 @@ function edit(supplier) {
   form.value = {
     ...blank(),
     businessName: supplier.businessName || '',
-    category: supplier.category || '',
+    categories: supplierCategories(supplier).filter(category => category.toLowerCase() !== 'other'),
     contactPerson: supplier.contactPerson || '',
     email: supplier.email || '',
     contactNumber: normalizeSupplierPhone(supplier.contactNumber),
@@ -622,7 +663,8 @@ async function save() {
       if (editing.value.canEditBusiness) {
         batch.update(doc(db, 'suppliers', editing.value.supplierId), {
           businessName: form.value.businessName,
-          category: form.value.category,
+          categories: supplierCategories({ categories: form.value.categories }),
+          category: supplierCategories({ categories: form.value.categories })[0] || '',
           contactPerson: form.value.contactPerson,
           email: form.value.email,
           contactNumber: form.value.contactNumber ? `+63${form.value.contactNumber}` : '',
@@ -654,7 +696,8 @@ async function save() {
       const associationRef = doc(collection(db, 'clinicSuppliers'))
       batch.set(supplierRef, {
         businessName: form.value.businessName,
-        category: form.value.category,
+        categories: supplierCategories({ categories: form.value.categories }),
+        category: supplierCategories({ categories: form.value.categories })[0] || '',
         contactPerson: form.value.contactPerson,
         email: form.value.email,
         contactNumber: form.value.contactNumber ? `+63${form.value.contactNumber}` : '',
@@ -775,6 +818,21 @@ button:disabled { opacity: .58; cursor: wait; }
 .modal-intro { margin: .8rem 0; color: var(--ac-text-muted); font-size: .86rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-top: .8rem; }
 .form-grid > label > span { color: var(--ac-danger); }
+.supplier-category-field { display: grid; min-width: 0; align-content: start; gap: .32rem; color: var(--ac-text-secondary); font-size: .78rem; font-weight: 700; }
+.supplier-category-picker { position: relative; z-index: 2; min-width: 0; font-size: .88rem; font-weight: 400; }
+.supplier-category-picker summary { display: flex; min-height: 2.8rem; align-items: center; justify-content: space-between; gap: .75rem; box-sizing: border-box; border: 1px solid var(--ac-border-strong); border-radius: .6rem; padding: .65rem .75rem; color: var(--ac-text); background: var(--ac-surface); cursor: pointer; list-style: none; }
+.supplier-category-picker summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supplier-category-picker summary::-webkit-details-marker { display: none; }
+.supplier-category-picker summary::after { flex: 0 0 auto; content: '⌄'; color: var(--ac-text-muted); font-size: 1rem; transition: transform .15s ease; }
+.supplier-category-picker[open] summary { border-color: var(--ac-primary); border-radius: .6rem .6rem 0 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac-primary) 12%, transparent); }
+.supplier-category-picker[open] summary::after { transform: rotate(180deg); }
+.category-placeholder { color: var(--ac-text-muted); }
+.supplier-category-options { position: absolute; top: calc(100% - 1px); left: 0; right: 0; display: grid; max-height: 15rem; overflow-y: auto; border: 1px solid var(--ac-border-strong); border-radius: 0 0 .65rem .65rem; padding: .35rem; background: var(--ac-surface); box-shadow: var(--ac-shadow-lg); }
+.supplier-category-option { display: flex; min-height: 2.45rem; align-items: center; gap: .65rem; border-radius: .45rem; padding: .45rem .6rem; color: var(--ac-text); cursor: pointer; }
+.supplier-category-option:hover { background: var(--ac-surface-soft); }
+.supplier-category-option input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--ac-primary); }
+.supplier-category-picker.is-disabled summary { cursor: not-allowed; opacity: .72; background: var(--ac-surface-muted); }
+.supplier-category-picker.is-disabled[open] .supplier-category-options { display: none; }
 .form-grid :is(input, select, textarea):disabled { opacity: .72; background: var(--ac-surface-muted); cursor: not-allowed; }
 .form-grid textarea { resize: vertical; }
 .full-width { grid-column: 1 / -1; }
