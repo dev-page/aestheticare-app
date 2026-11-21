@@ -5,9 +5,10 @@
     ],
     "target": {
       "namespace": "android_app",
-      "package_name": "REPLACE_WITH_ANDROID_PACKAGE_NAME",
+      "package_name": "online.aestheticare.twa",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_SHA256_SIGNING_CERTIFICATE_FINGERPRINT"
+        "2E:8B:B0:50:DC:F0:16:26:22:B1:B1:ED:61:6B:00:26:42:30:BA:DB:70:0D:47:D1:F8:A3:B2:CF:76:69:84:6E",
+        "2A:B2:57:16:EB:3C:0B:49:C4:DA:E8:07:E2:3F:2A:36:33:CD:D3:25:AA:7F:73:20:EF:50:A9:9F:36:83:95:4D"
       ]
     }
   }
