@@ -47,7 +47,7 @@
             <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
             <p>{{ clinicNameFor(appt) }} · {{ appt.date }} · {{ formatClockTime(appt.time) }}</p>
             <p v-if="paymentHoldMessage(appt)" class="text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(appt) }}</p>
-            <button v-if="appt.contract?.terms || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
+            <button v-if="appt.contract?.terms || appt.contract?.document || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
             <p v-else class="text-sm">Your clinic is preparing the contract. Payment will be available after you sign.</p>
           </article>
         </section>
@@ -183,7 +183,7 @@
             <PageSectionSkeleton variant="table" :rows="4" :columns="7" />
           </div>
 
-          <div v-else class="appointments-table-wrap">
+          <div v-else class="appointments-table-wrap online-consultations-table-wrap">
             <table class="appointments-table online-consultations-table">
               <thead>
                 <tr>
@@ -837,9 +837,12 @@ const appointmentFeedbackError = ref('')
 let appointmentFeedbackRequest = 0
 const clinicsById = ref({})
 const clinicNameFor = (record) => {
-  const branchId = String(record?.branchId || record?.clinicId || '').trim()
+  const branchId = String(record?.branchId || record?.clinicId || record?.clinicBranchId || record?.clinic?.id || '').trim()
   const clinic = branchId ? clinicsById.value[branchId] : null
-  return String(clinic?.name || record?.clinicName || record?.clinicBranch || record?.branchName || 'Clinic').trim() || 'Clinic'
+  const savedName = [record?.clinicName, record?.clinicBranch, record?.branchName, record?.businessName, record?.companyName, record?.name, typeof record?.clinic === 'string' ? record.clinic : '']
+    .map((name) => String(name || '').trim())
+    .find((name) => name && name.toLowerCase() !== 'clinic')
+  return clinic?.name && clinic.name.toLowerCase() !== 'clinic' ? clinic.name : savedName || 'Clinic'
 }
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -1866,7 +1869,7 @@ const startAppointmentsListener = (userId) => {
           id: snap.id,
           ...data,
           ...(meetingSnap?.exists() && (meetingSnap.data().hostVerified || meetingSnap.data().meetingProvider === 'google-meet-manual') && data.consultationCodeVerifiedAt && meetingSnap.data().practitionerId === (data.assignedPractitionerId || data.practitionerId) && Date.parse(meetingSnap.data().scheduledStartAt) === Date.parse(`${data.date}T${data.time}+08:00`) ? meetingSnap.data() : { meetLink: '' }),
-          clinic: clinicMap.get(data.branchId)?.name || 'Clinic',
+          clinic: clinicMap.get(data.branchId)?.name || data.clinicName || data.clinicBranch || data.branchName || data.businessName || data.companyName || 'Clinic',
         }
       }))
 
@@ -1918,8 +1921,7 @@ const startClinicsListener = () => {
   }
 
   // Public clinic reads must be constrained to the field required by the
-  // Firestore rule. Historical appointments still fall back to “Clinic” when
-  // their former clinic is no longer published.
+  // Firestore rule. Historical appointments also use their saved clinic name.
   unsubscribeClinics = pageListener(
     onSnapshot, query(collection(db, 'publicClinics'), where('isPublished', '==', true)),
     (snapshot) => {
@@ -1929,7 +1931,9 @@ const startClinicsListener = () => {
         const cancellationLinked = !enforcedPolicyKeys || enforcedPolicyKeys.has('cancellationPolicy')
         const rescheduleLinked = !enforcedPolicyKeys || enforcedPolicyKeys.has('reschedulePolicy')
         clinicMap.set(data.id, {
-          name: data.clinicName || data.clinicBranch || 'Clinic',
+          name: [data.clinicName, data.clinicBranch, data.branchName, data.businessName, data.companyName, data.name]
+            .map((name) => String(name || '').trim())
+            .find((name) => name && name.toLowerCase() !== 'clinic') || 'Clinic',
           cancellationPolicy: String(data.cancellationPolicy || '').trim(),
           cancellationPolicyEnabled: cancellationLinked && (data.cancellationPolicyEnabled === true || data.serviceCancellationPolicyEnabled === true || data.refundPolicyEnabled === true),
           reschedulePolicy: String(data.reschedulePolicy || '').trim(),
@@ -2526,7 +2530,7 @@ const resumeCustomerBookingFlow = async () => {
     return
   }
   if (flow !== 'sign-and-pay' || bookingFlowPromptedAppointmentId.value === appointmentId) return
-  if (!appointment.contract || !(appointment.contract.terms || appointment.contract.templateUrl)) return
+  if (!appointment.contract || !(appointment.contract.terms || appointment.contract.document || appointment.contract.templateUrl)) return
   bookingFlowPromptedAppointmentId.value = appointmentId
   openContract(appointment)
 }
@@ -2904,73 +2908,34 @@ onUnmounted(() => {
 }
 
 .online-consultations-table.appointments-table {
-  display: block;
-  width: 100%;
-  min-width: 0;
+  min-width: 1020px;
+  table-layout: fixed;
 }
 
-.online-consultations-table.appointments-table thead {
-  display: none;
-}
+.online-consultations-table th:nth-child(1) { width: 18%; }
+.online-consultations-table th:nth-child(2) { width: 13%; }
+.online-consultations-table th:nth-child(3) { width: 9%; }
+.online-consultations-table th:nth-child(4) { width: 8%; }
+.online-consultations-table th:nth-child(5) { width: 24%; }
+.online-consultations-table th:nth-child(6) { width: 13%; }
+.online-consultations-table th:nth-child(7) { width: 15%; }
 
-.online-consultations-table.appointments-table tbody {
-  display: grid;
-  gap: 0.85rem;
-  padding: 0.85rem;
-}
-
-.online-consultations-table.appointments-table tbody tr {
-  display: block;
-  margin: 0;
-  border: 1px solid rgba(230, 193, 150, 0.72);
-  border-radius: 1.1rem;
-  overflow: hidden;
-  background: rgba(255, 251, 244, 0.96);
-  box-shadow: 0 10px 24px rgba(87, 56, 35, 0.06);
-}
-
-.online-consultations-table.appointments-table td {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: 0.3rem;
-  width: 100%;
-  padding: 0.8rem 0.9rem;
-  border-top: 1px solid rgba(230, 193, 150, 0.46);
-  white-space: normal;
-  word-break: normal;
+.online-consultations-table td {
   overflow-wrap: anywhere;
-}
-
-.online-consultations-table.appointments-table td::before {
-  content: attr(data-label);
-  color: #8c6d55;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1.4;
-}
-
-.online-consultations-table.appointments-table td[data-label=""]::before {
-  content: none;
-}
-
-.online-consultations-table.appointments-table td:first-child {
-  border-top: 0;
+  word-break: normal;
 }
 
 .online-consultations-table .appointment-service-cell {
   min-width: 0;
 }
 
-.online-consultations-table .table-actions {
-  justify-content: flex-start;
+.online-consultations-table .appointment-menu-key {
+  display: block;
+  margin-top: 0.45rem;
 }
 
-.online-consultations-table .table-actions .appointment-button {
-  width: 100%;
+.online-consultations-table .table-actions {
+  justify-content: flex-start;
 }
 
 .appointment-details-overlay {
@@ -3757,6 +3722,72 @@ onUnmounted(() => {
 
   .table-empty-cell::before {
     content: none;
+  }
+
+  .online-consultations-table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .online-consultations-table.appointments-table {
+    display: table;
+    width: 100%;
+    min-width: 1020px;
+    table-layout: fixed;
+  }
+
+  .online-consultations-table.appointments-table thead {
+    display: table-header-group;
+  }
+
+  .online-consultations-table.appointments-table tbody {
+    display: table-row-group;
+    width: auto;
+  }
+
+  .online-consultations-table.appointments-table tr {
+    display: table-row;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .online-consultations-table.appointments-table td {
+    position: static;
+    display: table-cell;
+    width: auto;
+    justify-content: initial;
+    gap: normal;
+    padding: 0.8rem 0.7rem;
+    font-size: 0.86rem;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .online-consultations-table.appointments-table td::before {
+    content: none;
+  }
+
+  .online-consultations-table.appointments-table td.table-empty-cell {
+    display: table-cell;
+    padding: 1.1rem 0.9rem;
+    text-align: center;
+  }
+
+  .online-consultations-table .table-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: auto;
+  }
+
+  .online-consultations-table .table-actions .appointment-button {
+    width: 100%;
   }
 }
 

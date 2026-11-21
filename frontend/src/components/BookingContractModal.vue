@@ -31,14 +31,17 @@
         <section v-if="customerView" class="contract-pdf-viewer">
           <div class="contract-pdf-viewer-head">
             <div>
-              <h4>Clinic agreement PDF</h4>
+              <h4>Clinic agreement</h4>
               <p>{{ isContractSigned ? 'This is the agreement saved with your appointment.' : 'Review this saved agreement before signing.' }}</p>
             </div>
             <a v-if="contractPdfUrl" :href="contractPdfUrl" target="_blank" rel="noopener noreferrer" class="contract-link">Open PDF in a new tab</a>
           </div>
-          <p v-if="contractPdfLoading" class="contract-pdf-state" role="status">Preparing the agreement PDF…</p>
+          <div v-if="contractDocumentForDisplay" class="customer-contract-document">
+            <ClientContractDocument :document="contractDocumentForDisplay" />
+          </div>
+          <p v-else-if="contractPdfLoading" class="contract-pdf-state" role="status">Preparing the agreement PDF…</p>
           <iframe v-else-if="contractPdfUrl" class="contract-pdf-frame" :src="contractPdfUrl" title="Clinic agreement PDF" />
-          <p v-else class="contract-pdf-state" :class="{ 'contract-pdf-state-error': contractPdfError }" :role="contractPdfError ? 'alert' : 'status'">{{ contractPdfError || 'No PDF agreement is attached to this appointment.' }}</p>
+          <p v-else class="contract-pdf-state" :class="{ 'contract-pdf-state-error': contractPdfError }" :role="contractPdfError ? 'alert' : 'status'">{{ contractPdfError || 'The clinic has not saved agreement text or attached a PDF to this appointment.' }}</p>
           <a v-if="clinicPdfUrl && clinicPdfUrl !== contractPdfUrl" :href="clinicPdfUrl" target="_blank" rel="noopener noreferrer" class="contract-clinic-pdf-link">Open the clinic-provided PDF</a>
         </section>
         <section v-else-if="contract?.terms" class="contract-document">
@@ -160,6 +163,8 @@ export default {
         acknowledgement: 'By signing, I confirmed that I reviewed and accepted this agreement.',
       }
     }
+
+    const contractDocumentForDisplay = computed(() => contractDocumentForPdf(contract.value))
 
     const prepareContractPdf = async (appointment) => {
       const requestId = ++pdfGeneration
@@ -310,7 +315,7 @@ export default {
 
     const close = () => emit('close')
 
-    return { isWalkIn, isCustomer, isContractSigned, title, templateUrl, contract, createContract, signContract, isProcessing, error, message, close, canSign, signatureImage, accepted, contractPdfUrl, clinicPdfUrl, contractPdfLoading, contractPdfError }
+    return { isWalkIn, isCustomer, isContractSigned, title, templateUrl, contract, createContract, signContract, isProcessing, error, message, close, canSign, signatureImage, accepted, contractDocumentForDisplay, contractPdfUrl, clinicPdfUrl, contractPdfLoading, contractPdfError }
   }
 }
 </script>
@@ -332,6 +337,7 @@ export default {
 .contract-pdf-viewer-head h4 { margin: 0; color: #412d20; font-size: .96rem; font-weight: 750; }
 .contract-pdf-viewer-head p { margin: .2rem 0 0; color: #816d5f; font-size: .77rem; }
 .contract-pdf-frame { display: block; width: 100%; height: min(58vh, 38rem); border: 0; background: #f4eee7; }
+.customer-contract-document { max-height: min(58vh, 38rem); overflow-y: auto; }
 .contract-pdf-state { margin: 0; padding: 1rem; color: #816d5f; font-size: .84rem; }
 .contract-pdf-state-error { color: #a12d22; }
 .contract-clinic-pdf-link { display: inline-flex; margin: .75rem 1rem; color: #8c4c22; font-size: .82rem; font-weight: 700; text-decoration: underline; }
