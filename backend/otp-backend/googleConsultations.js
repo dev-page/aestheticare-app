@@ -162,21 +162,22 @@ export const registerGoogleConsultations = (app, deps) => {
       const branchId = String(req.query?.branchId || '').trim()
       check(/^[A-Za-z0-9_-]{1,150}$/.test(branchId), 'Select a clinic branch.', 400)
       await authorizeClinicAction(req.user.uid, branchId, 'consultations:view')
-      let query = db.collection('appointmentAudit')
+      const auditCollection = db.collection('appointmentAudit')
+      let query = auditCollection
         .where('branchId', '==', branchId)
         .where('action', '==', 'meet_link_generated')
         .orderBy('createdAt', 'desc')
         .limit(100)
       const beforeId = String(req.query?.before || '').trim()
+      let cursor = null
       if (beforeId) {
         check(/^[A-Za-z0-9_-]{1,150}$/.test(beforeId), 'Invalid consultation log cursor.', 400)
-        const cursor = await db.collection('appointmentAudit').doc(beforeId).get()
+        cursor = await auditCollection.doc(beforeId).get()
         const cursorData = cursor.data() || {}
         check(cursor.exists && cursorData.branchId === branchId && cursorData.action === 'meet_link_generated', 'Invalid consultation log cursor.', 400)
         query = query.startAfter(cursor)
       }
-      const snapshot = await query.get()
-      const logs = snapshot.docs.map(log => {
+      const toLog = log => {
         const data = log.data() || {}
         const createdAt = data.createdAt?.toDate?.() || data.createdAt
         return {
@@ -190,9 +191,48 @@ export const registerGoogleConsultations = (app, deps) => {
           appointmentTime: data.appointmentTime || '',
           createdAt: createdAt instanceof Date ? createdAt.toISOString() : String(createdAt || ''),
         }
-      })
+      }
+
+      let snapshot
+      try {
+        snapshot = await query.get()
+      } catch (error) {
+        const errorCode = String(error?.code || '').toLowerCase()
+        const needsIndex = (errorCode === '9' || errorCode === 'failed-precondition') && /index/i.test(String(error?.message || ''))
+        if (!needsIndex) throw error
+
+        // Keep the history available while the composite index is building or
+        // has not yet been deployed. The single-field branch query uses the
+        // automatic index, then filters and sorts only that branch's audit rows.
+        const branchSnapshot = await auditCollection.where('branchId', '==', branchId).get()
+        const records = branchSnapshot.docs
+          .filter(log => log.data()?.action === 'meet_link_generated')
+          .map(log => {
+            const createdAt = log.data()?.createdAt
+            const date = createdAt?.toDate?.() || createdAt
+            const timestamp = date instanceof Date ? date.getTime() : Date.parse(date || '')
+            return { log, timestamp: Number.isFinite(timestamp) ? timestamp : 0 }
+          })
+          .sort((left, right) => right.timestamp - left.timestamp || right.log.id.localeCompare(left.log.id))
+        const cursorIndex = beforeId ? records.findIndex(record => record.log.id === beforeId) : -1
+        check(!beforeId || cursorIndex >= 0, 'Invalid consultation log cursor.', 400)
+        const offset = beforeId ? cursorIndex + 1 : 0
+        const page = records.slice(offset, offset + 100)
+        const logs = page.map(record => toLog(record.log))
+        return res.json({
+          success: true,
+          data: logs,
+          hasMore: offset + page.length < records.length,
+          nextCursor: page.at(-1)?.log.id || '',
+        })
+      }
+
+      const logs = snapshot.docs.map(toLog)
       res.json({ success: true, data: logs, hasMore: snapshot.docs.length === 100, nextCursor: snapshot.docs.at(-1)?.id || '' })
-    } catch (error) { respondError(res, error) }
+    } catch (error) {
+      if (!error?.status) console.error('Failed to load Meet link history:', error)
+      respondError(res, error)
+    }
   })
 
   app.post('/google-meet/account/disconnect', requireAuth, async (req, res) => {
