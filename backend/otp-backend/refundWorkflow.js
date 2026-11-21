@@ -25,6 +25,7 @@ export const registerRefundWorkflow = (app, {
   getClinicPoliciesForBranch,
   buildPayMongoHeaders,
   finalizeCancelledOrder,
+  sendAppointmentRefundEmail = async () => {},
 }) => {
   const db = admin.firestore()
   const stamp = () => admin.firestore.FieldValue.serverTimestamp()
@@ -160,6 +161,30 @@ export const registerRefundWorkflow = (app, {
 
     if (result.status === 'Refunded' || result.providerStatus === 'failed') {
       const record = (await recordRef.get()).data() || {}
+      if (initial.entityType === 'appointment') {
+        try {
+          let customerEmail = String(record.customerEmail || '').trim().toLowerCase()
+          let customerName = String(record.customerName || record.clientName || initial.customerName || 'Customer').trim()
+          if (!customerEmail && initial.customerId) {
+            const customerSnap = await db.collection('users').doc(String(initial.customerId)).get()
+            const customer = customerSnap.exists ? customerSnap.data() || {} : {}
+            customerEmail = String(customer.email || '').trim().toLowerCase()
+            customerName = String(record.customerName || customer.fullName || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Customer').trim()
+          }
+          if (customerEmail) await sendAppointmentRefundEmail({
+            email: customerEmail,
+            customerName,
+            service: record.service || initial.description || 'Appointment',
+            date: record.date || '',
+            time: record.time || '',
+            amount: Number(initial.amountCents || 0) / 100,
+            status: result.status,
+            serviceKey: record.serviceKey || '',
+          })
+        } catch (emailError) {
+          console.warn('Appointment refund status email failed:', emailError?.message || emailError)
+        }
+      }
       await notify({
         customerId: initial.customerId,
         branchId: initial.branchId,
@@ -324,6 +349,22 @@ export const registerRefundWorkflow = (app, {
     })
     if (replayedResult) return replayedResult
     await notify({ customerId, branchId, title: 'Refund completed', message: `A refund of PHP ${amountCents / 100} for ${description || 'your purchase'} has been recorded by the clinic.`, link: entityType === 'appointment' ? '/customer/appointments' : '/customer/orders', id: `refund-${opId}-Refunded` }).catch(() => {})
+    if (entityType === 'appointment') {
+      try {
+        const record = (await recordRef.get()).data() || {}
+        let email = String(record.customerEmail || '').trim().toLowerCase()
+        let name = String(record.customerName || record.clientName || customerName || 'Customer').trim()
+        if (!email && customerId) {
+          const customerSnap = await db.collection('users').doc(String(customerId)).get()
+          const customer = customerSnap.exists ? customerSnap.data() || {} : {}
+          email = String(customer.email || '').trim().toLowerCase()
+          name = String(record.customerName || customer.fullName || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Customer').trim()
+        }
+        if (email) await sendAppointmentRefundEmail({ email, customerName: name, service: record.service || description || 'Appointment', date: record.date || '', time: record.time || '', amount: amountCents / 100, status: 'Refunded', serviceKey: record.serviceKey || '' })
+      } catch (emailError) {
+        console.warn('Offline appointment refund status email failed:', emailError?.message || emailError)
+      }
+    }
     return { operationId: opId, status: 'Refunded', amount: amountCents / 100, reference: refValue }
   }
 

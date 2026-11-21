@@ -3923,6 +3923,15 @@ registerFinanceWorkflow(app, { admin, requireAuth, loadUserContext })
 const refundWorkflow = registerRefundWorkflow(app, {
   admin, requireAuth, loadUserContext, getClinicPoliciesForBranch,
   buildPayMongoHeaders, finalizeCancelledOrder,
+  sendAppointmentRefundEmail: async ({ email, customerName, service, date, time, amount, status, serviceKey }) => {
+    if (!postmarkClient || !senderEmail) return { skipped: true }
+    const refunded = status === 'Refunded'
+    await sendPostmarkMessage({
+      to: email,
+      subject: refunded ? 'Your AesthetiCare appointment refund is complete' : 'Your AesthetiCare appointment refund needs review',
+      text: `Hi ${customerName || 'Customer'},\n\n${refunded ? `Your refund of ${formatPhilippineCurrency(amount)} for ${service || 'your appointment'} has been confirmed.` : `The payment provider could not complete the refund for ${service || 'your appointment'}. The clinic will review it and update you.`}\nAppointment: ${[date, time].filter(Boolean).join(' at ') || 'See My Appointments'}${serviceKey ? `\nService code: ${serviceKey}` : ''}\n\nOpen My Appointments for your appointment and receipt details.`,
+    })
+  },
 })
 registerAttendanceManagement(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
 registerAttendanceImports(app, { admin, requireAuth, requirePermission, resolveBranchAccess, loadAttendanceSchedule, assertPlanFeature: (...args) => assertClinicPlanFeature(...args) })
@@ -4810,7 +4819,21 @@ const safelySweepAppointmentPaymentHolds = async () => {
     return { expired: 0, failed: true }
   }
 }
-registerBookingMilestones(app, { admin, requireAuth, authorizeClinicAction, sendServiceCode })
+registerBookingMilestones(app, {
+  admin,
+  requireAuth,
+  authorizeClinicAction,
+  sendServiceCode,
+  sendCompletionEmail: async ({ email, customerName, service, date, time, status, serviceKey }) => {
+    if (!email || !postmarkClient || !senderEmail) return { skipped: true }
+    const fullyCompleted = normalizeBookingStatus(status) === 'completed'
+    await sendPostmarkMessage({
+      to: email,
+      subject: fullyCompleted ? 'Your AesthetiCare appointment is complete' : 'Your AesthetiCare service is ready for your confirmation',
+      text: `Hi ${customerName || 'Customer'},\n\n${fullyCompleted ? 'Your appointment is complete.' : 'The practitioner marked your appointment complete. Please review the visit and confirm service receipt in My Appointments.'}\nService: ${service || 'Appointment'}\nWhen: ${[date, time].filter(Boolean).join(' at ') || 'See My Appointments'}${serviceKey ? `\nService code: ${serviceKey}` : ''}\n\nYour payment receipt is available in My Appointments.`,
+    })
+  },
+})
 registerSameDayTreatmentClearance(app, { admin, requireAuth })
 registerConsultationEvents(app, { admin, requireAuth, authorizeClinicAction })
 registerPractitionerTeams(app, { admin, requireAuth, loadUserContext, authorizeClinicAction, getBookingRange, rangesOverlap, createVisionClient, getVisionResponseError, getVisionWordConfidence })
@@ -5121,8 +5144,17 @@ app.all('/cron/appointment-reminders', async (req, res) => {
       const reminderRef = firestore.collection('notifications').doc(`appointment-reminder-${row.id}-${tomorrow}`)
       const existing = await reminderRef.get()
       if (!existing.exists) {
-        await reminderRef.set({ recipientUserId: row.customerId, branchId: row.branchId, title: 'Appointment reminder', message: `Reminder: ${row.service || 'your appointment'} is tomorrow at ${row.time || 'the scheduled time'}.`, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
-        if (postmarkClient && senderEmail && row.customerEmail) await postmarkClient.sendEmail({ From: senderEmail, To: row.customerEmail, Subject: 'AesthetiCare appointment reminder', TextBody: `Reminder: your ${row.service || 'appointment'} is tomorrow at ${row.time || 'the scheduled time'}.` })
+        const message = `Reminder: ${row.service || 'your appointment'} is tomorrow at ${row.time || 'the scheduled time'}.`
+        await reminderRef.set({ recipientUserId: row.customerId, branchId: row.branchId, title: 'Appointment reminder', message, link: '/customer/appointments', read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+        if (postmarkClient && senderEmail && row.customerEmail) {
+          try {
+            await sendPostmarkMessage({
+              to: row.customerEmail,
+              subject: 'Your AesthetiCare appointment is tomorrow',
+              text: `Hi ${row.customerName || 'Customer'},\n\n${message}\nAppointment code: ${row.id}${row.serviceKey ? `\nService code: ${row.serviceKey}` : ''}\n\nOpen My Appointments for the full schedule and payment receipt.`,
+            })
+          } catch (emailError) { console.warn('Failed to email appointment reminder:', emailError?.message || emailError) }
+        }
       }
 
       const isOnlineConsultation = normalizeBookingStatus(row.type) === 'consultation' && normalizeBookingStatus(row.consultationMode) === 'online'
@@ -5219,7 +5251,7 @@ registerWalkInPayments(app, {
       From: senderEmail,
       To: email,
       Subject: sameRecipient ? 'Your walk-in appointment payment receipt and service code' : 'Your walk-in appointment payment receipt',
-      TextBody: `Hi ${receipt.payerName || receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}${priceLines}\n\nYour PDF receipt is attached.${sameRecipient ? `\n\nThe appointment service code is: ${receipt.serviceKey}\nKeep this code private and bring it on the appointment day.` : ''}`,
+      TextBody: `Hi ${receipt.payerName || receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}.\nWhen: ${[receipt.date, receipt.time].filter(Boolean).join(' at ')}${priceLines}\n\nYour PDF receipt is attached.${receipt.serviceKey ? `\n\nThe appointment service code is: ${receipt.serviceKey}\nKeep this code private and bring it on the appointment day.` : ''}`,
       Attachments: [attachment],
     })
     if (!sameRecipient && receipt.customerEmail && receipt.serviceKey) {
@@ -5227,10 +5259,11 @@ registerWalkInPayments(app, {
         await postmarkClient.sendEmail({
           From: senderEmail,
           To: receipt.customerEmail,
-          Subject: 'Your walk-in appointment service code',
-          TextBody: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}. Your service code is ${receipt.serviceKey}. Keep it private and bring it on the appointment day so the practitioner can verify your appointment.`,
+          Subject: 'Your walk-in appointment receipt and service code',
+          TextBody: `Hi ${receipt.clientName},\n\nYour payment has been recorded for ${receipt.service}. Your PDF receipt is attached. Your service code is ${receipt.serviceKey}. Keep it private and bring it on the appointment day so the practitioner can verify your appointment.`,
+          Attachments: [attachment],
         })
-      } catch (error) { console.warn('Could not email the walk-in service code:', error?.message || error) }
+      } catch (error) { console.warn('Could not email the walk-in receipt and service code:', error?.message || error) }
     }
     return delivery?.ErrorCode === 0
   },
@@ -11816,7 +11849,7 @@ const recordAppointmentPayment = async (req, res) => {
           db: firestore,
           transactionId: `booking-${checkoutSessionId}`,
           appointment,
-          clinicName: clinicSnap?.data()?.name || '',
+          clinicName: clinicSnap?.data()?.clinicName || clinicSnap?.data()?.clinicBranch || '',
           senderEmail,
           sendEmail: postmarkClient?.sendEmail.bind(postmarkClient),
         })
@@ -11969,7 +12002,7 @@ const recordAppointmentPayment = async (req, res) => {
         db: firestore,
         transactionId: `booking-${checkoutSessionId}`,
         appointment: updatedAppointment,
-        clinicName: clinicSnap?.data()?.name || '',
+        clinicName: clinicSnap?.data()?.clinicName || clinicSnap?.data()?.clinicBranch || '',
         senderEmail,
         sendEmail: postmarkClient?.sendEmail.bind(postmarkClient),
       })
@@ -12008,6 +12041,7 @@ app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
         && Number(transaction.amount || 0) > 0)
       .map(transaction => ({
         id: transaction.id,
+        source: 'transaction',
         transactionCode: String(transaction.transactionCode || transaction.referenceNumber || transaction.checkoutSessionId || transaction.id),
         referenceNumber: String(transaction.referenceNumber || ''),
         checkoutSessionId: String(transaction.checkoutSessionId || ''),
@@ -12021,6 +12055,28 @@ app.get('/appointments/:id/payment-receipt', requireAuth, async (req, res) => {
         paidAtSource: transaction.paidAt ? 'provider' : (transaction.createdAt || appointment.paymongoPaidAt ? 'recorded' : 'unknown'),
       }))
       .sort((left, right) => String(right.paidAt || '').localeCompare(String(left.paidAt || '')))
+
+    // Older appointment records may keep the paid amount on the appointment
+    // itself without a matching transaction document. Expose only an amount
+    // that the record actually contains; never infer payment from completion.
+    const legacyPaidAmount = Number(appointment.amountPaid || 0)
+    if (!payments.length && Number.isFinite(legacyPaidAmount) && legacyPaidAmount > 0) {
+      const paidAt = toIso(appointment.paidAt || appointment.paymongoPaidAt || appointment.updatedAt || appointment.completedAt)
+      payments.push({
+        id: `appointment-${appointmentId}`,
+        source: 'appointment_record',
+        transactionCode: String(appointment.paymentReference || appointment.paymongoPaymentId || appointment.serviceKey || appointmentId),
+        referenceNumber: String(appointment.paymentReference || ''),
+        checkoutSessionId: String(appointment.paymongoCheckoutSessionId || ''),
+        paymentId: String(appointment.paymongoPaymentId || ''),
+        amount: legacyPaidAmount,
+        method: String(appointment.paymentMethod || 'Recorded payment'),
+        status: 'Paid',
+        receiptEmailStatus: 'unknown',
+        paidAt,
+        paidAtSource: 'recorded',
+      })
+    }
 
     return res.json({ success: true, data: { appointmentId, payments } })
   } catch (error) {

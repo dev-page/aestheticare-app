@@ -24,7 +24,7 @@ const getOnlineConsultationWindow = appointment => {
   return Number.isFinite(window.start.getTime()) ? { ...window, startsAt: window.start, endsAt: window.end, durationMinutes: window.duration } : null
 }
 
-export const registerBookingMilestones = (app, { admin, requireAuth, authorizeClinicAction, sendServiceCode = async () => {} }) => {
+export const registerBookingMilestones = (app, { admin, requireAuth, authorizeClinicAction, sendServiceCode = async () => {}, sendCompletionEmail = async () => {} }) => {
   const guestAuth = async (req, res, next) => {
     try {
       check(/^[a-f0-9]{48}$/i.test(String(req.params.token || '')), 'Invalid invitation.', 400)
@@ -451,11 +451,15 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
         if (appointment.bookingId && !appointment.isGroupRecipient && !appointment.bookingOrderId && !appointment.treatmentPlanAppointmentId) tx.set(db.collection('bookings').doc(appointment.bookingId), { status: update.status, updatedAt: timestamp }, { merge: true })
         const recipientUserId = customer ? appointment.practitionerId || appointment.assignedPractitionerId : appointment.customerId
         if (recipientUserId && !walkIn) tx.set(db.collection('notifications').doc(), { recipientUserId, title: 'Booking updated', message: `${appointment.service || 'Your booking'}: ${update.status}.`, link: customer ? '/clinical/appointments' : '/customer/appointments', read: false, deleted: false, createdAt: timestamp })
-        return { appointmentId: ref.id, ...(update.consultationWindowEndAt ? { consultationWindowEndAt: update.consultationWindowEndAt, consultationWindowStartAt: update.consultationWindowStartAt } : {}), status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' && !walkIn ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}) }
+        return { appointmentId: ref.id, ...(update.consultationWindowEndAt ? { consultationWindowEndAt: update.consultationWindowEndAt, consultationWindowStartAt: update.consultationWindowStartAt } : {}), status: update.status, contract: update.contract || appointment.contract, ...(action === 'sign' && !walkIn ? { codeDelivery: { email: appointment.customerEmail, serviceKey: update.serviceKey, date: appointment.date, time: appointment.time } } : {}), ...(req.body?.action === 'worker_complete' ? { completionEmail: { email: appointment.customerEmail, customerName: appointment.customerName || appointment.clientName || 'Customer', service: appointment.service || 'Appointment', date: appointment.date || '', time: appointment.time || '', status: update.status, serviceKey: appointment.serviceKey || '' } } : {}) }
       })
       if (result.codeDelivery) {
         await sendServiceCode(result.codeDelivery).catch(error => console.warn('Service code email failed:', error.message))
         delete result.codeDelivery
+      }
+      if (result.completionEmail) {
+        await sendCompletionEmail(result.completionEmail).catch(error => console.warn('Appointment completion email failed:', error.message))
+        delete result.completionEmail
       }
       res.json({ success: true, data: result })
     } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }

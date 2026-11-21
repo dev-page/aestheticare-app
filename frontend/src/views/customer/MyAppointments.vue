@@ -45,7 +45,7 @@
           <p class="p-4 text-sm">Your slot is held for 15 minutes. Review and sign the agreement, then pay. The appointment is confirmed when payment is verified.</p>
           <article v-for="appt in contractsToSign" :key="appt.id" class="unpaid-appointment-card">
             <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
-            <p>{{ appt.clinic }} ? {{ appt.date }} ? {{ formatClockTime(appt.time) }}</p>
+            <p>{{ clinicNameFor(appt) }} · {{ appt.date }} · {{ formatClockTime(appt.time) }}</p>
             <p v-if="paymentHoldMessage(appt)" class="text-sm font-semibold text-[#8d5a3b]">{{ paymentHoldMessage(appt) }}</p>
             <button v-if="appt.contract?.terms || appt.contract?.templateUrl" type="button" class="appointment-button appointment-button-primary" @click="openContract(appt)">Review &amp; e-sign contract</button>
             <p v-else class="text-sm">Your clinic is preparing the contract. Payment will be available after you sign.</p>
@@ -86,7 +86,7 @@
             <article v-for="appt in unpaidAppointments" :key="appt.id" class="unpaid-appointment-card">
               <div class="unpaid-appointment-card-head">
                 <div>
-                  <p class="panel-kicker">{{ appt.clinic }}</p>
+                  <p class="panel-kicker">{{ clinicNameFor(appt) }}</p>
                   <h3 class="unpaid-appointment-title">{{ formatAppointmentServices(appt) }}</h3>
                 </div>
                 <span class="status-badge" :class="statusToneClass(appt.status)">{{ appt.status }}</span><OnlineConsultationClock :appointment="appt" />
@@ -150,11 +150,12 @@
           </div>
           <div v-if="treatmentSessions.length" class="appointments-table-wrap">
             <table class="appointments-table">
-              <thead><tr><th>Visit</th><th>Treatment</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead>
+              <thead><tr><th>Visit</th><th>Treatment</th><th>Clinic</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
                 <tr v-for="session in treatmentSessionsForDisplay" :key="session.id">
                   <td data-label="Visit">Visit {{ session.sessionNumber }} of {{ session.totalSessions }}</td>
                   <td data-label="Treatment">{{ session.serviceName }}</td>
+                  <td data-label="Clinic">{{ session.clinicName }}</td>
                   <td data-label="Date &amp; Time">{{ session.date ? `${formatCourseDate(session.date)} ${formatClockTime(session.time)}` : session.requestedDate ? `Requested: ${formatCourseDate(session.requestedDate)} ${formatClockTime(session.requestedTime)}` : session.earliestScheduleDate ? `Eligible from ${formatCourseDate(session.earliestScheduleDate)}` : 'Not scheduled yet' }}</td>
                   <td data-label="Status">{{ session.status }}</td>
                   <td data-label="Action">
@@ -203,7 +204,7 @@
                     <span v-if="appt.demoMode" class="status-badge">DEMO · No charge</span>
                   </td>
                   <td data-label="Clinic">
-                    <div class="table-primary">{{ appt.clinic }}</div>
+                    <div class="table-primary">{{ clinicNameFor(appt) }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
@@ -270,7 +271,7 @@
                     <span v-if="appt.demoMode" class="status-badge mt-2">DEMO · No charge; no service is scheduled</span>
                   </td>
                   <td data-label="Clinic">
-                    <div class="table-primary">{{ appt.clinic }}</div>
+                    <div class="table-primary">{{ clinicNameFor(appt) }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
@@ -339,7 +340,7 @@
                     </div>
                   </td>
                   <td data-label="Clinic">
-                    <div class="table-primary">{{ appt.clinic }}</div>
+                    <div class="table-primary">{{ clinicNameFor(appt) }}</div>
                   </td>
                   <td data-label="Date">{{ appt.date }}</td>
                   <td data-label="Time">{{ formatClockTime(appt.time) }}</td>
@@ -550,7 +551,7 @@
           <div>
             <p class="appointment-details-kicker">{{ selectedAppointmentDetails.isBookingOrderParent ? 'Booking order' : 'Appointment details' }}</p>
             <h2 id="appointment-details-title" class="appointment-details-title">{{ formatAppointmentServices(selectedAppointmentDetails) }}</h2>
-            <p class="appointment-details-subtitle">{{ selectedAppointmentDetails.clinic }}<span v-if="selectedAppointmentDetails.branchName"> · {{ selectedAppointmentDetails.branchName }}</span></p>
+            <p class="appointment-details-subtitle">{{ clinicNameFor(selectedAppointmentDetails) }}<span v-if="selectedAppointmentDetails.branchName"> · {{ selectedAppointmentDetails.branchName }}</span></p>
           </div>
           <div class="appointment-details-header-actions">
             <span class="status-badge" :class="statusToneClass(selectedAppointmentDetails.status)">{{ selectedAppointmentDetails.status }}</span>
@@ -593,7 +594,7 @@
           </section>
 
           <section class="appointment-details-section">
-            <div class="appointment-details-section-head"><h3>Payments and receipts</h3><span v-if="!appointmentPaymentsLoading">{{ appointmentPayments.length }} verified {{ appointmentPayments.length === 1 ? 'payment' : 'payments' }}</span></div>
+            <div class="appointment-details-section-head"><h3>Payments and receipts</h3><span v-if="!appointmentPaymentsLoading">{{ appointmentPayments.length }} payment {{ appointmentPayments.length === 1 ? 'record' : 'records' }}</span></div>
             <p v-if="appointmentPaymentsLoading" class="appointment-details-note" aria-live="polite">Loading payment records…</p>
             <p v-else-if="appointmentPaymentsError" class="appointment-details-note appointment-details-note-error" role="alert">{{ appointmentPaymentsError }}</p>
             <div v-else-if="appointmentPayments.length" class="appointment-details-payments">
@@ -606,10 +607,10 @@
                   <span v-if="payment.referenceNumber">Payment reference: <code>{{ payment.referenceNumber }}</code></span>
                   <span v-if="payment.paymentId">Payment ID: <code>{{ payment.paymentId }}</code></span>
                 </div>
-                <button type="button" class="appointment-button appointment-button-secondary" @click="downloadAppointmentReceipt(payment)">Download PDF receipt</button>
+                <button type="button" class="appointment-button appointment-button-secondary" @click="openAppointmentReceipt(payment)">View and download PDF</button>
               </article>
             </div>
-            <p v-else class="appointment-details-note">No verified payment is recorded for this booking yet. A downloadable receipt appears here after payment is verified.</p>
+            <p v-else class="appointment-details-note">No payment record is associated with this booking yet. A PDF receipt appears here after payment is recorded.</p>
           </section>
 
           <section class="appointment-details-section">
@@ -715,7 +716,7 @@
           <div>
             <p class="request-modal-kicker">Optional feedback</p>
             <h2 id="feedback-modal-title" class="request-modal-title">How was your service?</h2>
-            <p class="request-modal-summary">{{ feedbackModal.appointment ? `${formatAppointmentServices(feedbackModal.appointment)} · ${feedbackModal.appointment.clinic}` : '' }}</p>
+            <p class="request-modal-summary">{{ feedbackModal.appointment ? `${formatAppointmentServices(feedbackModal.appointment)} · ${clinicNameFor(feedbackModal.appointment)}` : '' }}</p>
           </div>
           <button type="button" class="request-close-button" aria-label="Close feedback form" :disabled="feedbackModal.saving" @click="closeFeedbackModal"><span class="text-xl leading-none">&times;</span></button>
         </header>
@@ -801,7 +802,7 @@ const treatmentAppointments = computed(() => [...upcomingAppointments.value, ...
 const treatmentSessionsForDisplay = computed(() => treatmentSessions.value.map(session => {
   const plan = treatmentAppointments.value.find(appointment => appointment.id === session.treatmentPlanAppointmentId)
   const definition = plan?.treatmentPlan?.sessions?.[Number(session.sessionNumber || 1) - 1]
-  return { ...session, serviceName: definition?.serviceName || plan?.service || 'Treatment visit' }
+  return { ...session, serviceName: definition?.serviceName || plan?.service || 'Treatment visit', clinicName: clinicNameFor(session) !== 'Clinic' ? clinicNameFor(session) : clinicNameFor(plan) }
 }).sort((left, right) => String(left.treatmentPlanAppointmentId).localeCompare(String(right.treatmentPlanAppointmentId)) || Number(left.sessionNumber || 0) - Number(right.sessionNumber || 0)))
 const treatmentPlanGroups = computed(() => {
   const groups = new Map()
@@ -835,6 +836,11 @@ const appointmentFeedbackLoading = ref(false)
 const appointmentFeedbackError = ref('')
 let appointmentFeedbackRequest = 0
 const clinicsById = ref({})
+const clinicNameFor = (record) => {
+  const branchId = String(record?.branchId || record?.clinicId || '').trim()
+  const clinic = branchId ? clinicsById.value[branchId] : null
+  return String(clinic?.name || record?.clinicName || record?.clinicBranch || record?.branchName || 'Clinic').trim() || 'Clinic'
+}
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
 const bookingFlowPromptedAppointmentId = ref('')
@@ -2061,19 +2067,28 @@ const reschedule = async (appt) => {
 
 const formatBookingDue = (appointment) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(paymentDue(appointment) / 100)
 const formatPricingAmount = (amount) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
-const downloadAppointmentReceipt = async (payment) => {
+const openAppointmentReceipt = async (payment) => {
   const appointment = selectedAppointmentDetails.value
   if (!appointment || String(payment?.status || '').toLowerCase() !== 'paid' || Number(payment?.amount || 0) <= 0) {
-    toast.info('A receipt is available only for a verified payment.')
+    toast.info('A receipt is available only for a recorded payment.')
     return
   }
+  const receiptTab = window.open('', '_blank')
+  if (!receiptTab) {
+    toast.error('Allow pop-ups to open the PDF receipt in a new tab.')
+    return
+  }
+  receiptTab.document.title = 'Preparing appointment receipt'
+  const loadingMessage = receiptTab.document.createElement('p')
+  loadingMessage.textContent = 'Preparing your PDF receipt…'
+  receiptTab.document.body.appendChild(loadingMessage)
   try {
     const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
     const currency = amount => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount || 0))
     const safeCode = String(payment.transactionCode || payment.checkoutSessionId || payment.id || appointment.id)
     const pricing = appointment.pricingSnapshot || {}
-    const clinicName = appointment.clinic || 'AesthetiCare clinic'
+    const clinicName = clinicNameFor(appointment)
 
     pdf.setFillColor(61, 40, 29)
     pdf.rect(0, 0, 210, 42, 'F')
@@ -2097,6 +2112,7 @@ const downloadAppointmentReceipt = async (payment) => {
         ['Payment method', payment.method || 'Online payment'],
         ['Customer', appointment.customerName || auth.currentUser?.displayName || 'Customer'],
         ['Appointment code', appointment.id],
+        ...(appointment.serviceKey ? [['Service code', appointment.serviceKey]] : []),
         ['Booked on', formatReceiptDateTime(appointment.createdAt)],
       ],
       styles: { fontSize: 9, cellPadding: 2.4, textColor: [77, 56, 42] },
@@ -2147,10 +2163,14 @@ const downloadAppointmentReceipt = async (payment) => {
     const footerY = Math.min((pdf.lastAutoTable?.finalY || y + 25) + 12, 285)
     pdf.setDrawColor(230, 207, 176).line(15, footerY - 5, 195, footerY - 5)
     pdf.setFont('helvetica', 'normal').setFontSize(8).setTextColor(120, 97, 79)
-    pdf.text('Generated from the verified payment record in AesthetiCare.', 15, footerY)
-    pdf.save(`AesthetiCare-Receipt-${safeCode.replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`)
+    pdf.text('Generated from the appointment payment record in AesthetiCare.', 15, footerY)
+    const pdfUrl = URL.createObjectURL(pdf.output('blob'))
+    receiptTab.opener = null
+    receiptTab.location.replace(pdfUrl)
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 30 * 60 * 1000)
   } catch (error) {
     console.error('Failed to create appointment receipt:', error)
+    receiptTab.close()
     toast.error('The receipt PDF could not be created. Please try again.')
   }
 }
