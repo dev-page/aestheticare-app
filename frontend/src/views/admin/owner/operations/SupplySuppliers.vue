@@ -208,7 +208,7 @@
           <footer>
             <button type="button" class="secondary-button" :disabled="saving || ltoUploadBusy" @click="close">Cancel</button>
             <button type="submit" class="primary-button" :disabled="saving || ltoUploadBusy || businessNameSaveBlocked">
-              <span v-if="saving || ltoUploadBusy" class="button-spinner" aria-hidden="true"></span>
+              <span v-if="saving" class="button-spinner" aria-hidden="true"></span>
               {{ ltoUploadBusy ? 'Reading document…' : saving ? 'Saving…' : editing ? 'Save changes' : 'Save supplier' }}
             </button>
           </footer>
@@ -333,13 +333,13 @@ const ltoStatusLabel = value => {
   }[value] || 'Needs manual review')
 }
 const normalizeBusinessName = value => String(value || '')
-  .normalize('NFKD')
-  .replace(/\p{M}/gu, '')
-  .replace(/&/g, ' and ')
+  .normalize('NFKC')
   .toLowerCase()
-  .replace(/[^a-z0-9]+/g, ' ')
+  // OCR and business-name entry often differ only in casing, spacing, or a
+  // trailing legal-name period. Keep other punctuation and words significant.
+  .replace(/[.,]+(?=\s|$)/gu, '')
+  .replace(/\s+/gu, ' ')
   .trim()
-  .replace(/\s+/g, ' ')
 const getBusinessNameMatch = (supplierName, documentName, hasDocument) => {
   if (!hasDocument || !documentName) return hasDocument ? 'unverified' : 'not_checked'
   const supplier = normalizeBusinessName(supplierName)

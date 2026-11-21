@@ -84,8 +84,8 @@ const publicHours = (hours) => {
   return result
 }
 
-const projectPublicClinic = (clinic, now = new Date()) => {
-  if (!clinic || clinic.isPublished !== true) return null
+const projectPublicClinic = (clinic, now = new Date(), { allowUnpublished = false } = {}) => {
+  if (!clinic || (!allowUnpublished && clinic.isPublished !== true)) return null
   const result = { isPublished: true, ...customerAvailability(clinic, now) }
   for (const field of TEXT_FIELDS) if (typeof clinic[field] === 'string') result[field] = clinic[field]
   // Some older approved clinic records stored the registered name only as

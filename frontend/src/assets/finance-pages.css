@@ -161,6 +161,10 @@
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:is([class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-emerald-"], .budget-create) { background: #8d5c3c !important; border-color: #8d5c3c !important; color: #fffaf4 !important; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:is([class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-emerald-"], .budget-create):hover:not(:disabled) { background: #70452b !important; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:is([class*="bg-red-"], [class*="bg-rose-"]) { background: #fff1ed !important; border-color: #e4b7ad !important; color: #a12d22 !important; }
+.module-theme:is(.inventory-receiving-page, .purchase-orders-page) main button.workspace-primary-action { background: #8d5c3c !important; border-color: #8d5c3c !important; color: #fffaf4 !important; box-shadow: 0 3px 10px rgb(93 58 34 / 16%); }
+.module-theme:is(.inventory-receiving-page, .purchase-orders-page) main button.workspace-primary-action:hover:not(:disabled) { background: #70452b !important; border-color: #70452b !important; }
+.module-theme:is(.inventory-receiving-page, .purchase-orders-page) main button.workspace-danger-action { background: #fff1ed !important; border-color: #e4b7ad !important; color: #a12d22 !important; }
+.module-theme:is(.inventory-receiving-page, .purchase-orders-page) main .workspace-record-actions { align-items: center; }
 :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:disabled { opacity: .45; cursor: not-allowed; }
 :is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main button:focus-visible { outline: 2px solid #b78055; outline-offset: 3px; }
 .module-theme:is(.finance-page, .inventory-receiving-page, .purchase-orders-page) main table { width: 100%; font-size: 14px; background: #fffdf9 !important; }

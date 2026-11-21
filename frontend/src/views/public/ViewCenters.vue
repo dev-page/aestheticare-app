@@ -153,7 +153,7 @@
             </h2>
           </div>
           <p class="max-w-2xl text-sm leading-6 text-charcoal-500">
-            Browse centers with published profiles and active listings. Select a card to view full details, products, services, and chat options.
+            Browse clinics with a current subscription. Select a card to view its public profile and available services.
           </p>
         </div>
         <transition name="fade">
@@ -368,14 +368,14 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebaseConfig'
 import { useThemeStore } from '@/stores/theme'
-import { fetchCustomerCenters } from '@/utils/customerCenters'
+import { subscribeCustomerCenters } from '@/utils/customerCenters'
 import BranchPickerModal from '@/components/common/BranchPickerModal.vue'
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
 
 const router = useRouter()
 const theme = useThemeStore()
-const loading = ref(false)
+const loading = ref(true)
 const errorMessage = ref('')
 const centers = ref([])
 const selectedCenter = ref(null)
@@ -395,6 +395,7 @@ const radiusOptions = [5, 10, 15, 25, 50]
 const FAVORITES_STORAGE_KEY = 'aestheticCare.favoriteClinicIds'
 let redirectTimeout = null
 let unsubscribeAuth = null
+let unsubscribeCenters = null
 
 const toRadians = (value) => (value * Math.PI) / 180
 
@@ -618,21 +619,25 @@ onMounted(trackPageLoad(async () => {
   unsubscribeAuth = pageListener(onAuthStateChanged, auth, (user) => {
     loadFavoritesForUser(user)
   })
-  loading.value = true
   errorMessage.value = ''
-  try {
-    centers.value = await fetchCustomerCenters()
-  } catch (error) {
-    console.error(error)
-    errorMessage.value = 'Failed to load centers.'
-  } finally {
-    loading.value = false
-  }
+  unsubscribeCenters = subscribeCustomerCenters(
+    (nextCenters) => {
+      centers.value = nextCenters
+      errorMessage.value = ''
+      loading.value = false
+    },
+    (error) => {
+      console.error(error)
+      errorMessage.value = 'Failed to load centers.'
+      loading.value = false
+    },
+  )
 }))
 
 onBeforeUnmount(() => {
   if (redirectTimeout) clearTimeout(redirectTimeout)
   if (unsubscribeAuth) unsubscribeAuth()
+  if (unsubscribeCenters) unsubscribeCenters()
 })
 
 watch(radiusKm, () => {

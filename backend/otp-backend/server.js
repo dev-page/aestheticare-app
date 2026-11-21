@@ -6315,11 +6315,12 @@ const publicClinicProfile = (clinicId, clinicData, ownerData = {}) => {
     organizationOwnerId,
     clinicName: clinicData?.clinicName || clinicData?.businessName || clinicData?.companyName || clinicData?.clinicBranch || '',
   }
-  // Preserve the existing public eligibility rule: clinics must finish the
-  // owner onboarding profile before customers can discover them.
-  if (!normalizedClinic.clinicSetupCompletedAt) return null
-  if (!isClinicCustomerDiscoverable(normalizedClinic)) return null
-  const profile = publicClinicProjection.projectPublicClinic(normalizedClinic)
+  // Discovery eligibility follows the current subscription entitlement. The
+  // public projection still allowlists its fields, so unfinished profiles do
+  // not expose registration or billing data.
+  if (String(normalizedClinic.status || '').trim().toLowerCase() === 'inactive'
+    || !subscriptionLifecycle(normalizedClinic).isOperational) return null
+  const profile = publicClinicProjection.projectPublicClinic(normalizedClinic, new Date(), { allowUnpublished: true })
   if (!isPublicClinicCustomerDiscoverable(profile)) return null
   return { id: clinicId, ...profile }
 }
@@ -6330,7 +6331,7 @@ const publicClinicProfile = (clinicId, clinicData, ownerData = {}) => {
 app.get('/public/clinics', async (_req, res) => {
   try {
     const firestore = admin.firestore()
-    const snapshot = await firestore.collection('clinics').where('isPublished', '==', true).get()
+    const snapshot = await firestore.collection('clinics').get()
     const sourceClinics = snapshot.docs.map((clinicDoc) => ({ id: clinicDoc.id, data: clinicDoc.data() || {} }))
     const ownerIds = [...new Set(sourceClinics
       .map(({ id, data }) => String(data.ownerId || data.organizationOwnerId || id).trim())
