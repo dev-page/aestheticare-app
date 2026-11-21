@@ -827,8 +827,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       hasLocationCoords,
       validateContactNumber,
       operatingHourDays,
-      addOperatingRange,
-      removeOperatingRange,
       toggleOperatingDay,
     };
   },

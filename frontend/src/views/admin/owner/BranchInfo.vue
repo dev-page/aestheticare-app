@@ -3,7 +3,7 @@ import { serviceOnlyClinicPolicies } from '@/utils/clinicPolicies'
 import { usePageLoading } from '@/composables/usePageLoading'
 
 import { ref, onMounted, computed } from 'vue'
-import { getFirestore, collection, updateDoc, doc, getDoc, getDocs, serverTimestamp, query, where } from 'firebase/firestore'
+import { getFirestore, collection, updateDoc, doc, getDoc, getDocs, serverTimestamp, deleteField, query, where } from 'firebase/firestore'
 import { getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
@@ -261,6 +261,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.info(hasPermission('page:branches:manage') ? 'Branch management is available with the multi-branch plan.' : 'You do not have permission to manage branches.')
         return
       }
+      if (branch?.isMainBranch) {
+        toast.info('The main branch must remain active.')
+        return
+      }
       if (!branch?.id) {
         toast.error('Invalid branch ID')
         return
@@ -284,7 +288,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const branchRef = doc(db, 'clinics', branch.id)
         await updateDoc(branchRef, {
           status: 'Inactive',
-          archivedAt: serverTimestamp()
+          archivedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         })
         branch.status = 'Inactive'
         toast.success('Branch archived successfully.')
@@ -296,6 +301,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
     const unarchiveBranch = async (branch) => {
       if (!canManageMultipleBranches.value) return
+      if (branch?.isMainBranch) {
+        toast.info('The main branch must remain active.')
+        return
+      }
       if (!branch?.id) {
         toast.error('Invalid branch ID')
         return
@@ -319,6 +328,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const branchRef = doc(db, 'clinics', branch.id)
         await updateDoc(branchRef, {
           status: 'Active',
+          archivedAt: deleteField(),
           updatedAt: serverTimestamp()
         })
         branch.status = 'Active'
@@ -339,6 +349,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       if (!currentBranch.value.clinicLocation || !currentBranch.value.clinicLocation.trim()) {
         toast.error('Branch location is required')
+        return
+      }
+      const originalBranch = branches.value.find((branch) => branch.id === currentBranch.value.id)
+      if (!originalBranch) {
+        toast.error('This branch is no longer available. Refresh the page and try again.')
+        return
+      }
+      if (originalBranch.isMainBranch && currentBranch.value.status !== originalBranch.status) {
+        toast.error('The main branch must remain active.')
         return
       }
       savingBranch.value = true
@@ -368,15 +387,19 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           }
 
           const branchRef = doc(db, 'clinics', currentBranch.value.id)
-          await updateDoc(branchRef, {
+          const nextStatus = String(currentBranch.value.status || 'Active')
+          const branchUpdate = {
             clinicBranch: currentBranch.value.clinicBranch.trim(),
             clinicLocation: currentBranch.value.clinicLocation.trim(),
-            status: currentBranch.value.status,
-            isMainBranch: Boolean(currentBranch.value.isMainBranch),
+            status: nextStatus,
             branchAdminId: branchAdminId || null,
             branchAdminName: branchAdminName || null,
             updatedAt: serverTimestamp()
-          })
+          }
+          if (nextStatus !== originalBranch.status) {
+            branchUpdate.archivedAt = nextStatus === 'Inactive' ? serverTimestamp() : deleteField()
+          }
+          await updateDoc(branchRef, branchUpdate)
 
           const index = branches.value.findIndex((branch) => branch.id === currentBranch.value.id)
           if (index !== -1) {
@@ -405,6 +428,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         toast.info('The only branch on a Basic plan must remain active.')
         return
       }
+      if (branch?.isMainBranch) {
+        toast.info('The main branch must remain active.')
+        return
+      }
       const action = branch.status === 'Active' ? 'deactivate' : 'reactivate'
       const newStatus = branch.status === 'Active' ? 'Inactive' : 'Active'
 
@@ -424,7 +451,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
       try {
         const branchRef = doc(db, 'clinics', branch.id)
-        await updateDoc(branchRef, { status: newStatus })
+        await updateDoc(branchRef, {
+          status: newStatus,
+          archivedAt: newStatus === 'Inactive' ? serverTimestamp() : deleteField(),
+          updatedAt: serverTimestamp()
+        })
         branch.status = newStatus
         toast.success(`${branch.clinicBranch} has been ${action}d.`)
       } catch (error) {
@@ -606,7 +637,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             </div>
             <div class="branch-field">
               <label for="branch-edit-status">Status</label>
-              <select id="branch-edit-status" v-model="currentBranch.status"><option>Active</option><option>Inactive</option></select>
+              <select id="branch-edit-status" v-model="currentBranch.status" :disabled="currentBranch.isMainBranch"><option>Active</option><option>Inactive</option></select>
+              <p v-if="currentBranch.isMainBranch" class="branch-field-help">The main branch must remain active.</p>
             </div>
             <div class="branch-field">
               <label for="branch-edit-admin">Branch Manager</label>

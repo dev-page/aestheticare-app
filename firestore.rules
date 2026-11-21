@@ -212,7 +212,8 @@ service cloud.firestore {
     function isOwnerOfBranch(branchId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/clinics/$(branchId))
-        && clinicDoc(branchId).data.ownerId == request.auth.uid;
+        && (clinicDoc(branchId).data.get('ownerId', '') == request.auth.uid
+          || clinicDoc(branchId).data.get('organizationOwnerId', '') == request.auth.uid);
     }
 
     function isStaffOfBranch(branchId) {
@@ -223,6 +224,63 @@ service cloud.firestore {
 
     function canAccessBranch(branchId) {
       return isOwnerOfBranch(branchId) || isStaffOfBranch(branchId);
+    }
+
+    function validAssignedBranchManager(branchId, staffId) {
+      let ownerId = clinicDoc(branchId).data.get('ownerId', clinicDoc(branchId).data.get('organizationOwnerId', ''));
+      let managerRoleId = ownerId + '__builtin__clinic-manager';
+      let staffPath = /databases/$(database)/documents/users/$(staffId);
+      let rolePath = /databases/$(database)/documents/clinicRoles/$(managerRoleId);
+      return exists(staffPath)
+        && exists(rolePath)
+        && get(staffPath).data.get('userType', '') == 'Staff'
+        && get(staffPath).data.get('branchId', '') == branchId
+        && get(staffPath).data.get('archived', false) != true
+        && !(get(staffPath).data.get('status', '') in ['inactive', 'Inactive', 'disabled', 'Disabled', 'archived', 'Archived'])
+        && get(rolePath).data.get('ownerId', '') == ownerId
+        && get(rolePath).data.get('builtinKey', '') == 'clinic-manager'
+        && (get(staffPath).data.get('customRoleId', '') == managerRoleId
+          || (get(staffPath).data.get('customRoleIds', []) is list
+            && get(staffPath).data.get('customRoleIds', []).hasAny([managerRoleId])));
+    }
+
+    function validBranchManagerAssignment(branchId) {
+      let staffId = request.resource.data.get('branchAdminId', null);
+      let staffName = request.resource.data.get('branchAdminName', null);
+      return staffId == null
+        ? (staffName == null || staffName == '')
+        : (staffId is string && staffId.size() > 0 && staffId.size() <= 150
+          && staffName is string && staffName.size() > 0 && staffName.size() <= 200
+          && validAssignedBranchManager(branchId, staffId));
+    }
+
+    function validClinicBranchUpdate(branchId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let statusChanged = changed.hasAny(['status']);
+      return changed.hasOnly([
+          'clinicBranch', 'clinicLocation', 'status', 'branchAdminId', 'branchAdminName',
+          'archivedAt', 'updatedAt'
+        ])
+        && request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null)
+        && request.resource.data.get('organizationOwnerId', null) == resource.data.get('organizationOwnerId', null)
+        && request.resource.data.get('isMainBranch', false) == resource.data.get('isMainBranch', false)
+        && request.resource.data.get('clinicBranch', '') is string
+        && request.resource.data.clinicBranch.size() > 0
+        && request.resource.data.clinicBranch.size() <= 100
+        && request.resource.data.get('clinicLocation', '') is string
+        && request.resource.data.clinicLocation.size() > 0
+        && request.resource.data.clinicLocation.size() <= 200
+        && request.resource.data.get('status', 'Active') in ['Active', 'Inactive']
+        && request.resource.data.get('updatedAt', null) == request.time
+        && (!statusChanged || (resource.data.get('isMainBranch', false) != true
+          && branchId != resource.data.get('ownerId', resource.data.get('organizationOwnerId', ''))
+          && resource.data.get('status', 'Active') in ['Active', 'Inactive']
+          && request.resource.data.get('approvalStatus', null) == resource.data.get('approvalStatus', null)
+          && (request.resource.data.status == 'Inactive'
+            ? request.resource.data.get('archivedAt', null) == request.time
+            : !('archivedAt' in request.resource.data))))
+        && (!changed.hasAny(['archivedAt']) || statusChanged)
+        && (!changed.hasAny(['branchAdminId', 'branchAdminName']) || validBranchManagerAssignment(branchId));
     }
 
     function isStaffOfOwner(ownerId) {
@@ -559,7 +617,8 @@ service cloud.firestore {
       // Publication never grants public access to this private record.
       allow read: if isSignedIn()
         && (request.auth.uid == clinicId
-          || isSuperadmin() || resource.data.ownerId == request.auth.uid
+          || isSuperadmin() || resource.data.get('ownerId', '') == request.auth.uid
+          || resource.data.get('organizationOwnerId', '') == request.auth.uid
           || resource.data.get('branchAdminId', '') == request.auth.uid
           || isStaffOfBranch(clinicId));
       // Initial clinics and additional branches are created by trusted
@@ -577,11 +636,8 @@ service cloud.firestore {
           || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
             && hasPermission('clinic_profile:update') && applicantCannotChangeVerificationFields()
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['branchAdminId']))
-          || (isStaffOfBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
-            && hasPermission('branches:update') && applicantCannotChangeVerificationFields()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'clinicBranch', 'clinicLocation', 'status', 'isMainBranch', 'branchAdminId', 'branchAdminName', 'updatedAt'
-            ]))
+          || (canAccessBranch(clinicId) && subscriptionAllowsBusinessWrite(clinicId)
+            && hasPermission('branches:update') && validClinicBranchUpdate(clinicId))
           || (isStaffOfBranch(clinicId) && hasPermission('policies:update')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'cancellationPolicy', 'cancellationPolicyEnabled', 'reschedulePolicy', 'reschedulePolicyEnabled',
