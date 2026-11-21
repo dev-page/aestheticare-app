@@ -656,6 +656,7 @@
     <BookingContractModal
       :visible="showContractModal"
       :appointment="selectedContractAppointment"
+      customer-view
       @close="closeContract"
       @updated="contractUpdated"
     />

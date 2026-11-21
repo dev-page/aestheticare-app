@@ -58,9 +58,8 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
       rows.push(lot)
       lotsByItem.set(String(lot.itemId || ''), rows)
     }
-    const appointments = appointmentsSnap.docs.map(doc => doc.data())
+    const appointments = appointmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     const items = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(item => item.pharmacyEnabled === true)
       .map(item => pharmacyInventoryProjection({
         ...item,
         reservedStock: Number(item.reservedStock || 0) + reservedMaterialQuantity(appointments, item.id),
@@ -71,6 +70,21 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
         lotRecords: lotsByItem.get(item.id) || [],
         today: localDay(),
       })))
+    const prescriptionQueue = appointments
+      .filter(appointment => String(appointment.type || '').toLowerCase() === 'consultation'
+        && String(appointment.status || '').toLowerCase() === 'completed'
+        && (Array.isArray(appointment.prescriptions) ? appointment.prescriptions.length > 0 : Boolean(appointment.prescription))
+        && String(appointment.prescriptionStatus || 'pending').toLowerCase() !== 'dispensed')
+      .map(appointment => ({
+        id: appointment.id,
+        customerName: String(appointment.customerName || appointment.clientName || appointment.patientName || 'Customer'),
+        service: String(appointment.service || appointment.serviceName || 'Consultation'),
+        date: String(appointment.date || ''),
+        time: String(appointment.time || ''),
+        prescriptionStatus: String(appointment.prescriptionStatus || 'pending'),
+        prescriptions: Array.isArray(appointment.prescriptions) ? appointment.prescriptions : appointment.prescription ? [appointment.prescription] : [],
+      }))
+      .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
     const sales = salesSnap.docs.map(doc => {
       const sale = doc.data() || {}
       return {
@@ -82,7 +96,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
         createdAt: sale.createdAt || null,
       }
     }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 30)
-    res.json({ success: true, data: { items, sales } })
+    res.json({ success: true, data: { items, sales, prescriptions: prescriptionQueue } })
   }))
   app.get('/pharmacy/prescription', requireAuth, wrap(async (req, res, ctx) => {
     const { branchId } = await branchAccess(ctx, req.query.branchId, 'pharmacy:view')
@@ -110,6 +124,9 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
   }))
   app.post('/pharmacy/checkout', requireAuth, wrap(async (req, res, ctx) => {
     const { branchId } = await branchAccess(ctx, req.body.branchId, 'pharmacy:dispense')
+    const appointmentId = String(req.body.appointmentId || '').trim()
+    demand(appointmentId, 'Select a completed consultation prescription before dispensing.', 409)
+    cleanId(appointmentId)
     const lines = Array.isArray(req.body.items) ? req.body.items : []
     demand(lines.length > 0 && lines.length <= 40, 'Add 1–40 pharmacy items to the sale.', 400)
     const seen = new Set(), requested = lines.map(line => {
@@ -139,8 +156,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
         const snapshot = snapshots[index], item = snapshot.data() || {}
         demand(snapshot.exists && item.branchId === branchId && item.pharmacyEnabled === true, 'A selected item is no longer enabled for Pharmacy.', 409)
         const dispensingClass = item.dispensingClass || 'unclassified'
-        demand(dispensingClass !== 'unclassified', `${item.name || 'This item'} needs a dispensing classification before it can be sold.`, 409)
-        demand(dispensingClass !== 'restricted', `${item.name || 'This item'} is restricted and cannot be dispensed through the Pharmacy POS.`, 409)
+        demand(dispensingClass === 'prescription_required', `${item.name || 'This item'} is not configured for prescription dispensing.`, 409)
         const reserved = Number(item.reservedStock || 0) + reservedMaterialQuantity(activeAppointments, item.id)
         const available = Number(item.currentStock || 0) - reserved
         demand(available >= line.quantity, `Insufficient stock for ${item.name || 'an item'}; ${Math.max(0, available)} available.`, 409)
@@ -152,40 +168,41 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
       demand(Number.isSafeInteger(totalCents) && totalCents > 0, 'Sale total is invalid.', 400)
       const tenderedCents = method === 'Cash' ? money(req.body.cashTendered) : totalCents
       demand(tenderedCents >= totalCents, 'Cash received is less than the sale total.', 400)
-      const appointmentId = String(req.body.appointmentId || '')
-      let appointmentRef = null
-      let linkedAppointment = null
-      if (appointmentId) {
-        appointmentRef = db.collection('appointments').doc(cleanId(appointmentId))
-        const appointmentSnap = await tx.get(appointmentRef)
-        linkedAppointment = appointmentSnap.data() || {}
-        demand(appointmentSnap.exists && linkedAppointment.branchId === branchId && String(linkedAppointment.type || '').toLowerCase() === 'consultation' && String(linkedAppointment.status || '').toLowerCase() === 'completed' && (Array.isArray(linkedAppointment.prescriptions) ? linkedAppointment.prescriptions.length > 0 : Boolean(linkedAppointment.prescription)), 'The linked consultation prescription is unavailable.', 409)
-      }
+      const appointmentRef = db.collection('appointments').doc(appointmentId)
+      const appointmentSnap = await tx.get(appointmentRef)
+      const linkedAppointment = appointmentSnap.data() || {}
+      demand(appointmentSnap.exists && linkedAppointment.branchId === branchId && String(linkedAppointment.type || '').toLowerCase() === 'consultation' && String(linkedAppointment.status || '').toLowerCase() === 'completed' && (Array.isArray(linkedAppointment.prescriptions) ? linkedAppointment.prescriptions.length > 0 : Boolean(linkedAppointment.prescription)), 'The linked consultation prescription is unavailable.', 409)
       const prescribed = linkedAppointment
         ? (Array.isArray(linkedAppointment.prescriptions) ? linkedAppointment.prescriptions : linkedAppointment.prescription ? [linkedAppointment.prescription] : [])
         : []
       const medicationName = entry => String(typeof entry === 'string' ? entry : entry?.name || entry?.medication || entry?.productName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      const prescribedByName = new Map()
+      const prescriptionKey = entry => {
+        const inventoryItemId = String(typeof entry === 'object' ? entry?.inventoryItemId || entry?.itemId || '' : '').trim()
+        return inventoryItemId ? `item:${inventoryItemId}` : medicationName(entry)
+      }
+      const prescribedByKey = new Map()
       for (const entry of prescribed) {
-        const key = medicationName(entry)
+        const key = prescriptionKey(entry)
         if (!key) continue
         const amount = typeof entry === 'object' ? Number(entry.quantity ?? entry.totalQuantity) : NaN
-        const prior = prescribedByName.get(key) || { quantity: 0, valid: true }
+        const prior = prescribedByKey.get(key) || { quantity: 0, valid: true }
         if (!Number.isSafeInteger(amount) || amount < 1) prior.valid = false
         else prior.quantity += amount
-        prescribedByName.set(key, prior)
+        prescribedByKey.set(key, prior)
       }
-      const requestedByMedication = new Map()
-      for (const line of pricedLines.filter(value => value.dispensingClass === 'prescription_required')) {
-        demand(appointmentId, `${line.name} requires a linked consultation prescription.`, 409)
-        const key = medicationName(line.item.name), allowance = prescribedByName.get(key)
+      const requestedByPrescription = new Map()
+      for (const line of pricedLines) {
+        const exactKey = `item:${line.itemId}`
+        const legacyNameKey = medicationName(line.item.name)
+        const key = prescribedByKey.has(exactKey) ? exactKey : legacyNameKey
+        const allowance = prescribedByKey.get(key)
         demand(allowance, `${line.name} is not listed on the linked consultation prescription.`, 409)
         demand(allowance.valid && allowance.quantity > 0, `${line.name} needs an explicit prescribed quantity. Ask the clinician to update the prescription before dispensing.`, 409)
-        requestedByMedication.set(key, (requestedByMedication.get(key) || 0) + line.quantity)
+        requestedByPrescription.set(key, (requestedByPrescription.get(key) || 0) + line.quantity)
       }
       const nextDispensedQuantities = { ...(linkedAppointment?.prescriptionDispensedQuantities || {}) }
-      for (const [key, requestedQuantity] of requestedByMedication) {
-        const allowance = prescribedByName.get(key).quantity
+      for (const [key, requestedQuantity] of requestedByPrescription) {
+        const allowance = prescribedByKey.get(key).quantity
         const alreadyDispensed = Number(nextDispensedQuantities[key] || 0)
         demand(Number.isSafeInteger(alreadyDispensed) && alreadyDispensed >= 0, 'Prescription dispensing history is invalid; ask the clinic to review it.', 409)
         demand(alreadyDispensed + requestedQuantity <= allowance, `Only ${Math.max(0, allowance - alreadyDispensed)} prescribed units of this item remain.`, 409)
@@ -204,10 +221,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
         }),
       }))
       const prescriptionsFullyDispensed = prescribed.length > 0
-        && prescribed.every(entry => {
-          const key = medicationName(entry), allowance = prescribedByName.get(key)
-          return allowance?.valid && allowance.quantity > 0 && Number(nextDispensedQuantities[key] || 0) >= allowance.quantity
-        })
+        && [...prescribedByKey.entries()].every(([key, allowance]) => allowance.valid && allowance.quantity > 0 && Number(nextDispensedQuantities[key] || 0) >= allowance.quantity)
       const now = stamp(), createdAt = new Date().toISOString(), customerName = String(req.body.customerName || '').trim().slice(0, 120)
       const receiptNumber = `PH-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}-${saleId.slice(0, 6).toUpperCase()}`
       const items = plannedLines.map(({ itemId, quantity: count, name, unit, unitPrice, total, dispensingClass, lotPlan }) => ({ itemId, name, quantity: count, unit, unitPrice, total, dispensingClass, lotAllocations: lotPlan.allocations }))
@@ -234,7 +248,7 @@ export const registerPharmacyWorkflow = (app, { admin, requireAuth, loadUserCont
         createdBy: ctx.uid,
         createdAt: now,
       }))
-      if (appointmentRef && requestedByMedication.size) tx.update(appointmentRef, {
+      if (requestedByPrescription.size) tx.update(appointmentRef, {
         prescriptionDispensedQuantities: nextDispensedQuantities,
         prescriptionStatus: prescriptionsFullyDispensed ? 'dispensed' : 'partially_dispensed',
         prescriptionLastDispensedAt: now,

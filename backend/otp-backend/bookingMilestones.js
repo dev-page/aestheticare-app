@@ -271,13 +271,28 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
                 check(item && typeof item === 'object' && !Array.isArray(item), `Prescription item ${index + 1} is invalid.`, 400)
                 const field = value => String(value || '').trim()
                 const name = field(item.name || item.medication || item.productName, 160)
-                check(name, `Prescription item ${index + 1} needs a name.`, 400)
+                const inventoryItemId = field(item.inventoryItemId || item.itemId)
+                check(name || inventoryItemId, `Prescription item ${index + 1} needs an inventory item.`, 400)
+                check(!inventoryItemId || /^[A-Za-z0-9_-]{1,150}$/.test(inventoryItemId), `Prescription item ${index + 1} has an invalid inventory item.`, 400)
                 const dosage = field(item.dosage || item.strength), frequency = field(item.frequency), duration = field(item.duration), instructions = field(item.instructions || item.notes)
                 const prescribedQuantity = Number(item.quantity)
                 check(Number.isSafeInteger(prescribedQuantity) && prescribedQuantity > 0, `Prescription item ${index + 1} needs a whole number quantity greater than zero.`, 400)
                 check(name.length <= 160 && dosage.length <= 160 && frequency.length <= 160 && duration.length <= 160 && instructions.length <= 500, `Prescription item ${index + 1} is too long.`, 400)
-                return { name, dosage, frequency, duration, instructions, quantity: prescribedQuantity }
+                return { ...(inventoryItemId ? { inventoryItemId } : {}), name, dosage, frequency, duration, instructions, quantity: prescribedQuantity }
               })
+              const prescribedInventoryIds = new Set()
+              for (const item of update.prescriptions) {
+                if (!item.inventoryItemId) continue // Preserve records written by older clients.
+                check(!prescribedInventoryIds.has(item.inventoryItemId), 'Choose each inventory item only once in a prescription.', 400)
+                prescribedInventoryIds.add(item.inventoryItemId)
+                const inventoryRef = db.collection('inventoryItems').doc(item.inventoryItemId)
+                const inventorySnapshot = await tx.get(inventoryRef)
+                const inventoryItem = inventorySnapshot.data() || {}
+                check(inventorySnapshot.exists && inventoryItem.branchId === appointment.branchId, `${item.name || 'A prescribed item'} is not in this clinic branch inventory.`, 409)
+                check(inventoryItem.pharmacyEnabled === true && inventoryItem.dispensingClass === 'prescription_required', `${inventoryItem.name || item.name || 'This item'} is not configured for prescription dispensing.`, 409)
+                item.name = String(inventoryItem.name || item.name || 'Inventory item')
+                item.unit = String(inventoryItem.unit || 'units')
+              }
               update.prescriptionStatus = update.prescriptions.length ? 'pending' : 'none'
             }
             // Consume only the supplies the practitioner reports using at completion.
@@ -444,6 +459,32 @@ export const registerBookingMilestones = (app, { admin, requireAuth, authorizeCl
       }
       res.json({ success: true, data: result })
     } catch (error) { res.status(error.status || 500).json({ success: false, error: error.message }) }
+  })
+  app.get('/appointments/:id/prescription-inventory', requireAuth, async (req, res) => {
+    try {
+      const db = admin.firestore()
+      const snapshot = await db.collection('appointments').doc(req.params.id).get()
+      check(snapshot.exists, 'Appointment not found.', 404)
+      const appointment = snapshot.data() || {}
+      const assignedPractitionerId = appointment.assignedPractitionerId || appointment.practitionerId || appointment.staffId || appointment.assignedTo
+      check(assignedPractitionerId === req.user.uid, 'Only the assigned practitioner can prepare this prescription.', 403)
+      check(normalized(appointment.type) === 'consultation', 'Inventory prescriptions are available for consultations only.', 400)
+      const inventorySnapshot = await db.collection('inventoryItems').where('branchId', '==', appointment.branchId).get()
+      const items = inventorySnapshot.docs.map(itemDoc => {
+        const item = itemDoc.data() || {}
+        return {
+          id: itemDoc.id,
+          name: String(item.name || 'Inventory item'),
+          category: String(item.category || ''),
+          unit: String(item.unit || 'units'),
+          currentStock: Math.max(0, Number(item.currentStock || 0)),
+          pharmacyEnabled: item.pharmacyEnabled === true,
+          dispensingClass: String(item.dispensingClass || 'unclassified'),
+        }
+      }).filter(item => item.pharmacyEnabled && item.dispensingClass === 'prescription_required')
+        .sort((a, b) => a.name.localeCompare(b.name))
+      res.json({ success: true, data: { items } })
+    } catch (error) { res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Unable to load prescription inventory.' }) }
   })
   run('/appointments/:id/transition', 'transition')
   run('/appointments/:id/verify-service-key', 'key')

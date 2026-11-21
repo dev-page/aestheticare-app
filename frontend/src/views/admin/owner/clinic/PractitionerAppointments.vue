@@ -86,7 +86,7 @@
                 <button v-if="appointment.consultationMode !== 'online' && (['checked in', 'ready to start'].includes(queueStatus(appointment)) || (appointment.source === 'walk_in' && queueStatus(appointment) === 'paid' && appointment.workerKeyVerified && appointment.contract?.status === 'signed'))" type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can start the service." @click="bookingAction(appointment, 'start')" class="rounded-lg bg-blue-700 px-3 py-2 text-sm text-white disabled:opacity-50">Start Service</button>
                 <button v-if="canMarkNoShow(appointment)" type="button" :disabled="actionBusy" @click="markNoShow(appointment)" class="rounded-lg bg-rose-700 px-3 py-2 text-sm text-white disabled:opacity-50">Mark No-show</button>
                 <router-link v-if="appointment.type === 'Consultation' && appointment.consultationMode === 'online'" to="/clinical/consultations/online" class="rounded-lg border border-amber-300 px-3 py-2 text-sm">Open Online Consultation</router-link>
-                <button v-if="queueStatus(appointment) === 'ongoing' && appointment.consultationMode !== 'online'" type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="bookingAction(appointment, 'worker_complete')" class="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
+                <button v-if="queueStatus(appointment) === 'ongoing' && appointment.consultationMode !== 'online'" type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can complete their work." @click="beginWorkerCompletion(appointment)" class="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50">{{ appointment.source === 'walk_in' ? 'Complete Service' : 'Mark My Work Done' }}</button>
                 <template v-if="appointment.sameDayTreatmentAppointmentId && appointment.workerCompleted && !['cleared', 'not_cleared', 'booking_rejected'].includes(appointment.sameDayTreatmentStatus) && !['cancelled', 'cancellation requested'].includes(String(appointment.status || '').trim().toLowerCase())">
                   <p class="w-full text-xs text-amber-200">Consultation complete. Decide whether {{ appointment.sameDayTreatmentName || 'the linked treatment' }} may proceed today.</p>
                   <button type="button" :disabled="actionBusy || !isAssignedToPractitioner(appointment)" title="Only the assigned practitioner can clear same-day treatment." @click="decideSameDayTreatment(appointment, 'clear')" class="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50">Clear treatment for today</button>
@@ -105,6 +105,18 @@
       </section>
 
     </component>
+    <div v-if="onsitePrescriptionCompletion" class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="onsite-prescription-title">
+      <section class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#ead8c2] bg-[#fffdf9] p-5 text-[#3d281d] shadow-2xl">
+        <p class="text-xs font-bold uppercase tracking-[.16em] text-[#91643f]">Finish consultation</p>
+        <h2 id="onsite-prescription-title" class="mt-1 text-xl font-bold">Prescription for {{ onsitePrescriptionCompletion.appointment.clientName || onsitePrescriptionCompletion.appointment.customerName || 'customer' }}</h2>
+        <p class="mt-2 text-sm text-[#806b5a]">Select items from this branch’s prescription inventory. Only these items and quantities can be dispensed by Pharmacy.</p>
+        <PrescriptionComposer :key="onsitePrescriptionCompletion.appointment.id" v-model="onsitePrescriptionItems" :appointment-id="onsitePrescriptionCompletion.appointment.id" @validity="onsitePrescriptionValid = $event" />
+        <div class="mt-5 flex flex-wrap justify-end gap-2 border-t border-[#ead8c2] pt-4">
+          <button type="button" class="rounded-lg border border-[#d8b994] px-4 py-2 text-sm font-semibold text-[#68452f]" :disabled="actionBusy" @click="onsitePrescriptionCompletion = null">Cancel</button>
+          <button type="button" class="rounded-lg bg-[#28765c] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="actionBusy || !onsitePrescriptionValid" @click="finishOnsiteConsultation">{{ actionBusy ? 'Saving…' : 'Save notes & finish' }}</button>
+        </div>
+      </section>
+    </div>
     <BookingContractModal :visible="Boolean(contractAppointment)" :appointment="contractAppointment" @close="contractAppointment = null" @updated="contractSaved" />
     <ServiceKeyVerificationModal
       :visible="showServiceKeyModal"
@@ -131,9 +143,9 @@ import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import BookingContractModal from '@/components/BookingContractModal.vue'
 import ServiceKeyVerificationModal from '@/components/ServiceKeyVerificationModal.vue'
+import PrescriptionComposer from '@/components/common/PrescriptionComposer.vue'
 import { usePermissions } from '@/composables/usePermissions'
 import { loadOwnerBranchScope } from '@/utils/ownerBranchScope'
-import { promptForPrescriptions } from '@/utils/prescriptions'
 
 const localDateKey = (date = new Date()) => {
   const year = date.getFullYear()
@@ -181,7 +193,7 @@ const formatAppointmentDate = (value) => {
 export default {
   name: 'PractitionerAppointments',
   props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' } },
-  components: { OwnerSidebar, ServiceKeyVerificationModal, BookingContractModal, AppointmentTeam },
+  components: { OwnerSidebar, ServiceKeyVerificationModal, BookingContractModal, AppointmentTeam, PrescriptionComposer },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
 
@@ -198,6 +210,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const consultationClearances = ref([])
     const actionBusy = ref(false)
     const contractAppointment = ref(null)
+    const onsitePrescriptionCompletion = ref(null)
+    const onsitePrescriptionItems = ref([])
+    const onsitePrescriptionValid = ref(true)
     const contractSaved = async () => { contractAppointment.value = null; await loadAppointments() }
     const showServiceKeyModal = ref(false)
     const selectedServiceKeyAppointment = ref(null)
@@ -210,17 +225,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       try {
         const token = await auth.currentUser.getIdToken()
         const path = action === 'key' ? 'verify-service-key' : 'transition'
-        if (action === 'worker_complete') {
-          const treatmentNotes = window.prompt('Treatment notes / recommendations (optional):', '')
-          if (treatmentNotes === null) return false
-          const aftercareInstructions = window.prompt('Aftercare instructions (optional):', '')
-          if (aftercareInstructions === null) return false
-          const materialsUsed = promptForMaterialsUsed(appointment)
-          if (materialsUsed === null) return false
-          const prescriptions = String(appointment.type || '').toLowerCase() === 'consultation' ? promptForPrescriptions(appointment.prescriptions) : undefined
-          if (prescriptions === null) return false
-          extra = { treatmentNotes, aftercareInstructions, materialsUsed, ...(prescriptions ? { prescriptions } : {}) }
-        }
         const response = await fetch(OTP_API_BASE + '/appointments/' + appointment.id + '/' + path, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(action === 'key' ? { serviceKey } : { action, ...extra }) })
         const payload = await response.json()
         if (!response.ok) throw new Error(payload.error || 'Unable to update booking.')
@@ -228,6 +232,35 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         await loadAppointments()
         return true
       } catch (error) { toast.error(error.message); return false } finally { actionBusy.value = false }
+    }
+
+    const beginWorkerCompletion = async appointment => {
+      if (!appointment || actionBusy.value || !isAssignedToPractitioner(appointment)) return
+      const treatmentNotes = window.prompt('Treatment notes / recommendations (optional):', '')
+      if (treatmentNotes === null) return
+      const aftercareInstructions = window.prompt('Aftercare instructions (optional):', '')
+      if (aftercareInstructions === null) return
+      const materialsUsed = promptForMaterialsUsed(appointment)
+      if (materialsUsed === null) return
+      const extra = { treatmentNotes, aftercareInstructions, materialsUsed }
+      if (String(appointment.type || '').toLowerCase() === 'consultation') {
+        onsitePrescriptionItems.value = Array.isArray(appointment.prescriptions) ? appointment.prescriptions : []
+        onsitePrescriptionValid.value = true
+        onsitePrescriptionCompletion.value = { appointment, extra }
+        return
+      }
+      await bookingAction(appointment, 'worker_complete', '', extra)
+    }
+
+    const finishOnsiteConsultation = async () => {
+      const current = onsitePrescriptionCompletion.value
+      if (!current || !onsitePrescriptionValid.value || actionBusy.value) return
+      const saved = await bookingAction(current.appointment, 'worker_complete', '', { ...current.extra, prescriptions: onsitePrescriptionItems.value })
+      if (saved) {
+        onsitePrescriptionCompletion.value = null
+        onsitePrescriptionItems.value = []
+        onsitePrescriptionValid.value = true
+      }
     }
 
     const decideSameDayTreatment = async (appointment, decision) => {
@@ -549,6 +582,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       formatAppointmentDate,
       isAssignedToPractitioner,
       contractAppointment, contractSaved,
+      onsitePrescriptionCompletion,
+      onsitePrescriptionItems,
+      onsitePrescriptionValid,
+      beginWorkerCompletion,
+      finishOnsiteConsultation,
       actionBusy, bookingAction, showServiceKeyModal, openServiceKeyModal, closeServiceKeyModal, submitServiceKey,
       decideSameDayTreatment,
       canMarkNoShow, markNoShow,

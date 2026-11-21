@@ -8,7 +8,7 @@
           <p v-if="canSign" class="contract-intro">Review the agreement, draw your signature, and confirm. {{ isWalkIn ? 'The treatment recipient must sign before payment; the booking arranger cannot sign this agreement for them.' : 'Payment becomes available after signing.' }}</p>
         </div>
         <div class="contract-header-actions">
-          <span class="contract-status" :class="{ 'contract-status-signed': contract?.status === 'signed' }">{{ contract?.status === 'signed' ? 'Signed' : 'Awaiting signature' }}</span>
+          <span class="contract-status" :class="{ 'contract-status-signed': isContractSigned }">{{ isContractSigned ? 'Signed' : 'Awaiting signature' }}</span>
           <button type="button" class="contract-close" aria-label="Close contract" title="Close contract" @click="close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" /></svg>
           </button>
@@ -28,12 +28,25 @@
         </section>
         <p v-if="isWalkIn && contract?.status !== 'signed'" class="contract-warning">Ask the treatment recipient to review and sign this agreement before taking payment at POS.</p>
         <p v-else-if="isWalkIn && appointment.paymentStatus !== 'Paid'" class="contract-warning">Agreement signed. Record full payment at POS to issue the service code.</p>
-        <section v-if="contract?.terms" class="contract-document">
+        <section v-if="customerView" class="contract-pdf-viewer">
+          <div class="contract-pdf-viewer-head">
+            <div>
+              <h4>Clinic agreement PDF</h4>
+              <p>{{ isContractSigned ? 'This is the agreement saved with your appointment.' : 'Review this saved agreement before signing.' }}</p>
+            </div>
+            <a v-if="contractPdfUrl" :href="contractPdfUrl" target="_blank" rel="noopener noreferrer" class="contract-link">Open PDF in a new tab</a>
+          </div>
+          <p v-if="contractPdfLoading" class="contract-pdf-state" role="status">Preparing the agreement PDF…</p>
+          <iframe v-else-if="contractPdfUrl" class="contract-pdf-frame" :src="contractPdfUrl" title="Clinic agreement PDF" />
+          <p v-else class="contract-pdf-state" :class="{ 'contract-pdf-state-error': contractPdfError }" :role="contractPdfError ? 'alert' : 'status'">{{ contractPdfError || 'No PDF agreement is attached to this appointment.' }}</p>
+          <a v-if="clinicPdfUrl && clinicPdfUrl !== contractPdfUrl" :href="clinicPdfUrl" target="_blank" rel="noopener noreferrer" class="contract-clinic-pdf-link">Open the clinic-provided PDF</a>
+        </section>
+        <section v-else-if="contract?.terms" class="contract-document">
           <div class="contract-step"><span>1</span><div><h4>Review agreement</h4><p>Please read the terms before signing.</p></div></div>
           <ClientContractDocument v-if="contract.document" class="contract-terms styled-contract" :document="contract.document" />
           <p v-else class="contract-terms">{{ contract.terms }}</p>
         </section>
-        <div v-if="!readOnly && !isCustomer && !isWalkIn" class="contract-field">
+        <div v-if="!readOnly && !customerView && !isCustomer && !isWalkIn" class="contract-field">
           <label>Contract PDF link <span>(optional)</span></label>
           <input :readonly="isCustomer" v-model="templateUrl" type="text" placeholder="https://... or gs://..." />
           <p>Attach a public link only when the clinic has a PDF agreement. The booking customer is the contract signer.</p>
@@ -49,7 +62,7 @@
           </label>
         </section>
         <div v-if="(!readOnly && !isCustomer && !isWalkIn) || canSign" class="contract-actions">
-          <button v-if="!readOnly && !isCustomer && !isWalkIn" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
+          <button v-if="!readOnly && !customerView && !isCustomer && !isWalkIn" @click="createContract" :disabled="isProcessing" class="contract-button contract-button-secondary">Create / Update</button>
           <button v-if="canSign" @click="signContract" :disabled="isProcessing || !accepted || !signatureImage" class="contract-button contract-button-primary">{{ isProcessing ? 'Saving signature...' : 'Confirm signature' }}</button>
         </div>
 
@@ -77,8 +90,11 @@
 </template>
 
 <script>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { getAuth } from 'firebase/auth'
+import { getDownloadURL, ref as storageRef } from 'firebase/storage'
+import { storage } from '@/config/firebaseConfig'
+import { createClientContractPdf } from '@/utils/clientContractPdf'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 import ElectronicSignaturePad from '@/components/common/ElectronicSignaturePad.vue'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
@@ -89,7 +105,8 @@ export default {
   props: {
     visible: { type: Boolean, default: false },
     appointment: { type: Object, default: null },
-    readOnly: { type: Boolean, default: false }
+    readOnly: { type: Boolean, default: false },
+    customerView: { type: Boolean, default: false }
   },
   emits: ['close', 'updated'],
   setup(props, { emit }) {
@@ -102,6 +119,12 @@ export default {
     const message = ref('')
     const signatureImage = ref('')
     const accepted = ref(false)
+    const contractPdfUrl = ref('')
+    const clinicPdfUrl = ref('')
+    const contractPdfLoading = ref(false)
+    const contractPdfError = ref('')
+    const generatedPdfUrls = new Set()
+    let pdfGeneration = 0
 
     watch(() => props.appointment, (next) => {
       signatureImage.value = ''
@@ -116,6 +139,85 @@ export default {
         contract.value = null
       }
     }, { immediate: true })
+
+    const resolvePdfUrl = async (value) => {
+      const url = String(value || '').trim()
+      if (/^https:\/\//i.test(url)) return url
+      if (/^gs:\/\//i.test(url)) return getDownloadURL(storageRef(storage, url))
+      return ''
+    }
+
+    const contractDocumentForPdf = (source) => {
+      if (source?.document && typeof source.document === 'object') {
+        return { ...source.document, title: source.document.title || source.title || 'Clinic treatment agreement' }
+      }
+      const terms = String(source?.terms || '').trim()
+      if (!terms) return null
+      return {
+        title: source?.title || 'Clinic treatment agreement',
+        intro: 'This is the clinic agreement saved with your appointment.',
+        sections: [{ title: 'Agreement terms', text: terms }],
+        acknowledgement: 'By signing, I confirmed that I reviewed and accepted this agreement.',
+      }
+    }
+
+    const prepareContractPdf = async (appointment) => {
+      const requestId = ++pdfGeneration
+      const source = appointment?.contract || null
+      contractPdfUrl.value = ''
+      clinicPdfUrl.value = ''
+      contractPdfError.value = ''
+      if (!source) return
+
+      contractPdfLoading.value = true
+      try {
+        const [signedUrl, attachedUrl] = await Promise.all([
+          resolvePdfUrl(source.signedUrl).catch(() => ''),
+          resolvePdfUrl(source.templateUrl).catch(() => ''),
+        ])
+        if (requestId !== pdfGeneration) return
+        clinicPdfUrl.value = attachedUrl
+        if (signedUrl) {
+          contractPdfUrl.value = signedUrl
+          return
+        }
+
+        const document = contractDocumentForPdf(source)
+        if (document) {
+          const blob = await createClientContractPdf(document)
+          const objectUrl = URL.createObjectURL(blob)
+          generatedPdfUrls.add(objectUrl)
+          if (requestId !== pdfGeneration) return
+          contractPdfUrl.value = objectUrl
+          return
+        }
+
+        if (attachedUrl) {
+          contractPdfUrl.value = attachedUrl
+          return
+        }
+        contractPdfError.value = 'This appointment does not have saved agreement text or a PDF link.'
+      } catch (pdfError) {
+        if (requestId === pdfGeneration) contractPdfError.value = pdfError?.message || 'Unable to prepare the agreement PDF.'
+      } finally {
+        if (requestId === pdfGeneration) contractPdfLoading.value = false
+      }
+    }
+
+    watch(() => [props.visible, props.appointment?.id, props.customerView], ([visible]) => {
+      if (visible && props.customerView && props.appointment) {
+        prepareContractPdf(props.appointment)
+      } else {
+        pdfGeneration += 1
+        contractPdfLoading.value = false
+      }
+    }, { immediate: true })
+
+    onBeforeUnmount(() => {
+      pdfGeneration += 1
+      for (const url of generatedPdfUrls) URL.revokeObjectURL(url)
+      generatedPdfUrls.clear()
+    })
 
     const fetchFromBackend = async (path, options = {}) => {
       const candidates = OTP_BACKEND_CANDIDATES
@@ -161,11 +263,12 @@ export default {
     }
 
     const isWalkIn = computed(() => props.appointment?.source === 'walk_in')
-    const isCustomer = computed(() => props.appointment?.customerId === auth.currentUser?.uid)
+    const isCustomer = computed(() => props.customerView || props.appointment?.customerId === auth.currentUser?.uid)
+    const isContractSigned = computed(() => String(contract.value?.status || '').trim().toLowerCase() === 'signed')
     const canSign = computed(() => {
       if (props.readOnly) return false
-      if (isWalkIn.value) return Boolean(auth.currentUser && contract.value && contract.value.status !== 'signed')
-      if (!isCustomer.value || contract.value?.status === 'signed') return false
+      if (isWalkIn.value) return Boolean(auth.currentUser && contract.value && !isContractSigned.value)
+      if (!isCustomer.value || isContractSigned.value) return false
       if (!auth.currentUser || !contract.value) return false
       // allow signing if current user's email is among requiredSigners or no requiredSigners defined
       const email = auth.currentUser.email && auth.currentUser.email.toLowerCase()
@@ -207,7 +310,7 @@ export default {
 
     const close = () => emit('close')
 
-    return { isWalkIn, isCustomer, title, templateUrl, contract, createContract, signContract, isProcessing, error, message, close, canSign, signatureImage, accepted }
+    return { isWalkIn, isCustomer, isContractSigned, title, templateUrl, contract, createContract, signContract, isProcessing, error, message, close, canSign, signatureImage, accepted, contractPdfUrl, clinicPdfUrl, contractPdfLoading, contractPdfError }
   }
 }
 </script>
@@ -224,6 +327,14 @@ export default {
 .contract-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.5rem 1.5rem 1.25rem; border-bottom: 1px solid #efdec8; }.contract-kicker { margin: 0 0 .25rem; color: #9a6340; font-size: .72rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }.contract-modal h3 { margin: 0; font-size: 1.35rem; font-weight: 750; }.contract-intro { max-width: 35rem; margin: .5rem 0 0; color: #70594a; font-size: .88rem; line-height: 1.5; }.contract-status { flex: none; border-radius: 999px; padding: .4rem .65rem; background: #f4e7d6; color: #805432; font-size: .74rem; font-weight: 700; }.contract-status-signed { background: #e2f3e7; color: #21643a; }
 .contract-modal > .space-y-3 { padding: 1.5rem; }.contract-warning, .contract-error, .contract-success { border-radius: .65rem; padding: .8rem .9rem; font-size: .85rem; }.contract-warning { border: 1px solid #f0cc8d; background: #fff4da; color: #81531d; }.contract-error { background: #fbe9e6; color: #a12d22; }.contract-success { background: #e7f6e9; color: #24633b; }
 .contract-document, .signature-section, .signature-record { border: 1px solid #ecd8bd; border-radius: .85rem; background: #fff; padding: 1rem; }.contract-step { display: flex; align-items: flex-start; gap: .65rem; }.contract-step > span { display: grid; width: 1.5rem; height: 1.5rem; flex: none; place-items: center; border-radius: 999px; background: #f6e7d2; color: #874e28; font-size: .76rem; font-weight: 750; }.contract-step h4, .contract-record-title { margin: .05rem 0 0; color: #412d20; font-size: .96rem; font-weight: 750; }.contract-step p { margin: .15rem 0 0; color: #816d5f; font-size: .77rem; }.contract-terms { max-height: 16rem; overflow-y: auto; margin: 1rem 0 0; padding: .9rem; border: 1px solid #f0e2cf; border-radius: .6rem; background: #fffcf8; color: #4c392e; font-size: .86rem; line-height: 1.6; white-space: pre-wrap; }
+.contract-pdf-viewer { overflow: hidden; border: 1px solid #ecd8bd; border-radius: .85rem; background: #fff; }
+.contract-pdf-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 1rem; border-bottom: 1px solid #ecd8bd; }
+.contract-pdf-viewer-head h4 { margin: 0; color: #412d20; font-size: .96rem; font-weight: 750; }
+.contract-pdf-viewer-head p { margin: .2rem 0 0; color: #816d5f; font-size: .77rem; }
+.contract-pdf-frame { display: block; width: 100%; height: min(58vh, 38rem); border: 0; background: #f4eee7; }
+.contract-pdf-state { margin: 0; padding: 1rem; color: #816d5f; font-size: .84rem; }
+.contract-pdf-state-error { color: #a12d22; }
+.contract-clinic-pdf-link { display: inline-flex; margin: .75rem 1rem; color: #8c4c22; font-size: .82rem; font-weight: 700; text-decoration: underline; }
 .contract-field label { display: block; margin-bottom: .35rem; color: #5d4536; font-size: .8rem; font-weight: 700; }.contract-field label span, .contract-field p { color: #947d6c; font-weight: 400; }.contract-field p { margin: .35rem 0 0; font-size: .72rem; }.contract-field input { width: 100%; box-sizing: border-box; border: 1px solid #dfc4a0; border-radius: .6rem; padding: .65rem .75rem; background: #fff; color: #2f1d14; outline: none; }.contract-field input:focus { border-color: #a56639; box-shadow: 0 0 0 3px rgba(165, 102, 57, .12); }.contract-link { display: inline-flex; color: #8c4c22; font-size: .83rem; font-weight: 700; text-decoration: underline; }.contract-consent { display: flex; align-items: flex-start; gap: .55rem; margin-top: .8rem; color: #594437; font-size: .8rem; line-height: 1.45; }.contract-consent input { margin-top: .14rem; accent-color: #9d5d30; }
 .contract-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .55rem; padding-top: .35rem; }.contract-button { border-radius: .6rem; padding: .63rem .9rem; font-size: .82rem; font-weight: 700; transition: .15s ease; }.contract-button:disabled { cursor: not-allowed; opacity: .5; }.contract-button-primary { background: #8e4b23; color: white; }.contract-button-primary:hover:not(:disabled) { background: #713617; }.contract-button-secondary { border: 1px solid #d5a773; background: #fff; color: #7b431f; }.contract-button-plain { color: #725d4d; }.contract-record-line { margin: .45rem 0 0; color: #684f40; font-size: .8rem; }.contract-record-line a { color: #8c4c22; text-decoration: underline; }.signature-preview { display: block; max-width: 9rem; max-height: 3.5rem; margin: .7rem 0; border-radius: .35rem; background: white; }.contract-signer-list { margin: .35rem 0 0; padding-left: 1.15rem; color: #684f40; font-size: .78rem; }
 @media (max-width: 640px) { .contract-modal-header, .contract-modal > .space-y-3 { padding: 1.15rem; }.contract-status { display: none; } }

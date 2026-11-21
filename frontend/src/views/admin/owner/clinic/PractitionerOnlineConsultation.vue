@@ -253,14 +253,12 @@
       <label for="consultation-completion-notes" class="mb-2 block text-sm font-semibold text-slate-700">Consultation notes and recommendations</label>
       <textarea id="consultation-completion-notes" v-model="completionNotes" rows="5" maxlength="5000" class="mb-1 w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-800" placeholder="Record the assessment, recommendations, and follow-up guidance." />
       <p class="mb-4 text-xs text-slate-500">Enter at least 10 characters. You can save a draft in Consultation controls.</p>
-      <label for="consultation-prescriptions" class="mb-2 block text-sm font-semibold text-slate-700">Prescriptions (optional)</label>
-      <textarea id="consultation-prescriptions" v-model="completionPrescriptionsText" rows="4" class="w-full rounded-lg border border-slate-300 p-3 font-mono text-xs text-slate-800" placeholder="One item per line: name | dosage | frequency | duration | instructions | quantity" />
-      <p class="mt-1 text-xs text-slate-500">Leave blank if none. Separate fields with | and enter a whole-number quantity.</p>
+      <PrescriptionComposer v-if="completionAppointment" :key="completionAppointment.id" v-model="completionPrescriptions" :appointment-id="completionAppointment.id" @validity="prescriptionValid = $event" />
       <p v-if="completionError" role="alert" class="mt-3 text-sm text-rose-600">{{ completionError }}</p>
       <template #footer>
         <div class="flex justify-end gap-2">
           <button type="button" class="rounded-lg border px-4 py-2 text-sm" :disabled="finishingId === completionAppointment?.id" @click="closeCompletionForm">Cancel</button>
-          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="completionNotes.trim().length < 10 || !meetEndedConfirmed || finishingId === completionAppointment?.id" @click="completeConsultation(completionAppointment)">{{ finishingId === completionAppointment?.id ? 'Saving…' : 'Save notes & finish' }}</button>
+          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="completionNotes.trim().length < 10 || !meetEndedConfirmed || !prescriptionValid || finishingId === completionAppointment?.id" @click="completeConsultation(completionAppointment)">{{ finishingId === completionAppointment?.id ? 'Saving…' : 'Save notes & finish' }}</button>
         </div>
       </template>
     </Modal>
@@ -287,12 +285,12 @@ import { OTP_BACKEND_CANDIDATES, OTP_BACKEND_URL } from '@/utils/runtimeConfig'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
 import { formatClockTime } from '@/utils/appointmentDss'
 import { initialPaymentReceived, normalized } from '../../../../../../backend/otp-backend/bookingWorkflow.js'
-import { parsePrescriptionText } from '@/utils/prescriptions'
+import PrescriptionComposer from '@/components/common/PrescriptionComposer.vue'
 
 export default {
   name: 'PractitionerOnlineConsultation',
   props: { embedded: { type: Boolean, default: false }, branchId: { type: String, default: '' }, existingOnly: { type: Boolean, default: false } },
-  components: { OwnerSidebar, Icon, OnlineConsultationControls, Modal },
+  components: { OwnerSidebar, Icon, OnlineConsultationControls, Modal, PrescriptionComposer },
   setup(props) {
 const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const { hasPermission } = usePermissions()
@@ -326,7 +324,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const startReadyToBegin = ref(false)
     const completionAppointment = ref(null)
     const completionNotes = ref('')
-    const completionPrescriptionsText = ref('')
+    const completionPrescriptions = ref([])
+    const prescriptionValid = ref(true)
     const completionError = ref('')
     const meetEndedConfirmed = ref(false)
     const clockNow = ref(Date.now())
@@ -657,16 +656,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
     }
 
-    const prescriptionsToText = prescriptions => (Array.isArray(prescriptions) ? prescriptions : [])
-      .map(item => [item.name || item.medication || item.productName, item.dosage || item.strength, item.frequency, item.duration, item.instructions || item.notes, item.quantity]
-        .map(value => String(value ?? '')).join(' | '))
-      .join('\n')
-
     const openCompletionForm = appointment => {
       if (!appointment?.id || String(appointment.status || '').trim() !== 'Ongoing') return
       completionAppointment.value = appointment
       completionNotes.value = String(appointment.treatmentNotes || '')
-      completionPrescriptionsText.value = prescriptionsToText(appointment.prescriptions)
+      completionPrescriptions.value = Array.isArray(appointment.prescriptions) ? appointment.prescriptions : []
+      prescriptionValid.value = true
       completionError.value = ''
       meetEndedConfirmed.value = false
     }
@@ -676,6 +671,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       completionAppointment.value = null
       completionError.value = ''
       meetEndedConfirmed.value = false
+      completionPrescriptions.value = []
+      prescriptionValid.value = true
     }
 
     const completeConsultation = async (appointment) => {
@@ -685,14 +682,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const treatmentNotes = String(completionNotes.value || '').trim()
         if (treatmentNotes.length < 10) throw Error('Enter consultation notes of at least 10 characters.')
         if (!meetEndedConfirmed.value) throw Error('End the Google Meet call for everyone before finishing the consultation.')
-        const prescriptions = parsePrescriptionText(completionPrescriptionsText.value)
         const materialsUsed = [...new Map((appointment.resources || [])
           .filter(resource => resource.kind === 'material' && String(resource.id || '').trim())
           .map(resource => [String(resource.id).trim(), { id: String(resource.id).trim(), quantity: 0 }])).values()]
         const response = await fetchFromBackend(`/appointments/${appointment.id}/transition`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions, materialsUsed, meetEndedConfirmed: true }),
+          body: JSON.stringify({ action: 'worker_complete', treatmentNotes, prescriptions: completionPrescriptions.value, materialsUsed, meetEndedConfirmed: true }),
         })
         const payload = await response.json()
         if (!response.ok || !payload?.success) {
@@ -700,7 +696,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         }
         appointment.status = payload?.data?.status || 'Awaiting Customer Confirmation'
         appointment.treatmentNotes = treatmentNotes
-        appointment.prescriptions = prescriptions
+        appointment.prescriptions = completionPrescriptions.value
         appointment.workerCompleted = true
         appointment.workerCompletedAt = new Date().toISOString()
         appointment.materialsUsed = materialsUsed
@@ -839,7 +835,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       startReadyToBegin,
       completionAppointment,
       completionNotes,
-      completionPrescriptionsText,
+      completionPrescriptions,
+      prescriptionValid,
       completionError,
       meetEndedConfirmed,
       currentBranchId,

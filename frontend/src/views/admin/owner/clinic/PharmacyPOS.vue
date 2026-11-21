@@ -4,29 +4,40 @@
     <main v-page-loading="{ active: pageLoading, variant: 'pharmacy-pos' }" class="pos-main">
       <div class="pos-content">
         <header class="page-heading">
-          <div><p class="eyebrow">Clinic pharmacy</p><h1>Pharmacy</h1><p class="subtitle">Sell available pharmacy items, collect in-person payment, and keep inventory and sales records in sync.</p></div>
+          <div><p class="eyebrow">Clinic pharmacy</p><h1>Pharmacy</h1><p class="subtitle">Review branch stock and dispense only the items and quantities on a completed consultation prescription.</p></div>
           <label v-if="branches.length > 1" class="branch-filter">Clinic branch<select v-model="branchId" @change="switchBranch"><option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option></select></label>
         </header>
         <p v-if="error" class="notice error" role="alert">{{ error }}</p>
-        <section v-if="appointmentId" class="notice prescription-link"><div><strong>Prescription pickup</strong><p v-if="linkedPrescription">{{ linkedPrescription.customerName || 'Customer' }} · {{ linkedPrescription.service || linkedPrescription.serviceName || 'Consultation' }}</p><p v-else>Linked consultation: {{ appointmentId }}</p><ul v-if="linkedPrescriptionItems.length" class="prescription-items"><li v-for="(item, index) in linkedPrescriptionItems" :key="index"><strong>{{ item.name || item.medication || item.productName || 'Medication' }}</strong><span>{{ [item.dosage || item.strength, item.frequency, item.duration, item.instructions || item.notes].filter(Boolean).join(' · ') }}</span><span>Prescribed: {{ item.quantity || 'Quantity needed' }} · Dispensed: {{ prescriptionDispensed(item) }}</span></li></ul></div><router-link to="/clinical/prescriptions">Back to prescriptions</router-link></section>
+        <section v-if="!appointmentId" class="panel prescription-queue">
+          <div class="section-heading"><div><p class="eyebrow">Ready for dispensing</p><h2>Completed consultation prescriptions</h2></div><router-link class="pos-link" to="/clinical/prescriptions">View all prescriptions</router-link></div>
+          <p v-if="loading" class="muted">Loading prescriptions…</p>
+          <div v-else-if="prescriptions.length" class="queue-list">
+            <article v-for="prescription in prescriptions" :key="prescription.id" class="queue-row">
+              <div><strong>{{ prescription.customerName }}</strong><small>{{ prescription.service }} · {{ formatDate(prescription.date) }}</small><small>{{ prescription.prescriptions.length }} prescribed {{ prescription.prescriptions.length === 1 ? 'item' : 'items' }} · {{ prescription.prescriptionStatus === 'partially_dispensed' ? 'Partially dispensed' : 'Pending pickup' }}</small></div>
+              <router-link class="queue-action" :to="{ path: '/pharmacy/pos', query: { branchId, appointmentId: prescription.id } }">Open prescription</router-link>
+            </article>
+          </div>
+          <p v-else class="muted">No completed consultation prescriptions are waiting for dispensing.</p>
+        </section>
+        <section v-if="appointmentId" class="notice prescription-link"><div><strong>Prescription pickup</strong><template v-if="linkedPrescription"><p>{{ linkedPrescription.customerName || 'Customer' }} · {{ linkedPrescription.service || linkedPrescription.serviceName || 'Consultation' }}</p><ul v-if="linkedPrescriptionItems.length" class="prescription-items"><li v-for="(item, index) in linkedPrescriptionItems" :key="index"><strong>{{ item.name || item.medication || item.productName || 'Medication' }}</strong><span>{{ [item.dosage || item.strength, item.frequency, item.duration, item.instructions || item.notes].filter(Boolean).join(' · ') }}</span><span>Prescribed: {{ item.quantity || 'Quantity needed' }} · Dispensed: {{ prescriptionDispensed(item) }}</span></li></ul></template><p v-else>This prescription is unavailable or has already been fully dispensed.</p></div><router-link to="/pharmacy/pos">Back to prescriptions</router-link></section>
 
         <div class="pos-layout">
           <section class="panel">
-            <div class="section-heading"><div><p class="eyebrow">Sellable items</p><h2>Pharmacy stock</h2></div><input v-model.trim="search" class="search" placeholder="Search products" aria-label="Search pharmacy products" /></div>
+            <div class="section-heading"><div><p class="eyebrow">Branch inventory</p><h2>Inventory stock</h2></div><input v-model.trim="search" class="search" placeholder="Search inventory" aria-label="Search branch inventory" /></div>
             <p v-if="loading" class="muted">Loading branch inventory…</p>
             <p v-else-if="!pharmacyItems.length" class="muted">No inventory items match your search.</p>
             <div v-else class="item-grid">
               <article v-for="item in pharmacyItems" :key="item.id" class="item-card">
                 <div><strong>{{ item.name }}</strong><small>{{ item.unit || 'units' }} · {{ available(item) }} available · {{ dispensingLabel(item.dispensingClass) }}</small><small v-if="item.dispensingClass === 'prescription_required' && appointmentId">{{ prescriptionRemaining(item) }} prescribed units remain</small></div>
                 <span class="price">{{ Number(item.retailPrice) > 0 ? currency(item.retailPrice) : 'Price needed' }}</span>
-                <button type="button" :disabled="!canAdd(item)" @click="addItem(item)">Add</button>
+                <button type="button" :disabled="!canAdd(item)" @click="addItem(item)">{{ itemActionLabel(item) }}</button>
               </article>
             </div>
           </section>
 
           <section class="panel cart-panel">
             <div class="section-heading"><div><p class="eyebrow">Checkout</p><h2>Current sale</h2></div><button v-if="cart.length" class="text-button" type="button" @click="cart = []">Clear</button></div>
-            <p v-if="!cart.length" class="muted">Add pharmacy items to start a sale.</p>
+            <p v-if="!cart.length" class="muted">Choose a completed consultation prescription, then add only its prescribed items.</p>
             <div v-for="line in cart" :key="line.itemId" class="cart-line"><div><strong>{{ line.name }}</strong><small>{{ currency(line.unitPrice) }} each</small></div><div class="quantity-control"><button type="button" aria-label="Decrease quantity" @click="changeQuantity(line.itemId, -1)">−</button><span>{{ line.quantity }}</span><button type="button" :disabled="line.quantity >= quantityCap(itemFor(line.itemId))" aria-label="Increase quantity" @click="changeQuantity(line.itemId, 1)">+</button></div><strong>{{ currency(line.unitPrice * line.quantity) }}</strong></div>
             <label class="checkout-field">Customer name <span>optional</span><input v-model.trim="customerName" maxlength="120" placeholder="Name for the receipt" /></label>
             <label class="checkout-field">Payment method<select v-model="paymentMethod"><option>Cash</option><option>Card (external terminal)</option><option>E-wallet (external)</option></select></label>
@@ -34,8 +45,8 @@
             <div class="total-row"><span>Total</span><strong>{{ currency(total) }}</strong></div>
             <p v-if="paymentMethod === 'Cash' && cashTendered >= total && total > 0" class="change-row">Change <strong>{{ currency(cashTendered - total) }}</strong></p>
             <p class="payment-note">For card or e-wallet, collect payment on your external terminal before completing this sale.</p>
-            <button class="checkout-button" type="button" :disabled="!cart.length || busy || !canSell || (paymentMethod === 'Cash' && cashTendered < total)" @click="checkout">{{ busy ? 'Processing…' : 'Complete sale' }}</button>
-            <p v-if="!canSell" class="muted">You need Pharmacy dispensing access to complete sales.</p>
+            <button class="checkout-button" type="button" :disabled="!appointmentId || !linkedPrescription || !cart.length || busy || !canSell || (paymentMethod === 'Cash' && cashTendered < total)" @click="checkout">{{ busy ? 'Processing…' : 'Complete dispense' }}</button>
+            <p v-if="!canSell" class="muted">You need Pharmacy dispensing access to complete a dispense.</p>
           </section>
         </div>
 
@@ -48,14 +59,14 @@
 
         <section class="panel sales-panel"><div class="section-heading"><div><p class="eyebrow">Recent activity</p><h2>Recent pharmacy sales</h2></div></div><div v-if="sales.length" class="sales-list"><article v-for="sale in sales" :key="sale.id"><div><strong>{{ sale.receiptNumber }}</strong><small>{{ sale.customerName || 'Walk-in customer' }} · {{ formatDate(sale.createdAt) }} · {{ sale.paymentMethod || 'Payment' }}</small></div><strong>{{ currency(sale.total) }}</strong></article></div><p v-else class="muted">Completed sales will appear here.</p></section>
 
-        <div v-if="receipt" class="receipt-overlay" role="dialog" aria-modal="true" aria-label="Sale receipt"><section class="receipt"><p class="eyebrow">Sale complete</p><h2>Receipt {{ receipt.receiptNumber }}</h2><p>{{ receipt.customerName || 'Walk-in customer' }} · {{ receipt.paymentMethod }}</p><div v-for="line in receipt.items" :key="line.itemId" class="receipt-line"><span>{{ line.name }} × {{ line.quantity }}</span><strong>{{ currency(line.total) }}</strong></div><div class="total-row"><span>Total paid</span><strong>{{ currency(receipt.total) }}</strong></div><p v-if="receipt.change" class="change-row">Change <strong>{{ currency(receipt.change) }}</strong></p><div class="receipt-actions"><button type="button" @click="printReceipt">Print</button><button type="button" @click="receipt = null">Close</button></div></section></div>
+        <div v-if="receipt" class="receipt-overlay" role="dialog" aria-modal="true" aria-label="Dispense receipt"><section class="receipt"><p class="eyebrow">Dispense complete</p><h2>Receipt {{ receipt.receiptNumber }}</h2><p>{{ receipt.customerName || 'Customer' }} · {{ receipt.paymentMethod }}</p><div v-for="line in receipt.items" :key="line.itemId" class="receipt-line"><span>{{ line.name }} × {{ line.quantity }}</span><strong>{{ currency(line.total) }}</strong></div><div class="total-row"><span>Total paid</span><strong>{{ currency(receipt.total) }}</strong></div><p v-if="receipt.change" class="change-row">Change <strong>{{ currency(receipt.change) }}</strong></p><div class="receipt-actions"><button type="button" @click="printReceipt">Print</button><button type="button" @click="receipt = null">Close</button></div></section></div>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '@/config/firebaseConfig'
@@ -67,26 +78,44 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import { toast } from 'vue3-toastify'
 
 const route = useRoute(), { pageLoading, trackPageLoad, pageListener } = usePageLoading(), { hasPermission } = usePermissions()
-const branches = ref([]), branchId = ref(''), items = ref([]), sales = ref([]), cart = ref([]), prices = ref({}), search = ref(''), customerName = ref(''), paymentMethod = ref('Cash'), cashTendered = ref(''), error = ref(''), loading = ref(true), busy = ref(false), savingId = ref(''), receipt = ref(null), linkedPrescription = ref(null), checkoutId = ref(crypto.randomUUID())
+const branches = ref([]), branchId = ref(''), items = ref([]), sales = ref([]), prescriptions = ref([]), cart = ref([]), prices = ref({}), search = ref(''), customerName = ref(''), paymentMethod = ref('Cash'), cashTendered = ref(''), error = ref(''), loading = ref(true), busy = ref(false), savingId = ref(''), receipt = ref(null), linkedPrescription = ref(null), checkoutId = ref(crypto.randomUUID())
 const appointmentId = computed(() => String(route.query.appointmentId || ''))
 const linkedPrescriptionItems = computed(() => { const value = linkedPrescription.value?.prescriptions; return Array.isArray(value) ? value.map(item => typeof item === 'string' ? { name: item } : item).filter(item => item && typeof item === 'object') : value && typeof value === 'object' ? [value] : [] })
 const canManage = computed(() => hasPermission('pharmacy:manage'))
 const canSell = computed(() => hasPermission('pharmacy:dispense'))
 const pharmacyListedItems = computed(() => items.value.filter(item => item.pharmacyEnabled === true))
-const pharmacyItems = computed(() => pharmacyListedItems.value.filter(item => !search.value || String(item.name || '').toLowerCase().includes(search.value.toLowerCase())))
+const pharmacyItems = computed(() => items.value.filter(item => !search.value || String(item.name || '').toLowerCase().includes(search.value.toLowerCase())))
 const total = computed(() => Math.round(cart.value.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0) * 100) / 100)
 let stopAuth, generation = 0
 const currency = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value || 0))
 const available = item => Math.max(0, Number(item?.availableStock ?? (Number(item?.currentStock || 0) - Number(item?.reservedStock || 0))))
 const medicationKey = item => String(typeof item === 'string' ? item : item?.name || item?.medication || item?.productName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-const prescriptionDispensed = item => Math.max(0, Number(linkedPrescription.value?.prescriptionDispensedQuantities?.[medicationKey(item)] || 0))
+const prescriptionIdentity = item => String(typeof item === 'object' ? item?.inventoryItemId || item?.itemId || '' : '').trim()
+const prescriptionEntriesFor = item => linkedPrescriptionItems.value.filter(entry => {
+  const id = prescriptionIdentity(entry)
+  return id ? id === item.id : medicationKey(entry) === medicationKey(item)
+})
+const prescriptionDispensed = item => {
+  const key = prescriptionEntriesFor(item).some(entry => prescriptionIdentity(entry)) ? `item:${item.id}` : medicationKey(item)
+  return Math.max(0, Number(linkedPrescription.value?.prescriptionDispensedQuantities?.[key] || 0))
+}
 const prescriptionRemaining = item => {
-  const key = medicationKey(item), matches = linkedPrescriptionItems.value.filter(entry => medicationKey(entry) === key)
+  const matches = prescriptionEntriesFor(item)
   if (!matches.length || matches.some(entry => !Number.isSafeInteger(Number(entry.quantity)) || Number(entry.quantity) < 1)) return 0
   return Math.max(0, matches.reduce((sum, entry) => sum + Number(entry.quantity), 0) - prescriptionDispensed(item))
 }
-const quantityCap = item => Math.min(available(item), item?.dispensingClass === 'prescription_required' ? prescriptionRemaining(item) : Number.MAX_SAFE_INTEGER)
-const canAdd = item => quantityCap(item) > 0 && Number(item?.retailPrice || 0) > 0 && item?.dispensingClass !== 'restricted' && item?.dispensingClass !== 'unclassified' && (item?.dispensingClass !== 'prescription_required' || Boolean(appointmentId.value && linkedPrescription.value))
+const quantityCap = item => Math.min(available(item), prescriptionRemaining(item))
+const canAdd = item => Boolean(appointmentId.value && linkedPrescription.value && item?.pharmacyEnabled === true && item?.dispensingClass === 'prescription_required' && quantityCap(item) > 0 && Number(item?.retailPrice || 0) > 0)
+const itemActionLabel = item => {
+  if (!appointmentId.value) return 'Select prescription'
+  if (!linkedPrescription.value) return 'Unavailable'
+  if (!item?.pharmacyEnabled || item?.dispensingClass !== 'prescription_required') return 'Not set up'
+  if (!prescriptionEntriesFor(item).length) return 'Not prescribed'
+  if (!prescriptionRemaining(item)) return 'Fully dispensed'
+  if (!available(item)) return 'Out of stock'
+  if (!Number(item?.retailPrice || 0)) return 'Price needed'
+  return 'Add'
+}
 const dispensingLabel = value => ({ general_sale: 'General sale', prescription_required: 'Prescription required', restricted: 'Restricted', unclassified: 'Unclassified' })[value || 'unclassified']
 const itemFor = id => items.value.find(item => item.id === id)
 const formatDate = value => { const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value || ''); return Number.isNaN(date.getTime()) ? 'Just now' : date.toLocaleString('en-PH') }
@@ -104,6 +133,7 @@ const load = async user => {
     items.value = data.items || []
     prices.value = Object.fromEntries(items.value.map(item => [item.id, Number(item.retailPrice || 0)]))
     sales.value = data.sales || []
+    prescriptions.value = data.prescriptions || []
     loading.value = false
     if (appointmentId.value) {
       try { linkedPrescription.value = (await api(`/pharmacy/prescription?branchId=${encodeURIComponent(branchId.value)}&appointmentId=${encodeURIComponent(appointmentId.value)}`)).appointment; customerName.value = linkedPrescription.value.customerName || '' }
@@ -115,9 +145,10 @@ const switchBranch = async () => { if (auth.currentUser) { cart.value = []; rece
 const addItem = item => { const existing = cart.value.find(line => line.itemId === item.id); if (existing) { if (existing.quantity < quantityCap(item)) existing.quantity++ } else if (canAdd(item)) cart.value.push({ itemId: item.id, name: item.name, unitPrice: Number(item.retailPrice), quantity: 1 }) }
 const changeQuantity = (id, delta) => { const line = cart.value.find(entry => entry.itemId === id); if (!line) return; const next = line.quantity + delta; if (next <= 0) cart.value = cart.value.filter(entry => entry.itemId !== id); else if (next <= quantityCap(itemFor(id))) line.quantity = next }
 const saveSettings = async item => { savingId.value = item.id; try { await api(`/pharmacy/items/${encodeURIComponent(item.id)}/settings`, { branchId: branchId.value, pharmacyEnabled: true, dispensingClass: item.dispensingClass || 'unclassified', retailPrice: prices.value[item.id] }); toast.success('Pharmacy retail price saved.') } catch (cause) { toast.error(cause.message) } finally { savingId.value = '' } }
-const checkout = async () => { if (!canSell.value || !cart.value.length || busy.value) return; busy.value = true; try { receipt.value = await api('/pharmacy/checkout', { checkoutId: checkoutId.value, branchId: branchId.value, items: cart.value.map(line => ({ itemId: line.itemId, quantity: line.quantity })), customerName: customerName.value, paymentMethod: paymentMethod.value, cashTendered: paymentMethod.value === 'Cash' ? cashTendered.value : undefined, appointmentId: appointmentId.value || undefined }); checkoutId.value = crypto.randomUUID(); cart.value = []; cashTendered.value = ''; customerName.value = ''; sales.value = [receipt.value, ...sales.value.filter(sale => sale.id !== receipt.value.id)].slice(0, 30); toast.success('Sale completed and inventory updated.') } catch (cause) { toast.error(cause.message) } finally { busy.value = false } }
+const checkout = async () => { if (!canSell.value || !appointmentId.value || !linkedPrescription.value || !cart.value.length || busy.value) return; busy.value = true; try { receipt.value = await api('/pharmacy/checkout', { checkoutId: checkoutId.value, branchId: branchId.value, items: cart.value.map(line => ({ itemId: line.itemId, quantity: line.quantity })), customerName: customerName.value, paymentMethod: paymentMethod.value, cashTendered: paymentMethod.value === 'Cash' ? cashTendered.value : undefined, appointmentId: appointmentId.value }); checkoutId.value = crypto.randomUUID(); cart.value = []; cashTendered.value = ''; customerName.value = ''; toast.success('Prescribed items dispensed and inventory updated.'); await load(auth.currentUser) } catch (cause) { toast.error(cause.message) } finally { busy.value = false } }
 const printReceipt = () => window.print()
 onMounted(trackPageLoad(() => { stopAuth = pageListener(onAuthStateChanged, auth, load) }))
+watch(appointmentId, async () => { if (auth.currentUser) { cart.value = []; linkedPrescription.value = null; await load(auth.currentUser) } })
 onUnmounted(() => { generation++; stopAuth?.() })
 </script>
 
@@ -153,4 +184,5 @@ onUnmounted(() => { generation++; stopAuth?.() })
 .pos-shell .receipt>p { color: #684c37; }
 .pos-shell .receipt-line { border-color: #ead8c2; }
 @media print{.pos-shell>*:not(main),.page-heading,.pos-layout,.settings-panel,.sales-panel,.receipt-actions{display:none!important}.receipt-overlay{position:static;background:white}.receipt{box-shadow:none;background:white;color:black}.receipt h2,.receipt p,.receipt-line,.total-row{color:black}}
+.queue-list{display:grid;gap:.65rem}.queue-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem;border:1px solid #ead8c2;border-radius:.75rem;background:#fffaf3}.queue-row strong,.queue-row small{display:block}.queue-row strong{color:#3d281d}.queue-row small{margin-top:.2rem;color:#806b5a;font-size:.78rem}.queue-action{flex:none;border:1px solid #d8b994;border-radius:.55rem;background:#8d5a3b;padding:.55rem .75rem;color:#fff;text-decoration:none;font-size:.82rem;font-weight:700}.queue-action:hover{background:#75482e}.pos-shell .item-card button:disabled{background:#eee3d5;color:#826a56;opacity:1;cursor:not-allowed}@media(max-width:600px){.queue-row{align-items:flex-start;flex-direction:column}.queue-action{width:100%;text-align:center}}
 </style>
