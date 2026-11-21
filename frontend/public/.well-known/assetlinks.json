@@ -11,5 +11,17 @@
         "2A:B2:57:16:EB:3C:0B:49:C4:DA:E8:07:E2:3F:2A:36:33:CD:D3:25:AA:7F:73:20:EF:50:A9:9F:36:83:95:4D"
       ]
     }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.aestheticare_app_o13e.twa",
+      "sha256_cert_fingerprints": [
+        "B2:11:B1:21:89:7B:B3:CF:F4:DF:9B:47:53:42:A3:40:2B:D5:7A:B5:6D:CE:B4:47:8C:ED:7A:8D:C0:5C:EA:86"
+      ]
+    }
   }
 ]
