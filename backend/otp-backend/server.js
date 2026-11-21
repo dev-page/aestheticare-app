@@ -4687,6 +4687,40 @@ const authorizeClinicAction = async (uid, branchId, permission) => {
   assertWorkflow(context.permissions.has(permission) || context.permissions.has('administrator:full_access'), 'You do not have permission for this action.', 403)
 }
 
+// Older appointments may not contain a clinic name and their clinic may no
+// longer have a public directory profile. Return only the name to the booked customer.
+app.get('/appointments/:id/clinic-name', requireAuth, async (req, res) => {
+  try {
+    const appointmentId = String(req.params.id || '').trim()
+    assertWorkflow(/^[A-Za-z0-9_-]{1,150}$/.test(appointmentId), 'Invalid appointment.', 400)
+    const db = admin.firestore()
+    const appointmentSnap = await db.collection('appointments').doc(appointmentId).get()
+    assertWorkflow(appointmentSnap.exists, 'Appointment not found.', 404)
+    const appointment = appointmentSnap.data() || {}
+    assertWorkflow(appointment.customerId === req.user.uid, 'Appointment not found.', 404)
+    const branchId = String(appointment.branchId || appointment.clinicId || appointment.clinicBranchId || '').trim()
+    assertWorkflow(/^[A-Za-z0-9_-]{1,150}$/.test(branchId), 'Clinic name is unavailable.', 404)
+    const clinicSnap = await db.collection('clinics').doc(branchId).get()
+    const clinic = clinicSnap.data() || {}
+    const pickName = values => values.map(value => typeof value === 'string' ? value.trim() : '')
+      .find(value => value && value.toLowerCase() !== 'clinic') || ''
+    let name = pickName([clinic.clinicName, clinic.businessName, clinic.companyName, clinic.organizationName])
+    if (!name) {
+      const ownerId = String(clinic.ownerId || clinic.organizationOwnerId || '').trim()
+      if (/^[A-Za-z0-9_-]{1,150}$/.test(ownerId)) {
+        const owner = (await db.collection('users').doc(ownerId).get()).data() || {}
+        name = pickName([owner.clinicName, owner.businessName, owner.companyName, owner.organizationName])
+      }
+    }
+    name ||= pickName([clinic.clinicBranch, clinic.name, appointment.clinicName, appointment.clinicBranch, appointment.branchName, appointment.businessName, appointment.companyName])
+    assertWorkflow(name, 'Clinic name is unavailable.', 404)
+    res.json({ success: true, data: { branchId, name } })
+  } catch (error) {
+    if (!error?.status) console.error('Failed to load appointment clinic name:', error)
+    res.status(error?.status || 500).json({ success: false, error: error?.status ? error.message : 'Unable to load the clinic name.' })
+  }
+})
+
 // Recheck appointment permission using snapshots from the active transaction.
 // This prevents a role or branch assignment revoked during a reschedule from
 // remaining authorized through the earlier, request-level check.

@@ -674,7 +674,7 @@
           <div>
             <p class="request-modal-kicker">Online consultation</p>
             <h2 id="online-join-modal-title" class="request-modal-title">{{ onlineJoinAppointment.consultationCodeVerifiedAt ? 'Your meeting link' : 'Verify your service code' }}</h2>
-            <p class="request-modal-summary">{{ formatAppointmentServices(onlineJoinAppointment) }} · {{ onlineJoinAppointment.clinic }}</p>
+            <p class="request-modal-summary">{{ formatAppointmentServices(onlineJoinAppointment) }} · {{ clinicNameFor(onlineJoinAppointment) }}</p>
           </div>
           <button type="button" class="request-close-button" aria-label="Close online consultation access" :disabled="serviceKeyVerifying" @click="closeOnlineConsultationAccess"><span class="text-xl leading-none">&times;</span></button>
         </header>
@@ -802,7 +802,7 @@ const treatmentAppointments = computed(() => [...upcomingAppointments.value, ...
 const treatmentSessionsForDisplay = computed(() => treatmentSessions.value.map(session => {
   const plan = treatmentAppointments.value.find(appointment => appointment.id === session.treatmentPlanAppointmentId)
   const definition = plan?.treatmentPlan?.sessions?.[Number(session.sessionNumber || 1) - 1]
-  return { ...session, serviceName: definition?.serviceName || plan?.service || 'Treatment visit', clinicName: clinicNameFor(session) !== 'Clinic' ? clinicNameFor(session) : clinicNameFor(plan) }
+  return { ...session, serviceName: definition?.serviceName || plan?.service || 'Treatment visit', clinicName: clinicNameFor(session) !== 'Clinic name unavailable' ? clinicNameFor(session) : clinicNameFor(plan) }
 }).sort((left, right) => String(left.treatmentPlanAppointmentId).localeCompare(String(right.treatmentPlanAppointmentId)) || Number(left.sessionNumber || 0) - Number(right.sessionNumber || 0)))
 const treatmentPlanGroups = computed(() => {
   const groups = new Map()
@@ -836,13 +836,37 @@ const appointmentFeedbackLoading = ref(false)
 const appointmentFeedbackError = ref('')
 let appointmentFeedbackRequest = 0
 const clinicsById = ref({})
+const appointmentClinicNames = ref({})
+const clinicNameRequests = new Map()
 const clinicNameFor = (record) => {
   const branchId = String(record?.branchId || record?.clinicId || record?.clinicBranchId || record?.clinic?.id || '').trim()
   const clinic = branchId ? clinicsById.value[branchId] : null
-  const savedName = [record?.clinicName, record?.clinicBranch, record?.branchName, record?.businessName, record?.companyName, record?.name, typeof record?.clinic === 'string' ? record.clinic : '']
+  const savedName = [record?.clinicName, record?.clinicBranch, record?.branchName, record?.businessName, record?.companyName, typeof record?.clinic === 'string' ? record.clinic : '']
     .map((name) => String(name || '').trim())
     .find((name) => name && name.toLowerCase() !== 'clinic')
-  return clinic?.name && clinic.name.toLowerCase() !== 'clinic' ? clinic.name : savedName || 'Clinic'
+  return appointmentClinicNames.value[branchId] || (clinic?.name && clinic.name.toLowerCase() !== 'clinic' ? clinic.name : savedName) || 'Clinic name unavailable'
+}
+
+const loadAppointmentClinicName = async (appointment, userId) => {
+  const branchId = String(appointment?.branchId || appointment?.clinicId || appointment?.clinicBranchId || '').trim()
+  if (!branchId || !appointment?.id || appointmentClinicNames.value[branchId] || clinicNameRequests.has(branchId)) return
+  const request = (async () => {
+    const user = auth.currentUser
+    if (!user || user.uid !== userId) return
+    const token = await user.getIdToken()
+    const response = await fetch(`${OTP_API_BASE}/appointments/${encodeURIComponent(appointment.id)}/clinic-name`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Unable to load clinic name.')
+    const name = String(payload.data?.name || '').trim()
+    if (auth.currentUser?.uid === userId && payload.data?.branchId === branchId && name) {
+      appointmentClinicNames.value = { ...appointmentClinicNames.value, [branchId]: name }
+    }
+  })()
+  clinicNameRequests.set(branchId, request)
+  try { await request } catch (error) { console.error('Failed to load appointment clinic name:', error) }
+  finally { if (clinicNameRequests.get(branchId) === request) clinicNameRequests.delete(branchId) }
 }
 const showContractModal = ref(false)
 const selectedContractAppointment = ref(null)
@@ -1873,6 +1897,8 @@ const startAppointmentsListener = (userId) => {
         }
       }))
 
+      for (const appointment of all) void loadAppointmentClinicName(appointment, userId)
+
       onlineConsultations.value = sortRecordsNewestFirst(
         all.filter((appt) => isOnlineConsultationAppointment(appt))
       )
@@ -2541,6 +2567,8 @@ onMounted(trackPageLoad(() => {
   holdClockInterval = setInterval(() => { holdClockNow.value = Date.now() }, 1000)
   startClinicsListener()
   unsubscribeAuth = pageListener(onAuthStateChanged, auth, async (user) => {
+    appointmentClinicNames.value = {}
+    clinicNameRequests.clear()
     if (!user) {
       upcomingAppointments.value = []
       pastAppointments.value = []
