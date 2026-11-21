@@ -708,7 +708,7 @@
         </div>
       </section>
     </div>
-    <div v-if="feedbackModal.open" class="request-modal-overlay">
+    <div v-if="feedbackModal.open" class="request-modal-overlay feedback-modal-overlay">
       <section class="request-modal-shell" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
         <header class="request-modal-head">
           <div>
@@ -3159,6 +3159,10 @@ onUnmounted(() => {
   /* allow overlay to scroll on small viewports */
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.feedback-modal-overlay {
+  z-index: 1300;
 }
 
 .request-modal-shell {

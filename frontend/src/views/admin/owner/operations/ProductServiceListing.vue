@@ -103,12 +103,6 @@
                   Consultation required
                 </span>
                 <span
-                  v-if="post.postType === 'Consultation' || (post.postType === 'Service' && post.requiresConsultationFirst)"
-                  class="listing-detail-badge"
-                >
-                  Fee â‚±{{ Number(post.consultationFee || post.price || 0).toFixed(2) }}
-                </span>
-                <span
                   v-if="post.postType === 'Service' && post.followUpAllowed"
                   class="listing-detail-badge listing-follow-up-badge"
                 >
