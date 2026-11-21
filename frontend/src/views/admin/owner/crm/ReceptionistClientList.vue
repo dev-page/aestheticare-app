@@ -149,7 +149,6 @@ import OwnerSidebar from '@/components/sidebar/OwnerSidebar.vue'
 import Modal from '@/components/common/Modal.vue'
 import { toast } from 'vue3-toastify'
 import { sortRecordsNewestFirst } from '@/utils/sortRecords'
-import { formatClockTime } from '@/utils/appointmentDss'
 import { usePermissionsStore } from '@/stores/permissions'
 import { OTP_BACKEND_CANDIDATES } from '@/utils/runtimeConfig'
 
@@ -174,8 +173,47 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const appointmentRecords = ref([])
     let unsubscribeClients = null
     let unsubscribeAppointments = null
+    const customerNameCache = new Map()
 
     const normalizeText = (value) => String(value || '').trim().toLowerCase()
+    const isEmailLike = (value) => /^\S+@\S+\.\S+$/.test(String(value || '').trim())
+    const usableName = (value, email = '') => {
+      const candidate = String(value || '').trim()
+      return candidate && normalizeText(candidate) !== normalizeText(email) && !isEmailLike(candidate) ? candidate : ''
+    }
+
+    const resolveCustomerName = async (customerId) => {
+      const id = String(customerId || '').trim()
+      if (!id) return ''
+      if (customerNameCache.has(id)) return customerNameCache.get(id)
+      const lookup = getDoc(doc(db, 'users', id)).then((snapshot) => {
+        if (!snapshot.exists()) return ''
+        const profile = snapshot.data() || {}
+        const structuredName = [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(' ').trim()
+        return usableName(profile.fullName || profile.displayName || profile.name, profile.email) || usableName(structuredName, profile.email)
+      }).catch(() => '')
+      customerNameCache.set(id, lookup)
+      return lookup
+    }
+
+    const formatClockTime = (value) => {
+      const raw = String(value || '').trim()
+      const match = raw.match(/^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?$/)
+      if (!match) return raw
+      let hour = Number(match[1])
+      const minute = Number(match[2])
+      if (hour > 23 || minute > 59) return raw
+      if (match[3]) {
+        const marker = match[3].toUpperCase()
+        if (hour < 1 || hour > 12) return raw
+        if (marker === 'PM' && hour !== 12) hour += 12
+        if (marker === 'AM' && hour === 12) hour = 0
+      }
+      const suffix = hour >= 12 ? 'PM' : 'AM'
+      hour %= 12
+      if (!hour) hour = 12
+      return `${hour}:${String(minute).padStart(2, '0')} ${suffix}`
+    }
 
     const formatClientName = (client = {}) => {
       const firstName = String(client.firstName || '').trim()
@@ -183,8 +221,10 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const lastName = String(client.lastName || '').trim()
       const suffix = String(client.suffix || '').trim()
       const structuredName = [firstName, middleName, lastName].filter(Boolean).join(' ')
-      if (structuredName) return suffix ? `${structuredName}, ${suffix}` : structuredName
-      return String(client.fullName || '').trim() || 'Unknown Client'
+      const resolvedName = usableName(client.resolvedCustomerName, client.email)
+      if (resolvedName) return resolvedName
+      if (usableName(structuredName, client.email)) return suffix ? `${structuredName}, ${suffix}` : structuredName
+      return usableName(client.fullName, client.email) || 'Client'
     }
 
     const appointmentIdentity = (appointment = {}) => {
@@ -198,14 +238,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       return { tokens, clientId, customerId, appointmentId: String(appointment.id || '').trim(), identity: clientId || customerId || patientId || email || phone || appointment.id || '' }
     }
 
-    const getAppointmentClientName = (appointment) =>
-      String(
-        appointment?.clientName ||
-        appointment?.customerName ||
-        appointment?.patientName ||
-        appointment?.fullName ||
-        'Unknown Client'
-      ).trim() || 'Unknown Client'
+    const getAppointmentClientName = (appointment) => {
+      const email = appointment?.customerEmail || appointment?.clientEmail || appointment?.patientEmail || appointment?.email
+      return [appointment?.resolvedCustomerName, appointment?.clientName, appointment?.customerName, appointment?.patientName, appointment?.fullName]
+        .map((value) => usableName(value, email))
+        .find(Boolean) || 'Client'
+    }
 
     const getAppointmentCreatedAt = (appointment) =>
       appointment?.createdAt || appointment?.paidAt || appointment?.completedAt || appointment?.updatedAt || appointment?.date || null
@@ -303,7 +341,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           // The clinic directory copy wins for contact details, while booking
           // history supplies the latest appointment date.
           const lastAppointment = [existing.lastAppointment, client.lastAppointment].filter(Boolean).sort().at(-1) || ''
-          map.set(key, { ...client, ...existing, lastAppointment, createdAt: existing.createdAt || client.createdAt || null })
+          map.set(key, {
+            ...client,
+            ...existing,
+            fullName: usableName(existing.fullName, existing.email) || client.fullName || 'Client',
+            lastAppointment,
+            createdAt: existing.createdAt || client.createdAt || null,
+          })
           addAliases(map.get(key), key)
           return
         }
@@ -527,7 +571,11 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       unsubscribeClients = pageListener(
         onSnapshot, query(collection(db, 'clients'), where('branchId', '==', currentBranchId.value)),
         (snapshot) => {
-          branchClientRecords.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          const rows = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          Promise.all(rows.map(async (client) => {
+            if (formatClientName(client) !== 'Client' || !client.customerId) return client
+            return { ...client, resolvedCustomerName: await resolveCustomerName(client.customerId) }
+          })).then(resolvedRows => { branchClientRecords.value = resolvedRows })
         },
         (error) => {
           console.error(error)
@@ -547,7 +595,15 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       unsubscribeAppointments = pageListener(
         onSnapshot, query(collection(db, 'appointments'), where('branchId', '==', currentBranchId.value)),
         (snapshot) => {
-          appointmentRecords.value = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          const rows = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }))
+          Promise.all(rows.map(async (appointment) => {
+            const hasName = [appointment.clientName, appointment.customerName, appointment.patientName, appointment.fullName]
+              .some((value) => usableName(value, appointment.customerEmail || appointment.clientEmail || appointment.patientEmail || appointment.email))
+            if (hasName || !appointment.customerId) return appointment
+            return { ...appointment, resolvedCustomerName: await resolveCustomerName(appointment.customerId) }
+          })).then((resolvedRows) => {
+            appointmentRecords.value = resolvedRows
+          })
         },
         (error) => {
           console.error(error)

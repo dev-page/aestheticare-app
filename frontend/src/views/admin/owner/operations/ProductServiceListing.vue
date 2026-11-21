@@ -91,7 +91,7 @@
               </div>
               <p class="text-sm text-slate-300 mb-1">{{ post.productName || post.serviceName || post.consultationName || post.packageName }}</p>
               <p v-if="post.postType === 'Package'" class="mb-2 text-xs text-amber-200">
-                Treatment course Â· {{ listingVisitCount(post) }} visits Â· {{ (post.treatmentCourseSteps || post.packageServiceIds || []).length }} ordered step(s).
+                {{ post.packageKind === 'treatment-course' ? 'Multi-session treatment' : post.packageKind === 'consultation-service' ? 'Consultation + service' : post.packageKind === 'service-combo' ? 'Service combo' : 'Treatment course' }} · {{ listingVisitCount(post) }} visits.
               </p>
               <ol v-if="post.postType === 'Package' && post.treatmentCourseSteps?.length" class="mb-2 list-inside list-decimal space-y-1 text-xs text-slate-400"><li v-for="(step, index) in post.treatmentCourseSteps" :key="`${step.serviceId}-${index}`">{{ posts.find(item => item.id === step.serviceId)?.title || posts.find(item => item.id === step.serviceId)?.serviceName || posts.find(item => item.id === step.serviceId)?.consultationName || 'Unavailable listing' }} Â· {{ step.visitCount }} visit(s)</li></ol>
               <p class="listing-card-description text-sm text-slate-400 mb-2">{{ post.description }}</p>
@@ -210,7 +210,7 @@ import { getClinicPolicyOwnerId } from '@/utils/clinicPolicies'
 import ClientContractDocument from '@/components/common/ClientContractDocument.vue'
 import ServiceListingFields from '@/components/common/ServiceListingFields.vue'
 import { normalizeServiceCategory } from '../../../../../../shared/serviceCategories.js'
-import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateTreatmentCourseComposition } from '../../../../../../shared/treatmentCourse.js'
+import { normalizeTreatmentCourseSteps, treatmentCourseVisitCount, validateServicePackageComposition, SERVICE_PACKAGE_KINDS } from '../../../../../../shared/treatmentCourse.js'
 import { onlinePolicy } from '../../../../../../shared/onlineConsultation.js'
 import { buildClientContractDocument, clientContractPolicies } from '../../../../../../shared/clientContract.js'
 import { createClientContractPdf } from '@/utils/clientContractPdf'
@@ -282,6 +282,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       vatApplicable: false,
       vatPriceMode: 'exclusive',
       discountPercent: 0,
+      packageKind: SERVICE_PACKAGE_KINDS.TREATMENT_COURSE,
+      packageConsultationId: '',
+      packageServiceId: '',
       requiresConsultationFirst: false,
         linkedConsultationId: '',
       sameDayConsultationAllowed: false,
@@ -292,7 +295,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       followUpWindowDays: 14,
       staffingRequirements: [],
       sessionCount: 1,
-      sessionIntervalDays: 0,
+      sessionIntervalDays: 1,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -315,6 +318,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       consultationName: '',
       packageName: '',
       packageServiceIds: [],
+      packageKind: SERVICE_PACKAGE_KINDS.TREATMENT_COURSE,
+      packageConsultationId: '',
+      packageServiceId: '',
       treatmentCourseSteps: [],
       title: '',
       description: '',
@@ -333,7 +339,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       followUpWindowDays: 14,
       staffingRequirements: [],
       sessionCount: 1,
-      sessionIntervalDays: 0,
+      sessionIntervalDays: 1,
       durationMinutes: 60,
       productVolume: '',
       productUnit: '',
@@ -423,14 +429,55 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       }
       return steps
     }
+    const packageStepsForValues = (values) => {
+      const kind = String(values?.packageKind || '').trim()
+      const gap = Math.max(1, Math.min(365, Number(values?.sessionIntervalDays || 1)))
+      if (kind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE) return []
+      if (kind === SERVICE_PACKAGE_KINDS.CONSULTATION_SERVICE) {
+        return [values?.packageConsultationId, values?.packageServiceId]
+          .filter(Boolean)
+          .map(serviceId => ({ serviceId: String(serviceId), visitCount: 1, minimumGapDays: gap }))
+      }
+      if (kind === SERVICE_PACKAGE_KINDS.SERVICE_COMBO) {
+        return [...new Set((values?.packageServiceIds || []).map(id => String(id || '').trim()).filter(Boolean))]
+          .map(serviceId => ({ serviceId, visitCount: 1, minimumGapDays: gap }))
+      }
+      return normalizeTreatmentCourseSteps(values?.treatmentCourseSteps)
+    }
+    const packageComponentsForValues = (values, steps = packageStepsForValues(values)) =>
+      values?.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+        ? [{ ...values, id: 'treatment-course', postType: 'Service' }]
+        : courseComponentsForSteps(steps)
+    const packageCourseErrorForValues = (values, steps = packageStepsForValues(values)) =>
+      validateServicePackageComposition({
+        packageKind: values?.packageKind,
+        steps,
+        servicesById: new Map(packageComponentsForValues(values, steps).map(component => [component.id, component])),
+        sessionCount: values?.sessionCount,
+        sessionIntervalDays: values?.sessionIntervalDays,
+      })
+    const inferPackageKind = (post, steps = courseStepsForListing(post)) => {
+      const savedKind = String(post?.packageKind || '').trim()
+      if (Object.values(SERVICE_PACKAGE_KINDS).includes(savedKind)) return savedKind
+      const ids = [...new Set((post?.packageServiceIds || steps.map(step => step.serviceId)).filter(Boolean).map(String))]
+      const components = ids.map(id => posts.value.find(item => item.id === id)).filter(Boolean)
+      if (ids.length === 1 && components[0]?.postType === 'Service') return SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+      const normalizedSteps = normalizeTreatmentCourseSteps(steps)
+      if (normalizedSteps.length === 2 && normalizedSteps.every(step => step.visitCount === 1)
+        && components.find(item => item.id === normalizedSteps[0].serviceId)?.postType === 'Consultation'
+        && components.find(item => item.id === normalizedSteps[1].serviceId)?.postType === 'Service') return SERVICE_PACKAGE_KINDS.CONSULTATION_SERVICE
+      if (components.length >= 2 && components.every(item => item.postType === 'Service')) return SERVICE_PACKAGE_KINDS.SERVICE_COMBO
+      return 'legacy-course'
+    }
     const courseComponentsForSteps = (steps) => [...new Set((steps || []).map(step => String(step.serviceId || '').trim()).filter(Boolean))]
       .map(id => posts.value.find(post => post.id === id)).filter(Boolean)
     const packageSubtotalForSteps = (steps) => (steps || []).reduce((sum, step) => {
       const component = posts.value.find(post => post.id === step.serviceId)
       return sum + Number(component?.price || component?.consultationFee || 0) * Math.max(0, Number(step.visitCount) || 0)
     }, 0)
-    const packageCourseError = (steps) => validateTreatmentCourseComposition(steps, new Map(courseComponentsForSteps(steps).map(component => [component.id, component])))
-    const listingVisitCount = (listing) => Array.isArray(listing?.treatmentCourseSteps) && listing.treatmentCourseSteps.length
+    const listingVisitCount = (listing) => listing?.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+      ? Math.max(1, Number(listing.sessionCount || 1))
+      : Array.isArray(listing?.treatmentCourseSteps) && listing.treatmentCourseSteps.length
       ? treatmentCourseVisitCount(listing.treatmentCourseSteps)
       : Math.max(1, Number(listing?.sessionCount || 1)) * (listing?.packageServiceIds || []).reduce((sum, id) => sum + Math.max(1, Number(posts.value.find(post => post.id === id)?.sessionCount || 1)), 0)
 
@@ -487,6 +534,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         vatApplicable: false,
         vatPriceMode: 'exclusive',
         discountPercent: 0,
+        packageKind: SERVICE_PACKAGE_KINDS.TREATMENT_COURSE,
+        packageConsultationId: '',
+        packageServiceId: '',
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         sameDayConsultationAllowed: false,
@@ -498,6 +548,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         followUpWindowDays: 14,
         staffingRequirements: [],
       sessionCount: 1,
+        sessionIntervalDays: 1,
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
@@ -524,6 +575,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         vatApplicable: false,
         vatPriceMode: 'exclusive',
         discountPercent: 0,
+        packageKind: SERVICE_PACKAGE_KINDS.TREATMENT_COURSE,
+        packageConsultationId: '',
+        packageServiceId: '',
         requiresConsultationFirst: false,
         linkedConsultationId: '',
         sameDayConsultationAllowed: false,
@@ -533,6 +587,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         consultationGraceMinutes: 15,
         followUpAllowed: false,
         followUpWindowDays: 14,
+        sessionCount: 1,
+        sessionIntervalDays: 1,
         durationMinutes: 60,
         productVolume: '',
         productUnit: '',
@@ -684,12 +740,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
             ? form.value.consultationName
             : form.value.packageName
       const selectedProduct = postType === 'Product' ? findSelectedProduct() : null
-      const courseSteps = postType === 'Package' ? normalizeTreatmentCourseSteps(form.value.treatmentCourseSteps) : []
-      const packageComponents = postType === 'Package'
-        ? courseComponentsForSteps(courseSteps)
-        : []
-      const packageSubtotal = postType === 'Package' ? packageSubtotalForSteps(courseSteps) : 0
-      const packageDiscountPercent = postType === 'Package' ? Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) : 0
+      const courseSteps = postType === 'Package' ? packageStepsForValues(form.value) : []
+      const packageComponents = postType === 'Package' ? packageComponentsForValues(form.value, courseSteps) : []
+      const packageSubtotal = postType === 'Package'
+        ? form.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(form.value.price || 0) : packageSubtotalForSteps(courseSteps)
+        : 0
+      const packageDiscountPercent = postType === 'Package' && form.value.packageKind !== SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Math.min(90, Math.max(0, Number(form.value.discountPercent || 0))) : 0
       const packageFollowUpComponents = packageComponents.filter((post) => post.followUpAllowed === true)
 
       const requiredFieldsError = validateRequiredListingFields(form.value, { name: selectedName, selectedProduct, imageReady: Boolean(imageFile.value), requiresNewImage: true })
@@ -701,7 +757,7 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         return
       }
       if (postType === 'Package') {
-        const courseError = packageCourseError(courseSteps)
+        const courseError = packageCourseErrorForValues(form.value, courseSteps)
         if (courseError) {
           toast.error(courseError)
           return
@@ -734,8 +790,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           serviceName: postType === 'Service' ? selectedName.trim() : '',
           consultationName: postType === 'Consultation' ? selectedName.trim() : '',
           packageName: postType === 'Package' ? String(form.value.packageName || selectedName || '').trim() : '',
+          packageKind: postType === 'Package' ? form.value.packageKind : null,
           packageServiceIds: postType === 'Package' ? [...new Set(courseSteps.map(step => step.serviceId))] : [],
-          treatmentCourseSteps: postType === 'Package' ? courseSteps : [],
+          treatmentCourseSteps: postType === 'Package' && form.value.packageKind !== SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? courseSteps : null,
           consultationModes: postType === 'Consultation'
             ? normalizeConsultationModes(form.value.consultationModes)
             : postType === 'Package'
@@ -752,7 +809,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           price: postType === 'Product'
             ? Number(selectedProduct?.unitPrice || 0)
             : postType === 'Package'
-              ? Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
+              ? form.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+                ? Math.round(packageSubtotal * 100) / 100
+                : Math.round(packageSubtotal * (1 - packageDiscountPercent / 100) * 100) / 100
               : Number(form.value.price || form.value.consultationFee || 0),
           vatApplicable: postType !== 'Product',
           vatPriceMode: 'exclusive',
@@ -775,10 +834,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           consultationPolicy: consultationPolicyForGrace(form.value),
           staffingRequirements: JSON.parse(JSON.stringify((form.value.staffingRequirements || []).filter(row => row.responsibility === 'lead').slice(0, 1).map(row => ({ ...row, count: 1 })))),
-          sessionCount: postType === 'Package' ? treatmentCourseVisitCount(courseSteps) : 1,
-          sessionIntervalDays: postType === 'Package' ? Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
+          sessionCount: postType === 'Package' ? form.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(form.value.sessionCount || 0) : treatmentCourseVisitCount(courseSteps) : 1,
+          sessionIntervalDays: postType === 'Package' ? form.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(form.value.sessionIntervalDays || 0) : Math.max(1, ...courseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: postType === 'Product' ? null : postType === 'Package'
-            ? Math.max(1, Number(posts.value.find(post => post.id === courseSteps[0]?.serviceId)?.durationMinutes || 60))
+            ? form.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+              ? Math.max(1, Number(form.value.durationMinutes || 60))
+              : Math.max(1, Number(posts.value.find(post => post.id === courseSteps[0]?.serviceId)?.durationMinutes || 60))
             : Math.max(1, Number(form.value.durationMinutes || 60)),
           productVolume: postType === 'Product' ? String(form.value.productVolume || '').trim() : '',
           productUnit: postType === 'Product' ? String(form.value.productUnit || '').trim() : '',
@@ -833,6 +894,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
     const openEditPost = (post) => {
       if (!canUpdateListing.value) return
       editTargetId.value = post.id
+      const savedCourseSteps = post.postType === 'Package' ? courseStepsForListing(post) : []
+      const packageKind = post.postType === 'Package' ? inferPackageKind(post, savedCourseSteps) : SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
       editForm.value = {
         postType: post.postType || 'Service',
         serviceCategory: normalizeServiceCategory(post.serviceCategory),
@@ -852,8 +915,8 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         followUpAllowed: Boolean(post.followUpAllowed),
         followUpWindowDays: Number(post.followUpWindowDays || 14),
         staffingRequirements: JSON.parse(JSON.stringify(post.staffingRequirements || [])),
-        sessionCount: post.postType === 'Package' ? treatmentCourseVisitCount(courseStepsForListing(post)) : 1,
-        sessionIntervalDays: post.postType === 'Package' ? Math.max(1, ...courseStepsForListing(post).map(step => step.minimumGapDays)) : 0,
+        sessionCount: post.postType === 'Package' ? packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Math.max(2, treatmentCourseVisitCount(savedCourseSteps) || Number(post.sessionCount || 2)) : treatmentCourseVisitCount(savedCourseSteps) : 1,
+        sessionIntervalDays: post.postType === 'Package' ? Math.max(1, Number(post.sessionIntervalDays || 0), ...savedCourseSteps.map(step => step.minimumGapDays)) : 0,
         legacyMultiSessionService: post.postType === 'Service' && Number(post.sessionCount || 1) > 1,
         durationMinutes: Number(post.durationMinutes || 60)
         , productVolume: String(post.productVolume || '').trim()
@@ -861,8 +924,13 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         , fdaRegistrationNumber: String(post.fdaRegistrationNumber || '').trim()
         , termsAndConditions: String(post.termsAndConditions || '').trim()
         , requiredEquipmentIds: post.requiredEquipmentIds || [], allowInstallments: post.allowInstallments === true, depositPercent: Number(post.depositPercent || 50), requiredSupplyIds: Array.isArray(post.requiredSupplyIds) ? [...post.requiredSupplyIds] : []
-        , packageServiceIds: post.postType === 'Package' ? [...new Set(courseStepsForListing(post).map(step => step.serviceId))] : (Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [])
-        , treatmentCourseSteps: post.postType === 'Package' ? courseStepsForListing(post) : []
+        , packageKind
+        , packageConsultationId: packageKind === SERVICE_PACKAGE_KINDS.CONSULTATION_SERVICE ? String(savedCourseSteps[0]?.serviceId || '') : ''
+        , packageServiceId: packageKind === SERVICE_PACKAGE_KINDS.CONSULTATION_SERVICE ? String(savedCourseSteps[1]?.serviceId || '') : ''
+        , packageServiceIds: post.postType === 'Package'
+          ? (packageKind === SERVICE_PACKAGE_KINDS.SERVICE_COMBO ? [...new Set((post.packageServiceIds || savedCourseSteps.map(step => step.serviceId)).filter(Boolean))] : [...new Set(savedCourseSteps.map(step => step.serviceId))])
+          : (Array.isArray(post.packageServiceIds) ? [...post.packageServiceIds] : [])
+        , treatmentCourseSteps: post.postType === 'Package' ? savedCourseSteps : []
       }
       editImageFile.value = null
       editImageFileName.value = ''
@@ -903,14 +971,16 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
       const currentPost = posts.value.find(post => post.id === editTargetId.value)
       const requiredFieldsError = validateRequiredListingFields(editForm.value, { name: editForm.value.name, selectedProduct })
       if (requiredFieldsError) { toast.error(requiredFieldsError); return }
-      const editCourseSteps = editForm.value.postType === 'Package' ? normalizeTreatmentCourseSteps(editForm.value.treatmentCourseSteps) : []
-      const editPackageComponents = editForm.value.postType === 'Package' ? courseComponentsForSteps(editCourseSteps) : []
-      const editPackageSubtotal = editForm.value.postType === 'Package' ? packageSubtotalForSteps(editCourseSteps) : 0
-      const editPackageDiscountPercent = editForm.value.postType === 'Package' ? Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) : 0
+      const editCourseSteps = editForm.value.postType === 'Package' ? packageStepsForValues(editForm.value) : []
+      const editPackageComponents = editForm.value.postType === 'Package' ? packageComponentsForValues(editForm.value, editCourseSteps) : []
+      const editPackageSubtotal = editForm.value.postType === 'Package'
+        ? editForm.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(editForm.value.price || 0) : packageSubtotalForSteps(editCourseSteps)
+        : 0
+      const editPackageDiscountPercent = editForm.value.postType === 'Package' && editForm.value.packageKind !== SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Math.min(90, Math.max(0, Number(editForm.value.discountPercent || 0))) : 0
       const numericError = validateListingNumbers(editForm.value)
       if (numericError) { toast.error(numericError); return }
       if (editForm.value.postType === 'Package') {
-        const courseError = validateTreatmentCourseComposition(editCourseSteps, new Map(editPackageComponents.map(component => [component.id, component])))
+        const courseError = packageCourseErrorForValues(editForm.value, editCourseSteps)
         if (courseError) {
           toast.error(courseError)
           return
@@ -948,8 +1018,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           serviceName: editForm.value.postType === 'Service' ? editForm.value.name.trim() : '',
           consultationName: editForm.value.postType === 'Consultation' ? editForm.value.name.trim() : '',
           packageName: editForm.value.postType === 'Package' ? editForm.value.name.trim() : '',
+          packageKind: editForm.value.postType === 'Package' ? editForm.value.packageKind : null,
           packageServiceIds: editForm.value.postType === 'Package' ? [...new Set(editCourseSteps.map(step => step.serviceId))] : [],
-          treatmentCourseSteps: editForm.value.postType === 'Package' ? editCourseSteps : [],
+          treatmentCourseSteps: editForm.value.postType === 'Package' && editForm.value.packageKind !== SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? editCourseSteps : null,
           consultationModes: editForm.value.postType === 'Consultation'
             ? normalizeConsultationModes(editForm.value.consultationModes)
             : editForm.value.postType === 'Package'
@@ -963,7 +1034,9 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
           price: editForm.value.postType === 'Product'
             ? Number(selectedProduct?.unitPrice || editForm.value.price || 0)
             : editForm.value.postType === 'Package'
-              ? Math.round(editPackageSubtotal * (1 - editPackageDiscountPercent / 100) * 100) / 100
+              ? editForm.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+                ? Math.round(editPackageSubtotal * 100) / 100
+                : Math.round(editPackageSubtotal * (1 - editPackageDiscountPercent / 100) * 100) / 100
               : Number(editForm.value.price || editForm.value.consultationFee || 0),
           vatApplicable: editForm.value.postType !== 'Product',
           vatPriceMode: editForm.value.vatPriceMode === 'inclusive' ? 'inclusive' : 'exclusive',
@@ -986,12 +1059,14 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
               : null,
           consultationPolicy: consultationPolicyForGrace(editForm.value),
           staffingRequirements: JSON.parse(JSON.stringify((editForm.value.staffingRequirements || []).filter(row => row.responsibility === 'lead').slice(0, 1).map(row => ({ ...row, count: 1 })))),
-          sessionCount: editForm.value.postType === 'Package' ? treatmentCourseVisitCount(editCourseSteps) : 1,
-          sessionIntervalDays: editForm.value.postType === 'Package' ? Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,
+          sessionCount: editForm.value.postType === 'Package' ? editForm.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(editForm.value.sessionCount || 0) : treatmentCourseVisitCount(editCourseSteps) : 1,
+          sessionIntervalDays: editForm.value.postType === 'Package' ? editForm.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE ? Number(editForm.value.sessionIntervalDays || 0) : Math.max(1, ...editCourseSteps.map(step => step.minimumGapDays)) : 0,
           durationMinutes: editForm.value.postType === 'Product'
             ? null
             : editForm.value.postType === 'Package'
-              ? Math.max(1, Number(posts.value.find(post => post.id === editCourseSteps[0]?.serviceId)?.durationMinutes || 60))
+              ? editForm.value.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+                ? Math.max(1, Number(editForm.value.durationMinutes || 60))
+                : Math.max(1, Number(posts.value.find(post => post.id === editCourseSteps[0]?.serviceId)?.durationMinutes || 60))
               : Math.max(1, Number(editForm.value.durationMinutes || (editForm.value.postType === 'Consultation' ? 30 : 60))),
           productVolume: editForm.value.postType === 'Product' ? String(editForm.value.productVolume || '').trim() : '',
           productUnit: editForm.value.postType === 'Product' ? String(editForm.value.productUnit || '').trim() : '',

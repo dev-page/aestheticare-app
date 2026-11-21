@@ -873,7 +873,9 @@ const selectedServiceDurationMinutes = computed(() =>
   selectedServices.value.reduce((sum, service) => sum + Number(service.type === 'Package' ? service.packageComponents?.[0]?.durationMinutes || 60 : service.durationMinutes || 0), 0)
 )
 const selectedTreatmentSessionCount = computed(() => Math.max(1, ...selectedServices.value.map(service => service.type === 'Package'
-  ? (service.treatmentCourseSteps?.length
+  ? (service.packageKind === 'treatment-course'
+    ? Number(service.sessionCount || 1)
+    : service.treatmentCourseSteps?.length
     ? service.treatmentCourseSteps.reduce((sum, step) => sum + Number(step.visitCount || 0), 0)
     : Number(service.sessionCount || 1) * (service.packageComponents || []).reduce((sum, component) => sum + Number(component.sessionCount || 1), 0))
   : 1)))
@@ -934,7 +936,8 @@ const selectedServiceNetAmount = computed(() =>
   Math.round((selectedServicePricing.value.subtotal - selectedServiceCommission.value) * 100) / 100
 )
 const selectedServicesRequireConsultation = computed(() =>
-  selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst) && service.packageComponents?.[0]?.type !== 'Consultation')
+  selectedServices.value.some((service) => Boolean(service.requiresConsultationFirst)
+    && !(service.packageComponents || []).some(component => String(component.type || component.postType || '').toLowerCase() === 'consultation'))
 )
 const canCreateServiceDemo = computed(() => selectedServices.value.length === 1
   && String(selectedServices.value[0]?.type || '').toLowerCase() === 'service'
@@ -1640,9 +1643,12 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       }))
 
     items.value = catalogPosts.filter(isCustomerCareListing).map((post) => {
-    const packageComponents = Array.isArray(post.packageServiceIds)
-      ? post.packageServiceIds.map((componentId) => catalogPosts.find((candidate) => candidate.id === componentId) || {}).filter(Boolean)
-      : []
+    const selfContainedCourse = post.postType === 'Package' && post.packageKind === 'treatment-course'
+    const packageComponents = selfContainedCourse
+      ? [{ ...post, id: post.id, postType: 'Service', type: 'Service' }]
+      : Array.isArray(post.packageServiceIds)
+        ? post.packageServiceIds.map((componentId) => catalogPosts.find((candidate) => candidate.id === componentId)).filter(Boolean).map(component => ({ ...component, type: component.postType, name: getCustomerCareListingName(component) }))
+        : []
     const packageConsultations = packageComponents.filter((component) => component.postType === 'Consultation')
     const legacyModes = post.consultationModes || packageConsultations.flatMap(component => component.consultationModes || [component.consultationMode || 'online'])
     const consultationModes = [...new Set((Array.isArray(legacyModes) && legacyModes.length ? legacyModes : [post.consultationMode || packageConsultations[0]?.consultationMode || 'online']).map(mode => String(mode || '').trim().toLowerCase()).filter(mode => ['online', 'on-site'].includes(mode)))]
@@ -1650,6 +1656,7 @@ const loadBranchData = trackPageLoad(async (branchId) => {
     return {
       id: post.id,
       type: post.postType || 'Service',
+      packageKind: String(post.packageKind || ''),
       serviceCategory: normalizeServiceCategory(post.serviceCategory),
       name: getCustomerCareListingName(post) || 'Unnamed',
       title: post.title || '',
@@ -1670,7 +1677,9 @@ const loadBranchData = trackPageLoad(async (branchId) => {
       durationMinutes: Number(post.durationMinutes) > 0 ? Number(post.durationMinutes) : 60,
       staffingRequirements: post.staffingRequirements || [],
       sessionCount: post.postType === 'Package'
-        ? (Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length
+        ? (selfContainedCourse
+          ? Math.max(2, Number(post.sessionCount || 2))
+          : Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length
           ? post.treatmentCourseSteps.reduce((sum, step) => sum + Number(step.visitCount || 0), 0)
           : Math.max(1, Number(post.sessionCount || 1)) * packageComponents.reduce((sum, component) => sum + Math.max(1, Number(component.sessionCount || 1)), 0))
         : 1,
@@ -2460,9 +2469,9 @@ const toggleServiceForBooking = async (item, requestVerification = false) => {
   sameDayConsultationRequested.value = false
 
   if (item.type === 'Package') {
-    const components = item.packageServiceIds
-      .map((id) => items.value.find((candidate) => candidate.id === id))
-      .filter(Boolean)
+    const components = item.packageKind === 'treatment-course'
+      ? [{ ...item, id: item.id, type: 'Service', postType: 'Service', name: item.name, serviceName: item.name }]
+      : item.packageServiceIds.map((id) => items.value.find((candidate) => candidate.id === id)).filter(Boolean)
     if (!components.length) {
       toast.error('This package has no available component services.')
       return

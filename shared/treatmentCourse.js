@@ -1,4 +1,9 @@
 export const MAX_TREATMENT_COURSE_VISITS = 50
+export const SERVICE_PACKAGE_KINDS = Object.freeze({
+  TREATMENT_COURSE: 'treatment-course',
+  CONSULTATION_SERVICE: 'consultation-service',
+  SERVICE_COMBO: 'service-combo',
+})
 
 export const normalizeTreatmentCourseSteps = (steps) => (Array.isArray(steps) ? steps : [])
   .map(step => ({
@@ -37,6 +42,44 @@ export const validateTreatmentCourseComposition = (steps, servicesById) => {
   const serviceVisits = normalizeTreatmentCourseSteps(steps).reduce((total, step, index) => total + (String(services[index]?.postType || '').toLowerCase() === 'service' ? step.visitCount : 0), 0)
   if (consultationVisits > 1 || (consultationVisits === 0 && serviceVisits < 2) || (consultationVisits === 1 && serviceVisits < 1)) {
     return 'A treatment course must include at least two service visits, or one consultation and at least one service visit.'
+  }
+  return ''
+}
+
+export const validateServicePackageComposition = ({ packageKind, steps, servicesById, sessionCount, sessionIntervalDays } = {}) => {
+  const kind = String(packageKind || '').trim().toLowerCase()
+  if (kind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE) {
+    const count = Number(sessionCount)
+    const interval = Number(sessionIntervalDays)
+    if (!Number.isInteger(count) || count < 2 || count > MAX_TREATMENT_COURSE_VISITS) {
+      return `A treatment course must include 2 to ${MAX_TREATMENT_COURSE_VISITS} visits.`
+    }
+    if (!Number.isInteger(interval) || interval < 1 || interval > 365) {
+      return 'Set a whole-number minimum gap from 1 to 365 days between treatment visits.'
+    }
+    return ''
+  }
+
+  const compositionError = validateTreatmentCourseComposition(steps, servicesById)
+  if (compositionError) return compositionError
+  const normalizedSteps = normalizeTreatmentCourseSteps(steps)
+  const getService = id => servicesById instanceof Map ? servicesById.get(id) : servicesById?.[id]
+  const components = normalizedSteps.map(step => getService(step.serviceId))
+
+  if (kind === SERVICE_PACKAGE_KINDS.CONSULTATION_SERVICE) {
+    if (normalizedSteps.length !== 2 || normalizedSteps.some(step => step.visitCount !== 1)
+      || String(components[0]?.postType || '').toLowerCase() !== 'consultation'
+      || String(components[1]?.postType || '').toLowerCase() !== 'service') {
+      return 'A consultation + service package must contain one consultation followed by one service.'
+    }
+  } else if (kind === SERVICE_PACKAGE_KINDS.SERVICE_COMBO) {
+    if (normalizedSteps.length < 2 || normalizedSteps.some(step => step.visitCount !== 1)
+      || components.some(component => String(component?.postType || '').toLowerCase() !== 'service')) {
+      return 'A service combo must contain at least two different services, one visit each.'
+    }
+    if (new Set(normalizedSteps.map(step => step.serviceId)).size !== normalizedSteps.length) {
+      return 'Choose each service only once in a service combo.'
+    }
   }
   return ''
 }

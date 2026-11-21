@@ -203,6 +203,7 @@ const checkoutReturnNotice = computed(() => route.query.walkin_payment === 'succ
     : '')
 const branchId = ref(''), busy = ref(false), error = ref(''), clients = ref([]), services = ref([]), practitioners = ref([])
 const schedules = ref({}), leaves = ref({}), existingAppointments = ref([]), branch = ref({}), policy = ref({})
+const customerDisplayNames = ref({})
 const selectedClientId = ref(''), visits = ref([]), policyAcknowledged = ref(false), treatmentAcknowledged = ref(false), bookingStep = ref(1)
 const bookingForSomeoneElse = ref(false), booker = ref({ name: '', email: '', phone: '' }), bookingSignature = ref(''), treatmentSignature = ref('')
 const createdAppointments = ref([]), receipts = ref({}), cashReceived = ref({}), paymentMethods = ref({})
@@ -244,6 +245,39 @@ const validNewClient = computed(() => {
     && client.suffix.length <= 20 && client.email.length <= 254 && /^\S+@\S+\.\S+$/.test(client.email)
     && client.phone.length <= 32 && /^\+?[0-9 ()-]{7,32}$/.test(client.phone))
 })
+const isEmailLike = value => /^\S+@\S+\.\S+$/.test(String(value || '').trim())
+const usableClientName = (value, email = '') => {
+  const candidate = String(value || '').trim()
+  return candidate && candidate.toLowerCase() !== String(email || '').trim().toLowerCase() && !isEmailLike(candidate) ? candidate : ''
+}
+const knownClientName = record => {
+  const email = record?.customerEmail || record?.clientEmail || record?.email
+  const structuredName = [record?.firstName, record?.middleName || record?.midName, record?.lastName].filter(Boolean).join(' ')
+  return usableClientName(structuredName, email)
+    || usableClientName(record?.fullName, email)
+    || usableClientName(record?.clientName, email)
+    || usableClientName(record?.customerName, email)
+    || usableClientName(record?.patientName, email)
+}
+async function resolveCustomerNames(records = []) {
+  const ids = [...new Set(records
+    .filter(record => !knownClientName(record))
+    .map(record => String(record.customerId || '').trim())
+    .filter(id => id && !Object.prototype.hasOwnProperty.call(customerDisplayNames.value, id)))]
+  if (!ids.length) return
+  const names = await Promise.all(ids.map(async id => {
+    try {
+      const snapshot = await getDoc(doc(db, 'users', id))
+      if (!snapshot.exists()) return [id, '']
+      const profile = snapshot.data() || {}
+      const structuredName = [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(' ').trim()
+      return [id, usableClientName(profile.fullName || profile.displayName || profile.name, profile.email) || usableClientName(structuredName, profile.email)]
+    } catch {
+      return [id, '']
+    }
+  }))
+  customerDisplayNames.value = { ...customerDisplayNames.value, ...Object.fromEntries(names) }
+}
 const normalizedExistingClientContact = computed(() => ({
   email: String(existingClientContact.value.email || '').trim().toLowerCase(),
   phone: String(existingClientContact.value.phone || '').trim(),
@@ -265,7 +299,10 @@ const bookingClients = computed(() => {
   const registerIdentity = (identity, id) => { if (identity) identityToId.set(String(identity), id) }
   clients.value.forEach(client => {
     if (['inactive', 'archived'].includes(String(client.status || '').toLowerCase())) return
-    byId.set(client.id, { ...client, fullName: client.fullName || [client.firstName, client.middleName, client.lastName].filter(Boolean).join(' ') })
+    byId.set(client.id, {
+      ...client,
+      fullName: knownClientName(client) || customerDisplayNames.value[String(client.customerId || '').trim()] || 'Client',
+    })
     registerIdentity(client.id, client.id)
     registerIdentity(client.customerId, client.id)
   })
@@ -276,9 +313,14 @@ const bookingClients = computed(() => {
     const identity = customerId || clientId
     if (!identity) return
     const matchedId = identityToId.get(clientId) || identityToId.get(customerId)
-    if (matchedId) return
+    if (matchedId) {
+      const existing = byId.get(matchedId)
+      const resolvedName = knownClientName(appointment) || customerDisplayNames.value[customerId]
+      if (existing && resolvedName && existing.fullName === 'Client') byId.set(matchedId, { ...existing, fullName: resolvedName })
+      return
+    }
     const id = identity
-    const fullName = String(appointment.clientName || appointment.customerName || '').trim() || 'Clinic Client'
+    const fullName = knownClientName(appointment) || customerDisplayNames.value[customerId] || 'Client'
     byId.set(id, {
       id,
       clientId: clientId || id,
@@ -493,8 +535,11 @@ async function load() {
   clients.value = clientRows.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })).filter(client => !['inactive', 'archived'].includes(String(client.status || '').toLowerCase()))
   const catalogue = serviceRows.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }))
   services.value = catalogue.filter(service => ['service', 'consultation', 'package'].includes(String(service.postType || '').toLowerCase()) && !(String(service.postType || '').toLowerCase() === 'consultation' && !supportsOnSite(service)) && service.isPublished === true && service.financeStatus === 'approved' && !service.archived).map(service => {
-    const component = String(service.postType).toLowerCase() === 'package' ? catalogue.find(item => item.id === service.packageServiceIds?.[0]) : service
-    return { ...service, name: service.serviceName || service.consultationName || service.packageName || service.title || service.name, price: Number(service.price || 0), durationMinutes: Number(component?.durationMinutes || 60), totalSessions: String(service.postType).toLowerCase() === 'package' ? Math.max(1, Number(service.sessionCount || 1)) * (service.packageServiceIds || []).reduce((sum, id) => sum + Math.max(1, Number(catalogue.find(item => item.id === id)?.sessionCount || 1)), 0) : Math.max(1, Number(service.sessionCount || 1)) }
+    const isPackage = String(service.postType).toLowerCase() === 'package'
+    const selfCourse = isPackage && service.packageKind === 'treatment-course'
+    const component = isPackage && !selfCourse ? catalogue.find(item => item.id === service.packageServiceIds?.[0]) : service
+    const legacySessionCount = Math.max(1, Number(service.sessionCount || 1)) * (service.packageServiceIds || []).reduce((sum, id) => sum + Math.max(1, Number(catalogue.find(item => item.id === id)?.sessionCount || 1)), 0)
+    return { ...service, name: service.serviceName || service.consultationName || service.packageName || service.title || service.name, price: Number(service.price || 0), durationMinutes: Number(component?.durationMinutes || 60), totalSessions: selfCourse ? Math.max(2, Number(service.sessionCount || 2)) : isPackage ? legacySessionCount : Math.max(1, Number(service.sessionCount || 1)) }
   }).filter(service => service.name && service.price > 0)
   practitioners.value = availability.practitioners || []
   schedules.value = Object.fromEntries(Object.entries(availability.schedules || {}).map(([id, entries]) => [id, buildWeekScheduleMap(entries)]))
@@ -504,6 +549,7 @@ async function load() {
 async function refreshAvailability() {
   const result = await api('/walk-in/availability?branchId=' + encodeURIComponent(branchId.value))
   existingAppointments.value = result.appointments || []
+  await resolveCustomerNames([...clients.value, ...existingAppointments.value])
   policy.value = result.policy || {}
   availabilityReady.value = true
 }

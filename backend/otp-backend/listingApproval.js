@@ -1,5 +1,5 @@
 import { normalizeStaffing } from '../../shared/practitionerTeam.js'
-import { validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
+import { SERVICE_PACKAGE_KINDS, validateServicePackageComposition, validateTreatmentCourseComposition, validateTreatmentCourseSteps } from '../../shared/treatmentCourse.js'
 import { subscriptionLifecycle } from '../../shared/subscriptionLifecycle.js'
 import { subscriptionRecord } from '../../shared/subscriptionDates.js'
 export const financialFields = ['price', 'consultationFee', 'allowInstallments', 'depositPercent', 'discountPercent', 'discountAmount', 'vatApplicable', 'vatPriceMode']
@@ -15,7 +15,13 @@ export const validateListingNumbers = (post) => {
     if (!Number.isInteger(count) || count < 1 || count > 50) return 'Number of treatment sessions must be a whole number from 1 to 50.'
     if (post.postType === 'Service' && count !== 1) return 'A Service listing is a single visit. Create a Service Package for a multi-visit treatment course.'
   }
-  if (post.postType === 'Package' && Array.isArray(post.treatmentCourseSteps)) {
+  if (post.postType === 'Package' && post.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE) {
+    const packageError = validateServicePackageComposition({ packageKind: post.packageKind, sessionCount: post.sessionCount, sessionIntervalDays: post.sessionIntervalDays })
+    if (packageError) return packageError
+    const duration = Number(post.durationMinutes)
+    if (!Number.isInteger(duration) || duration < 1 || duration > 1440) return 'Treatment session duration must be a whole number from 1 to 1,440 minutes.'
+  }
+  if (post.postType === 'Package' && Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length) {
     const courseError = validateTreatmentCourseSteps(post.treatmentCourseSteps)
     if (courseError) return courseError
   }
@@ -140,6 +146,10 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
           context.permissions,
         )
         if (action === 'publish' && post.postType === 'Package') {
+          if (post.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE) {
+            const courseError = validateServicePackageComposition({ packageKind: post.packageKind, sessionCount: post.sessionCount, sessionIntervalDays: post.sessionIntervalDays })
+            if (courseError) throw Object.assign(new Error(courseError), { status: 409 })
+          } else {
           const stepIds = Array.isArray(post.treatmentCourseSteps)
             ? [...new Set(post.treatmentCourseSteps.map(step => String(step?.serviceId || '').trim()).filter(Boolean))]
             : []
@@ -150,10 +160,13 @@ export const registerListingApproval = (app, { admin, requireAuth, loadUserConte
             if (!component || component.branchId !== post.branchId || component.financeStatus !== 'approved' || component.isPublished !== true) throw Object.assign(new Error('Approve and publish the included services and consultations before publishing this package.'), { status: 409 })
             components.push({ ...component, id })
           }
-          if (Array.isArray(post.treatmentCourseSteps)) {
+          if (Array.isArray(post.treatmentCourseSteps) && post.treatmentCourseSteps.length) {
             const courseServices = new Map(components.map(component => [String(component.id || ''), component]))
-            const courseError = validateTreatmentCourseComposition(post.treatmentCourseSteps, courseServices)
+            const courseError = Object.values(SERVICE_PACKAGE_KINDS).includes(post.packageKind)
+              ? validateServicePackageComposition({ packageKind: post.packageKind, steps: post.treatmentCourseSteps, servicesById: courseServices })
+              : validateTreatmentCourseComposition(post.treatmentCourseSteps, courseServices)
             if (courseError) throw Object.assign(new Error(courseError), { status: 409 })
+          }
           }
         }
         const timestamp = admin.firestore.FieldValue.serverTimestamp()

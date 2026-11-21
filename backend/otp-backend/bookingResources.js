@@ -6,7 +6,7 @@ import { buildClientContract, buildClientContractDocument } from '../../shared/c
 import { hasConsultationRequirement } from '../../shared/consultationRequirements.js'
 import { lotAvailableQuantity } from './inventoryLots.js'
 import { day as inventoryDay } from './supplyModel.js'
-import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, validateTreatmentCourseComposition } from '../../shared/treatmentCourse.js'
+import { buildTreatmentCourseSessions, normalizeTreatmentCourseSteps, SERVICE_PACKAGE_KINDS, validateServicePackageComposition, validateTreatmentCourseComposition } from '../../shared/treatmentCourse.js'
 import { APPOINTMENT_PLATFORM_COMMISSION_PERCENT, appointmentCommissionAmount, buildAppointmentPricing, sumAppointmentPricing } from '../../shared/appointmentPricing.js'
 import { resolveRecurringScheduleVersion } from '../../shared/recurringEmployeeSchedules.js'
 import { bookingFitsClinicHours } from '../../shared/clinicOperatingHours.js'
@@ -53,32 +53,50 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
   let packageIncludesConsultation = false
   if (normalized(offer.postType) === 'package') {
     check(!reservation.groupBooking, 'Packages are individual treatment plans. Book group services separately.', 400)
-    const components = []
-    const rawCourseSteps = Array.isArray(offer.treatmentCourseSteps) ? offer.treatmentCourseSteps : null
-    const courseSteps = rawCourseSteps ? normalizeTreatmentCourseSteps(rawCourseSteps) : null
-    const componentIds = rawCourseSteps
-      ? [...new Set(rawCourseSteps.map(step => String(step?.serviceId || '').trim()).filter(Boolean))]
-      : offer.packageServiceIds || []
-    for (const id of componentIds) {
-      const snapshot = await tx.get(db.collection('productServicePosts').doc(String(id))), component = snapshot.data()
-      check(component && component.branchId === branchId && component.isPublished === true && component.financeStatus === 'approved' && component.archived !== true && ['service', 'consultation'].includes(normalized(component.postType)), 'A package component is unavailable.')
-      components.push({ ...component, id: snapshot.id })
-    }
-    check(components.length > 0, 'This package has no services.', 400)
-    packageComponents = components
-    packageIncludesConsultation = components.some(component => normalized(component.postType) === 'consultation')
-    if (courseSteps) {
-      const servicesById = new Map(components.map(component => [component.id, component]))
-      const courseError = validateTreatmentCourseComposition(rawCourseSteps, servicesById)
+    const isSelfContainedCourse = offer.packageKind === SERVICE_PACKAGE_KINDS.TREATMENT_COURSE
+    if (isSelfContainedCourse) {
+      const totalSessions = Number(offer.sessionCount)
+      const minimumGapDays = Number(offer.sessionIntervalDays)
+      const courseError = validateServicePackageComposition({ packageKind: offer.packageKind, sessionCount: totalSessions, sessionIntervalDays: minimumGapDays })
       check(!courseError, courseError || 'This treatment course is invalid.', 400)
-      definitions.push(...buildTreatmentCourseSessions(courseSteps, servicesById))
+      const treatment = { ...offer, id: offer.id, postType: 'Service' }
+      packageComponents = [treatment]
+      for (let visit = 0; visit < totalSessions; visit += 1) definitions.push({
+        serviceId: offer.id,
+        serviceName: offer.packageName || offer.title || 'Treatment session',
+        durationMinutes: Math.max(1, Number(offer.durationMinutes || 60)),
+        sessionIntervalDays: minimumGapDays,
+      })
     } else {
-      for (let cycle = 0; cycle < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); cycle++) for (const component of components) {
-        for (let visit = 0; visit < Math.min(50, Math.max(1, Number(component.sessionCount || 1))); visit++) definitions.push({ serviceId: component.id, serviceName: component.title || component.serviceName || component.consultationName, durationMinutes: Number(component.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(component.sessionIntervalDays || offer.sessionIntervalDays || 1)) })
+      const components = []
+      const rawCourseSteps = Array.isArray(offer.treatmentCourseSteps) && offer.treatmentCourseSteps.length ? offer.treatmentCourseSteps : null
+      const courseSteps = rawCourseSteps ? normalizeTreatmentCourseSteps(rawCourseSteps) : null
+      const componentIds = rawCourseSteps
+        ? [...new Set(rawCourseSteps.map(step => String(step?.serviceId || '').trim()).filter(Boolean))]
+        : offer.packageServiceIds || []
+      for (const id of componentIds) {
+        const snapshot = await tx.get(db.collection('productServicePosts').doc(String(id))), component = snapshot.data()
+        check(component && component.branchId === branchId && component.isPublished === true && component.financeStatus === 'approved' && component.archived !== true && ['service', 'consultation'].includes(normalized(component.postType)), 'A package component is unavailable.')
+        components.push({ ...component, id: snapshot.id })
+      }
+      check(components.length > 0, 'This package has no services.', 400)
+      packageComponents = components
+      packageIncludesConsultation = components.some(component => normalized(component.postType) === 'consultation')
+      if (courseSteps) {
+        const servicesById = new Map(components.map(component => [component.id, component]))
+        const courseError = Object.values(SERVICE_PACKAGE_KINDS).includes(offer.packageKind)
+          ? validateServicePackageComposition({ packageKind: offer.packageKind, steps: rawCourseSteps, servicesById })
+          : validateTreatmentCourseComposition(rawCourseSteps, servicesById)
+        check(!courseError, courseError || 'This treatment course is invalid.', 400)
+        definitions.push(...buildTreatmentCourseSessions(courseSteps, servicesById))
+      } else {
+        for (let cycle = 0; cycle < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); cycle++) for (const component of components) {
+          for (let visit = 0; visit < Math.min(50, Math.max(1, Number(component.sessionCount || 1))); visit++) definitions.push({ serviceId: component.id, serviceName: component.title || component.serviceName || component.consultationName, durationMinutes: Number(component.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(component.sessionIntervalDays || offer.sessionIntervalDays || 1)) })
+        }
       }
     }
     check(definitions.length <= 50, 'Packages support at most 50 individual visits.', 400)
-    services.splice(0, services.length, components.find(component => component.id === definitions[0]?.serviceId) || components[0])
+    services.splice(0, services.length, packageComponents.find(component => component.id === definitions[0]?.serviceId) || packageComponents[0])
   } else {
     for (let visit = 0; visit < Math.min(50, Math.max(1, Number(offer.sessionCount || 1))); visit++) definitions.push({ serviceId: offer.id, serviceName: offer.title || offer.serviceName || offer.consultationName, durationMinutes: Number(offer.durationMinutes || 60), sessionIntervalDays: Math.max(1, Number(offer.sessionIntervalDays || 1)) })
   }
@@ -255,7 +273,12 @@ export const prepareBooking = async ({ tx, db, reservation, getBookingRange, ran
     if (contractDocument) contractDocument.sections.push({ title: 'Online consultation timing and review', text: notice })
   }
   const endTime = `${String(Math.floor(range.end / 60)).padStart(2, '0')}:${String(range.end % 60).padStart(2, '0')}`
-  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, ...(isOnline ? { consultationPolicy, consultationDurationMinutes: duration } : {}), staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: `${offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'}${normalized(offer.postType) === 'package' ? ` — first visit: ${definitions[0].serviceName}` : ''}`, type: isConsultationOffer ? 'Consultation' : 'Service', consultationMode: isConsultationOffer ? requestedMode : null, ...(isConsultationOffer ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, planName: offer.packageName || offer.title || 'Treatment course', completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, pricingSnapshot, amount: total, totalAmount: total, commissionPercent: APPOINTMENT_PLATFORM_COMMISSION_PERCENT, commissionAmount, merchantNetAmount, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
+  const offerName = offer.title || offer.serviceName || offer.packageName || offer.consultationName || 'Service'
+  const firstVisitName = String(definitions[0]?.serviceName || '').trim()
+  const displayServiceName = normalized(offer.postType) === 'package'
+    ? `${offerName}${firstVisitName && firstVisitName !== offerName ? ` — first visit: ${firstVisitName}` : ''}`
+    : offerName
+  return { lock, customerLocks, data: { bookingWorkflowVersion: 2, ...(isOnline ? { consultationPolicy, consultationDurationMinutes: duration } : {}), staffingRequirements, treatmentTeam: [], resources, endTime, selectedServices: services, serviceDetails: services, selectedServiceIds: ids, serviceIds: ids, service: displayServiceName, type: isConsultationOffer ? 'Consultation' : 'Service', consultationMode: isConsultationOffer ? requestedMode : null, ...(isConsultationOffer ? { consultationForServiceIds: definitions.map(visit => visit.serviceId) } : {}), totalServiceDurationMinutes: duration, groupBooking: group ? { organizerId: String(group.organizerId || reservation.customerId || ''), organizerIncluded: group.organizerIncluded === true, participantCount: attendeeCount, guests: guests.map((guest) => ({ name: String(guest.name).trim(), email: String(guest.email).trim().toLowerCase(), phone: String(guest.phone || '').trim().slice(0, 32) })) } : null, sessionNumber: 1, treatmentPlan: { totalSessions, sessionIntervalDays, sessions: definitions, packageId: normalized(offer.postType) === 'package' ? offer.id : null, planName: offer.packageName || offer.title || 'Treatment course', completedSessions: 0, remainingSessions: totalSessions, schedulingMode: totalSessions > 1 ? 'clinic-scheduled' : 'single-visit' }, pricingSnapshot, amount: total, totalAmount: total, commissionPercent: APPOINTMENT_PLATFORM_COMMISSION_PERCENT, commissionAmount, merchantNetAmount, installmentsAllowed, depositPercent, contractRequired: true, contract: { title: 'Service booking agreement', terms, ...(contractDocument ? { document: contractDocument } : {}), status: 'pending', requiredSigners: [], signatures: {} } } }
 }
 
 const prepareGroupBooking = async ({ tx, db, reservation, getBookingRange, rangesOverlap, appointmentId }) => {
