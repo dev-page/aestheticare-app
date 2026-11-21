@@ -211,6 +211,10 @@ export const buildSubscriptionPlanCatalog = (basePlans = [], snapshotDocs = []) 
     ...defaultTrialPlan,
     ...savedTrialPlan,
     id: FREE_TRIAL_PLAN_ID,
+    // Free Trial is a protected built-in plan. Ignore legacy soft-delete
+    // flags so it remains available in the catalog and can be edited again.
+    isDeleted: false,
+    isActive: savedTrialPlan.isDeleted === true ? true : savedTrialPlan.isActive !== false,
     price: 0,
     billingCycle: 'trial',
     trialDays: FREE_TRIAL_DAYS,

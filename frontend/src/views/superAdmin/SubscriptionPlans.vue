@@ -214,7 +214,7 @@
 
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a3d2b] px-4 py-2 text-sm font-semibold text-[#fffaf3] transition hover:bg-[#704d37] disabled:cursor-wait disabled:opacity-70"
+              class="subscription-plan-save-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-70"
               :disabled="Boolean(savingId)"
               :aria-busy="savingId === (plan.localKey || plan.id)"
               @click="savePlan(plan)"
@@ -609,6 +609,12 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         ...dbPlan,
         id: basePlan.id,
         label: basePlan.label,
+        // Built-in plans are protected from deletion. Keep them in the editor
+        // even if an older/invalid Firestore record still has isDeleted set.
+        isDeleted: false,
+        isActive: isTrialPlan(basePlan) && dbPlan.isDeleted === true
+          ? true
+          : dbPlan.isActive ?? basePlan.isActive,
         price: isTrialPlan(basePlan) ? 0 : dbPlan.price ?? basePlan.price,
         billingCycle: isTrialPlan(basePlan) ? 'trial' : dbPlan.billingCycle || basePlan.billingCycle,
         trialDays: isTrialPlan(basePlan) ? 14 : dbPlan.trialDays ?? basePlan.trialDays,
@@ -625,7 +631,6 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
         const dbPlans = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]))
         const basePlans = defaultPlans()
           .map((plan) => mergePlan(plan, dbPlans.get(plan.id) || {}))
-          .filter((plan) => !plan.isDeleted)
         const baseIds = new Set(basePlans.map((plan) => String(plan.id || '').trim()))
         const extraPlans = snapshot.docs
           .filter((docSnap) => ['basic', 'premium'].includes(String(docSnap.id || '').toLowerCase()) && !baseIds.has(docSnap.id) && !(dbPlans.get(docSnap.id)?.isDeleted === true))
@@ -780,4 +785,27 @@ const { pageLoading, trackPageLoad, pageListener } = usePageLoading()
   },
 }
 </script>
+
+<style scoped>
+.module-theme main button.subscription-plan-save-button {
+  border: 1px solid #8d5a3b !important;
+  background-color: #8d5a3b !important;
+  color: #fff !important;
+  box-shadow: 0 5px 14px rgba(76, 45, 25, .16);
+}
+
+.module-theme main button.subscription-plan-save-button span {
+  color: #fff !important;
+}
+
+.module-theme main button.subscription-plan-save-button:hover:not(:disabled) {
+  border-color: #70432d !important;
+  background-color: #70432d !important;
+}
+
+.module-theme main button.subscription-plan-save-button:focus-visible {
+  outline: 3px solid rgba(141, 90, 59, .35) !important;
+  outline-offset: 2px;
+}
+</style>
 
