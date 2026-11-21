@@ -163,6 +163,7 @@ const CLINIC_DOCUMENT_SUBMISSION_MAX_ATTEMPTS = 3
 const CLINIC_REGISTRATION_LOCKOUT_DAYS = 14
 const CLINIC_REGISTRATION_OTP_PURPOSE = 'clinic-registration'
 const CUSTOMER_REGISTRATION_OTP_PURPOSE = 'customer-registration'
+const PASSWORD_RESET_OTP_PURPOSE = 'password-reset'
 const LOGIN_OTP_PURPOSE = 'login-otp'
 const OTP_PATH = '/send-otp'
 const REQUEST_REGISTRATION_OTP_PATH = '/auth/request-registration-otp'
@@ -180,6 +181,8 @@ const ATTENDANCE_CORRECTION_PATH = '/attendance/correct'
 const ATTENDANCE_FIELDS_PATH = '/attendance/fields'
 const STAFF_WELCOME_PATH = '/send-staff-welcome'
 const RESET_PASSWORD_PATH = '/auth/reset-password'
+const REQUEST_PASSWORD_RESET_PATH = '/auth/request-password-reset'
+const VERIFY_PASSWORD_RESET_OTP_PATH = '/auth/verify-password-reset-otp'
 const CHECK_USER_PATH = '/auth/check-user'
 const CHECK_REGISTRATION_ATTEMPT_PATH = '/auth/check-registration-attempt'
 const AUTO_VERIFICATION_THRESHOLD = 0.74
@@ -1345,18 +1348,19 @@ const sendRegistrationOtpMessage = async ({
   })
 
   const { existingData, otp, expiresAt } = reservation
+  const isPasswordReset = purpose === PASSWORD_RESET_OTP_PURPOSE
   const message = {
     to: normalizedEmail,
     from: senderEmail,
-    subject: 'Your OTP Code',
+    subject: isPasswordReset ? 'Your AesthetiCare password reset code' : 'Your OTP Code',
     text:
-      `Your one-time password is: ${otp}\n\n` +
+      `${isPasswordReset ? 'Use this code to reset your AesthetiCare password' : 'Your one-time password is'}: ${otp}\n\n` +
       `This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes. ` +
       `It expires after that time. ` +
       `Only the most recent OTP will work.`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#2a1408;">
-        <p>Your one-time password is:</p>
+        <p>${isPasswordReset ? 'Use this code to reset your AesthetiCare password' : 'Your one-time password is'}:</p>
         <p style="font-size:28px;font-weight:700;letter-spacing:4px;">${otp}</p>
         <p>This code is only valid for ${REGISTRATION_OTP_EXPIRY_MINUTES} minutes.</p>
         <p>It expires after that time.</p>
@@ -6872,54 +6876,170 @@ app.post(REQUEST_CUSTOMER_OTP_PATH, async (req, res) => {
   }
 })
 
-app.post(RESET_PASSWORD_PATH, async (req, res) => {
-  const { email, newPassword } = req.body ?? {}
+const passwordResetGenericMessage = 'If an account exists for this email, a password reset code will be sent.'
 
+app.post(REQUEST_PASSWORD_RESET_PATH, async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid email address.' })
+  }
   if (!adminReady) {
-    return res.status(500).json({
-      success: false,
-      error: adminInitError || 'firebase-admin is not ready',
-    })
+    return res.status(503).json({ success: false, error: 'Password reset is temporarily unavailable. Please try again.' })
   }
 
-  const normalizedEmail = String(email || '').trim().toLowerCase()
-  const passwordValue = String(newPassword || '')
+  const genericResponse = () => res.json({
+    success: true,
+    message: passwordResetGenericMessage,
+    expiresInSeconds: REGISTRATION_OTP_EXPIRY_MINUTES * 60,
+    retryAfterSeconds: REGISTRATION_OTP_COOLDOWN_SECONDS,
+  })
 
-  if (!normalizedEmail || !passwordValue) {
-    return res.status(400).json({
+  try {
+    let userRecord
+    try {
+      userRecord = await admin.auth().getUserByEmail(normalizedEmail)
+    } catch (error) {
+      if (error?.code === 'auth/user-not-found') return genericResponse()
+      throw error
+    }
+
+    try {
+      await sendRegistrationOtpMessage({
+        email: normalizedEmail,
+        uid: userRecord.uid,
+        purpose: PASSWORD_RESET_OTP_PURPOSE,
+      })
+    } catch (error) {
+      // Keep account-existence responses indistinguishable when the request is
+      // rate limited, while still letting the UI start its resend countdown.
+      if (error?.statusCode === 429) return genericResponse()
+      throw error
+    }
+    return genericResponse()
+  } catch (error) {
+    console.error('Password reset OTP request failed:', error?.code || error?.message || 'Unknown error')
+    return res.status(503).json({
       success: false,
-      error: 'email and newPassword are required',
+      error: 'Unable to send a password reset code right now. Please try again later.',
     })
   }
+})
 
-  if (passwordValue.length < 8) {
-    return res.status(400).json({
-      success: false,
-      error: 'Password must be at least 8 characters.',
-    })
+app.post(VERIFY_PASSWORD_RESET_OTP_PATH, async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
+  const normalizedOtp = String(req.body?.otp || '').trim()
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail) || !/^\d{6}$/.test(normalizedOtp)) {
+    return res.status(400).json({ success: false, error: 'Enter the email address and complete 6-digit code.' })
+  }
+  if (!adminReady) {
+    return res.status(503).json({ success: false, error: 'Password reset is temporarily unavailable. Please try again.' })
   }
 
   try {
-    const userRecord = await admin.auth().getUserByEmail(normalizedEmail)
-    await admin.auth().updateUser(userRecord.uid, { password: passwordValue })
-    // Clear the forced password-change flag so staff are not forced to
-    // change their password again after a self-service reset.
-    try {
-      await admin.firestore().collection('users').doc(userRecord.uid).set(
-        { mustChangePassword: false },
-        { merge: true }
-      )
-    } catch (flagError) {
-      console.warn('Failed to clear mustChangePassword after reset:', flagError?.message || flagError)
+    const firestore = admin.firestore()
+    const otpRef = getRegistrationOtpDocRef(PASSWORD_RESET_OTP_PURPOSE, normalizedEmail)
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    const outcome = await firestore.runTransaction(async (transaction) => {
+      const otpSnap = await transaction.get(otpRef)
+      if (!otpSnap.exists) return { error: 'No active code was found. Request a new code.' }
+      const otpData = otpSnap.data() || {}
+      if (otpData.used) return { error: 'This code has already been used. Request a new code.' }
+      const expiresAt = getTimestampDate(otpData.expiresAt)
+      if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+        transaction.update(otpRef, {
+          used: true,
+          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        return { error: 'This code has expired. Request a new code.' }
+      }
+      if (Number(otpData.attempts || 0) >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
+        transaction.update(otpRef, { used: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
+        return { error: 'Too many incorrect codes. Request a new code to continue.' }
+      }
+      if (!String(otpData.uid || '').trim() || !otpMatches(otpData, normalizedOtp)) {
+        return recordRegistrationOtpFailure(transaction, otpRef, otpData)
+      }
+
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      transaction.update(otpRef, {
+        used: true,
+        verifiedAt: timestamp,
+        resetTokenHash: hashOtp(resetToken),
+        resetTokenExpiresAt: admin.firestore.Timestamp.fromDate(
+          new Date(Date.now() + REGISTRATION_OTP_EXPIRY_MINUTES * 60 * 1000),
+        ),
+        resetTokenUsed: false,
+        updatedAt: timestamp,
+      })
+      return { uid: String(otpData.uid).trim() }
+    })
+    if (outcome.error) return res.status(400).json({ success: false, error: outcome.error })
+    return res.json({
+      success: true,
+      data: { resetToken, expiresInSeconds: REGISTRATION_OTP_EXPIRY_MINUTES * 60 },
+    })
+  } catch (error) {
+    console.error('Password reset OTP verification failed:', error?.code || error?.message || 'Unknown error')
+    return res.status(503).json({ success: false, error: 'Unable to verify this code right now. Please try again.' })
+  }
+})
+
+app.post(RESET_PASSWORD_PATH, async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
+  const passwordValue = String(req.body?.newPassword || '')
+  const resetToken = String(req.body?.resetToken || '').trim()
+  const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,32}$/
+
+  if (!EMAIL_ADDRESS_REGEX.test(normalizedEmail) || !resetToken || !passwordValue) {
+    return res.status(400).json({ success: false, error: 'Email, verified reset code, and new password are required.' })
+  }
+  if (!passwordPattern.test(passwordValue)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password must be 8-32 characters and include uppercase, lowercase, number, and special character (@$!%*?&).',
+    })
+  }
+  if (!adminReady) {
+    return res.status(503).json({ success: false, error: 'Password reset is temporarily unavailable. Please try again.' })
+  }
+
+  try {
+    const firestore = admin.firestore()
+    const otpRef = getRegistrationOtpDocRef(PASSWORD_RESET_OTP_PURPOSE, normalizedEmail)
+    const outcome = await firestore.runTransaction(async (transaction) => {
+      const otpSnap = await transaction.get(otpRef)
+      if (!otpSnap.exists) return { error: 'Your reset session is no longer valid. Request a new code.' }
+      const otpData = otpSnap.data() || {}
+      const tokenExpiry = getTimestampDate(otpData.resetTokenExpiresAt)
+      if (!otpData.used || otpData.resetTokenUsed || !tokenExpiry || tokenExpiry.getTime() <= Date.now()) {
+        return { error: 'Your reset session has expired. Verify a new code to continue.' }
+      }
+      if (!otpMatches({ otpHash: otpData.resetTokenHash }, resetToken)) {
+        return { error: 'Your reset session is invalid. Verify your code again.' }
+      }
+      const uid = String(otpData.uid || '').trim()
+      if (!uid) return { error: 'Your reset session is invalid. Request a new code.' }
+      transaction.update(otpRef, {
+        resetTokenUsed: true,
+        resetTokenUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      return { uid }
+    })
+    if (outcome.error) return res.status(400).json({ success: false, error: outcome.error })
+
+    const userRecord = await admin.auth().getUser(outcome.uid)
+    if (String(userRecord.email || '').trim().toLowerCase() !== normalizedEmail) {
+      return res.status(400).json({ success: false, error: 'Your reset session no longer matches this account. Request a new code.' })
     }
+    await admin.auth().updateUser(userRecord.uid, { password: passwordValue })
+    await firestore.collection('users').doc(userRecord.uid).set({ mustChangePassword: false }, { merge: true })
+      .catch((flagError) => console.warn('Failed to clear mustChangePassword after reset:', flagError?.message || flagError))
     return res.json({ success: true })
   } catch (error) {
-    const code = error?.code || ''
-    const message =
-      code === 'auth/user-not-found'
-        ? 'No account found with this email.'
-        : error?.message || 'Failed to reset password.'
-    return res.status(400).json({ success: false, error: message, code })
+    console.error('Password reset failed:', error?.code || error?.message || 'Unknown error')
+    return res.status(503).json({ success: false, error: 'Password reset could not be completed. Please request a new code and try again.' })
   }
 })
 

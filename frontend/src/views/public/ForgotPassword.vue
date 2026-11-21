@@ -2,9 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRoute } from 'vue-router'
-import { auth, db } from '@/config/firebaseConfig'
+import { auth } from '@/config/firebaseConfig'
 import { signOut } from 'firebase/auth'
-import { collection, query, where, getDocs } from 'firebase/firestore'
 import axios from 'axios'
 import { toast } from 'vue3-toastify'
 import { OTP_API_BASE_CANDIDATES } from '@/utils/runtimeConfig'
@@ -21,7 +20,7 @@ const customerAppLoginPath = '/customer-app/login'
 const step = ref(1)
 const email = ref('')
 const otpDigits = ref(Array(6).fill(''))
-const generatedOtp = ref('')
+const passwordResetToken = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 const otpInputRefs = ref([])
@@ -50,19 +49,23 @@ const toggleConfirmPassword = () => { confirmPasswordVisible.value = !confirmPas
 
 const postToBackend = async (path, payload) => {
   let lastError = null
+  let retryableError = null
   for (const baseUrl of OTP_API_BASE_CANDIDATES) {
     try {
       const response = await axios.post(`${baseUrl}${path}`, payload)
       return response
     } catch (err) {
-      if (err?.response?.status === 404) {
+      const status = Number(err?.response?.status || 0)
+      const canRetry = !err?.response || [404, 502, 503, 504].includes(status)
+      if (canRetry) {
         lastError = err
+        if (status && status !== 404) retryableError = err
         continue
       }
       throw err
     }
   }
-  throw lastError || new Error('Backend endpoint not found.')
+  throw retryableError || lastError || new Error('Backend endpoint not found.')
 }
 
 const clearResendTimer = () => {
@@ -85,35 +88,18 @@ const startResendCountdown = () => {
 }
 
 const requestOtp = async ({ advanceStep = true, successMessage = 'OTP sent to your email.' } = {}) => {
-  if (!email.value) {
+  const normalizedEmail = email.value.trim().toLowerCase()
+  if (!normalizedEmail) {
     toast.error('Please enter your email.')
     return false
   }
 
   try {
-    const userRef = collection(db, 'users')
-    const q = query(userRef, where('email', '==', email.value.trim()))
-    const querySnapshot = await getDocs(q)
-
-    if (querySnapshot.empty) {
-      toast.error('Email not found in our records.')
-      return false
-    }
-
-    const authCheck = await postToBackend('/auth/check-user', {
-      email: email.value.trim(),
+    email.value = normalizedEmail
+    const response = await postToBackend('/auth/request-password-reset', {
+      email: normalizedEmail,
     })
-    if (authCheck?.data?.success && authCheck?.data?.exists === false) {
-      toast.error('No account found for this email in authentication.')
-      return false
-    }
-
-    generatedOtp.value = Math.floor(100000 + Math.random() * 900000).toString()
-    await postToBackend('/send-otp', {
-      recipient: email.value,
-      otp: generatedOtp.value,
-    })
-    toast.info(successMessage)
+    toast.info(response?.data?.message || successMessage)
     if (advanceStep) {
       step.value = 2
     }
@@ -124,9 +110,8 @@ const requestOtp = async ({ advanceStep = true, successMessage = 'OTP sent to yo
   } catch (err) {
     console.error('ForgotPassword requestOtp error:', {
       status: err?.response?.status,
-      responseData: err?.response?.data,
+      message: err?.response?.data?.error || err?.message,
       url: err?.config?.url,
-      requestData: err?.config?.data,
     })
     const providerError =
       err?.response?.data?.error ||
@@ -150,12 +135,30 @@ const resendOtp = async () => {
   })
 }
 
-const verifyOtp = () => {
-  if (otpCode.value === generatedOtp.value) {
+const verifyOtp = async () => {
+  if (!/^\d{6}$/.test(otpCode.value)) {
+    toast.error('Enter the complete 6-digit code.')
+    return
+  }
+  try {
+    const response = await postToBackend('/auth/verify-password-reset-otp', {
+      email: email.value.trim().toLowerCase(),
+      otp: otpCode.value,
+    })
+    passwordResetToken.value = String(response?.data?.data?.resetToken || '')
+    if (!passwordResetToken.value) {
+      toast.error('Could not verify the code. Request a new one and try again.')
+      return
+    }
     toast.success('OTP verified! You can now reset your password.')
     step.value = 3
-  } else {
-    toast.error('Invalid OTP.')
+  } catch (err) {
+    console.error('ForgotPassword verifyOtp error:', {
+      status: err?.response?.status,
+      message: err?.response?.data?.error || err?.message,
+      url: err?.config?.url,
+    })
+    toast.error(err?.response?.data?.error || 'Unable to verify this code. Please try again.')
   }
 }
 
@@ -178,8 +181,9 @@ const resetPassword = async () => {
   }
   try {
     const response = await postToBackend('/auth/reset-password', {
-      email: email.value.trim(),
+      email: email.value.trim().toLowerCase(),
       newPassword: newPassword.value,
+      resetToken: passwordResetToken.value,
     })
     if (response?.data?.success) {
       toast.success('Password updated successfully. You can now log in.')
@@ -197,12 +201,16 @@ const resetPassword = async () => {
     newPassword.value = ''
     confirmPassword.value = ''
     clearOtpInputs()
-    generatedOtp.value = ''
+    passwordResetToken.value = ''
     setTimeout(() => {
       router.push(`${props.customerApp ? customerAppLoginPath : '/login'}?reset=success`)
     }, 2000)
   } catch (err) {
-    console.error(err)
+    console.error('ForgotPassword reset error:', {
+      status: err?.response?.status,
+      message: err?.response?.data?.error || err?.message,
+      url: err?.config?.url,
+    })
     const providerError =
       err?.response?.data?.error ||
       err?.response?.data?.message ||
@@ -303,7 +311,7 @@ onBeforeUnmount(() => {
             <span class="forgot-point-icon">1</span>
             <div>
               <p class="forgot-point-title">Verify email</p>
-              <p class="forgot-point-copy">We check that the email exists in our records.</p>
+              <p class="forgot-point-copy">We'll send a code if the email matches an account.</p>
             </div>
           </div>
           <div class="forgot-point">
@@ -376,7 +384,7 @@ onBeforeUnmount(() => {
         <div v-if="step === 2" class="forgot-step-panel">
           <p class="forgot-step-label">Step 2</p>
           <p class="forgot-step-copy">
-            We sent an OTP to <strong>{{ email }}</strong>. Enter it below to verify.
+            If this email is registered, a code was sent to <strong>{{ email }}</strong>. Enter it below to verify.
           </p>
           <div class="otp-boxes">
             <input
